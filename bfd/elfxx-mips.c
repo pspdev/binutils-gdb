@@ -6254,14 +6254,19 @@ _bfd_elf_mips_mach (flagword flags)
     case E_MIPS_MACH_SB1:
       return bfd_mach_mips_sb1;
 
+    case E_MIPS_MACH_ALLEGREX:
+      return bfd_mach_mips_allegrex;
+
     case E_MIPS_MACH_LS2E:
       return bfd_mach_mips_loongson_2e;
 
     case E_MIPS_MACH_LS2F:
       return bfd_mach_mips_loongson_2f;
 
+    /*
     case E_MIPS_MACH_LS3A:
       return bfd_mach_mips_loongson_3a;
+    */
 
     case E_MIPS_MACH_OCTEON2:
       return bfd_mach_mips_octeon2;
@@ -13686,6 +13691,7 @@ static const struct mips_mach_extension mips_mach_extensions[] = {
   /* MIPS II extensions.  */
   { bfd_mach_mips4000, bfd_mach_mips6000 },
   { bfd_mach_mipsisa32, bfd_mach_mips6000 },
+  { bfd_mach_mips_allegrex, bfd_mach_mips6000 },
 
   /* MIPS I extensions.  */
   { bfd_mach_mips6000, bfd_mach_mips3000 },

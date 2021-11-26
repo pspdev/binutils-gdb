@@ -4062,7 +4062,6 @@ case "${target}" in
     noconfigdirs="$noconfigdirs ld gas gprof"
     ;;
   mips*-*-*)
-    noconfigdirs="$noconfigdirs gprof"
     ;;
   nvptx*-*-*)
     noconfigdirs="$noconfigdirs target-libssp target-libstdc++-v3 target-libobjc"

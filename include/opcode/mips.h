@@ -224,6 +224,8 @@ extern "C" {
 #define MDMX_FMTSEL_VEC_QH	0x15
 #define MDMX_FMTSEL_VEC_OB	0x16
 
+#include "vfpu.h"
+
 /* UDI */
 #define OP_SH_UDI1		6
 #define OP_MASK_UDI1		0x1f
@@ -434,7 +436,52 @@ enum mips_operand_type {
   OP_CHECK_PREV,
 
   /* A register operand that must not be zero.  */
-  OP_NON_ZERO_REG
+  OP_NON_ZERO_REG,
+
+  /* A VFPU operand, described by mips_vfpu_operand */
+  OP_VFPU_OPERAND
+};
+
+/* Enumerates the types of VFPU register.  */
+enum mips_vfpu_operand_type {
+  /* Regular VFPU registers: source and target.  */
+  OP_VFPU_REGS, OP_VFPU_REGT,
+
+  /* Regular VFPU registers: destination (three types).  */  
+  OP_VFPU_REGD, OP_VFPU_REGX, OP_VFPU_REGV,
+
+  /* Two parts VFPU register (used in lv/sq insts).  */
+  OP_VFPU_REG2,
+
+  /* VFPU control register number (8 bit).  */
+  OP_VFPU_CREG,
+
+  /* Source prefix operand, for s/t prefix operations.  */
+  OP_VFPU_SPREFIX,
+
+  /* Destination prefix operand, for d prefix operations.  */
+  OP_VFPU_DPREFIX,
+
+  /* VFPU named constant value (5 bit).  */
+  OP_VFPU_NCNT,
+
+  /* VFPU condition code (4 bit).  */
+  OP_VFPU_COND,
+
+  /* Half float constant (16 bit).  */
+  OP_VFPU_HFLOAT,
+
+  /* Wrap constant (used by vwbn, 8 bit). */
+  OP_VFPU_WRAPCNT,
+
+  /* Rotation mode immediate (5 bit, used by vrot) */
+  OP_VFPU_ROTCNT,
+
+  /* Write back boolean (1 bit, used by sv.q) */
+  OP_VFPU_WRB_BOOL,
+
+  /* A dummy operand, as a decorator */
+  OP_VFPU_DECORATOR
 };
 
 /* Enumerates the types of MIPS register.  */
@@ -485,7 +532,11 @@ enum mips_reg_operand_type {
   OP_REG_MSA,
 
   /* MSA control registers $0-$31.  */
-  OP_REG_MSA_CTRL
+  OP_REG_MSA_CTRL,
+
+  /* VFPU register types */
+  OP_REG_VFPU,
+  OP_REG_VFPU_CTR
 };
 
 /* Base class for all operands.  */
@@ -599,6 +650,27 @@ struct mips_reg_pair_operand
   unsigned char *reg2_map;
 };
 
+/* Describes an VFPU operand, which can be a register, or some immediate
+   such a constant value, condition code, or a prefix operand */
+struct mips_vfpu_operand
+{
+  /* Encodes the offset.  */
+  struct mips_operand root;
+
+  /* The type of register.  */
+  enum mips_vfpu_operand_type op_type;
+
+  /* Extra information, register subtype or extra bits */
+  unsigned extra;
+
+  /* For prefix tracking, store the compatibility information */
+  char pfxcompat;
+
+  /* n/m encodings encode the vt register in two chunks */
+  unsigned short size2;
+  unsigned short lsb2;
+};
+
 /* Describes an operand that is calculated relative to a base PC.
    The base PC is usually the address of the following instruction,
    but the rules for MIPS16 instructions like ADDIUPC are more complicated.  */
@@ -642,6 +714,15 @@ mips_insert_operand (const struct mips_operand *operand, unsigned int insn,
   mask = (1 << operand->size) - 1;
   insn &= ~(mask << operand->lsb);
   insn |= (uval & mask) << operand->lsb;
+
+  /* Honor lsb2 and size2 for divided fields */
+  if (operand->type == OP_VFPU_OPERAND) {
+    const struct mips_vfpu_operand *vop = (const struct mips_vfpu_operand*)operand;
+    mask = (1 << vop->size2) - 1;
+    insn &= ~(mask << vop->lsb2);
+    insn |= ((uval >> operand->size) & mask) << vop->lsb2;
+  }  
+
   return insn;
 }
 
@@ -650,7 +731,13 @@ mips_insert_operand (const struct mips_operand *operand, unsigned int insn,
 static inline unsigned int
 mips_extract_operand (const struct mips_operand *operand, unsigned int insn)
 {
-  return (insn >> operand->lsb) & ((1 << operand->size) - 1);
+  /* Honor lsb2 and size2 for divided fields */
+  unsigned int op = (insn >> operand->lsb) & ((1 << operand->size) - 1);
+  if (operand->type == OP_VFPU_OPERAND) {
+    const struct mips_vfpu_operand *vop = (const struct mips_vfpu_operand*)operand;
+    op |= ((insn >> vop->lsb2) & ((1 << vop->size2) - 1)) << operand->size;
+  }
+  return op;
 }
 
 /* UVAL is the value encoded by OPERAND.  Return it in signed form.  */
@@ -829,6 +916,29 @@ mips_opcode_32bit_p (const struct mips_opcode *mo)
 	Requires that "+A" or "+E" occur first to set position.
 	Enforces: 32 < (pos+size) <= 64.
 
+   Sony Allegrex VFPU instructions:
+   "?o" - 14 bit load/store offset (must be 4 byte aligned)
+   "?0" - "?3" - Prefix operation code for vpfxs/vpfxt instructions
+   "?4" - "?7" - Prefix operation code for vpfxd instruction
+   "?a" - 5 bit named constant (VFPU_*) used by vcst instruction
+   "?b" - 5 bit scaling constant used by int/float conversion instructions
+   "?c" - 3 bit condition code constant used by branching instructions
+   "?e" - 3 bit condition code constant used by conditional move instructions
+   "?f" - 4 bit comparison operation code used by vcmp instructions
+   "?i" - 8 bit scaling constant used by vwbn.s instruction
+   "?k" - Just a logical decorator (has no bits assigned)
+   "?q/?r" - VFPU control register number (8bit)
+   "?u" - 16 bit half float constant number (for insts/macros like vfim)
+   "?w" - 5 bit rotation code expression for vrot instructions
+   "?d" - Destination register number
+   "?m" - Source/destination register for lv.s/sv.s memory operations
+   "?n" - Source/destination register for lv.q/sv.q memory operations
+   "?s" - Operand source register (vs)
+   "?t" - Operand target register (vt)
+   "?v" - Destination register number that can't overlap with sources
+   "?x" - Destination register number that can partially overlap with sources
+   "?z" - 1 bit write mode boolean usev by sv.q instruction
+   
    Floating point instructions:
    "D" 5 bit destination register (OP_*_FD)
    "M" 3 bit compare condition code (OP_*_CCC) (only used for mips4 and up)
@@ -1256,6 +1366,8 @@ static const unsigned int mips_isa_table[] = {
 #define INSN_5400		  0x01000000
 /* NEC VR5500 instruction.  */
 #define INSN_5500		  0x02000000
+/* Sony Allegrex instruction.  */
+#define INSN_ALLEGREX        0x10000000
 
 /* ST Microelectronics Loongson 2E.  */
 #define INSN_LOONGSON_2E          0x40000000
@@ -1378,6 +1490,7 @@ static const unsigned int mips_isa_table[] = {
 #define CPU_MIPS64R5	68
 #define CPU_MIPS64R6	69
 #define CPU_SB1         12310201        /* octal 'SB', 01.  */
+#define CPU_ALLEGREX    10111431        /* octal 'AL', 31.  */
 #define CPU_LOONGSON_2E 3001
 #define CPU_LOONGSON_2F 3002
 #define CPU_GS464	3003
@@ -1434,6 +1547,9 @@ cpu_is_member (int cpu, unsigned int mask)
 
     case CPU_R5900:
       return (mask & INSN_5900) != 0;
+
+    case CPU_ALLEGREX:
+      return (mask & INSN_ALLEGREX) != 0;
 
     case CPU_LOONGSON_2E:
       return (mask & INSN_LOONGSON_2E) != 0;
@@ -1650,6 +1766,12 @@ enum
   M_LI_DD,
   M_LI_S,
   M_LI_SS,
+  M_LVHI_S_SS,
+  M_LVHI_P_SS,
+  M_LVI_S_SS,
+  M_LVI_P_SS,
+  M_LVI_T_SS,
+  M_LVI_Q_SS,
   M_LL_AB,
   M_LLD_AB,
   M_LLDP_AB,
@@ -1657,12 +1779,23 @@ enum
   M_LLWP_AB,
   M_LLWPE_AB,
   M_LQ_AB,
+  M_LVHI_P,
+  M_LVHI_S,
+  M_LVI_P,
+  M_LVI_Q,
+  M_LVI_S,
+  M_LVI_T,
+  M_LVL_Q_AB,
+  M_LVR_Q_AB,
+  M_LV_Q_AB,
+  M_LV_Q_AB_2,
   M_LW_AB,
   M_LWE_AB,
   M_LWC0_AB,
   M_LWC1_AB,
   M_LWC2_AB,
   M_LWC3_AB,
+  M_LV_S_AB,
   M_LWL_AB,
   M_LWLE_AB,
   M_LWM_AB,
@@ -1757,6 +1890,10 @@ enum
   M_SUB_I,
   M_SUBU_I,
   M_SUBU_I_2,
+  M_SVL_Q_AB,
+  M_SV_Q_AB,
+  M_SVR_Q_AB,
+  M_SV_S_AB,
   M_TEQ_I,
   M_TGE_I,
   M_TGEU_I,
@@ -1768,10 +1905,20 @@ enum
   M_ULD_AB,
   M_ULH_AB,
   M_ULHU_AB,
+  M_ULV_Q,
+  M_ULV_Q_AB,
+  M_ULV_S,
   M_ULW_AB,
   M_USH_AB,
+  M_USV_Q,
+  M_USV_Q_AB,
+  M_USV_S,
   M_USW_AB,
   M_USD_AB,
+  M_VCMOV_P,
+  M_VCMOV_Q,
+  M_VCMOV_S,
+  M_VCMOV_T,
   M_XOR_I,
   M_COP0,
   M_COP1,

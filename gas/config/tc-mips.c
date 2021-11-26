@@ -106,7 +106,7 @@ static char *mips_flags_frag;
 
 #define FCSR 31
 
-#define ILLEGAL_REG (32)
+#define ILLEGAL_REG    RNUM_MASK
 
 #define AT  mips_opts.at
 
@@ -521,11 +521,14 @@ static int mips_32bitmode = 0;
 /* Return true if the given CPU supports the microMIPS ASE.  */
 #define CPU_HAS_MICROMIPS(cpu)	0
 
+/* True if the given CPU belongs to the Allegrex family.  */
+#define CPU_IS_ALLEGREX(CPU)   ((CPU) == CPU_ALLEGREX)
+
 /* True if CPU has a dror instruction.  */
 #define CPU_HAS_DROR(CPU)	((CPU) == CPU_VR5400 || (CPU) == CPU_VR5500)
 
 /* True if CPU has a ror instruction.  */
-#define CPU_HAS_ROR(CPU)	CPU_HAS_DROR (CPU)
+#define CPU_HAS_ROR(CPU)	CPU_HAS_DROR (CPU) || CPU_IS_ALLEGREX (CPU)
 
 /* True if CPU is in the Octeon family.  */
 #define CPU_IS_OCTEON(CPU) ((CPU) == CPU_OCTEON || (CPU) == CPU_OCTEONP \
@@ -569,6 +572,7 @@ static int mips_32bitmode = 0;
    || mips_opts.arch == CPU_R16000                    \
    || mips_opts.arch == CPU_RM7000                    \
    || mips_opts.arch == CPU_VR5500                    \
+   || mips_opts.arch == CPU_ALLEGREX                  \
    || mips_opts.micromips                             \
    )
 
@@ -818,7 +822,7 @@ static struct mips_cl_insn history[1 + MAX_NOPS + MAX_LLSC_RANGE];
 #define MAX_LABELS_SAME 10
 
 /* Arrays of operands for each instruction.  */
-#define MAX_OPERANDS 6
+#define MAX_OPERANDS 16
 struct mips_operand_array
 {
   const struct mips_operand *operand[MAX_OPERANDS];
@@ -2051,6 +2055,8 @@ static expressionS imm_expr;
    operands in macros.  */
 
 static expressionS offset_expr;
+static expressionS vimm_expr[4];
+static expressionS voffset_expr[4];
 static bfd_reloc_code_real_type offset_reloc[3]
   = {BFD_RELOC_UNUSED, BFD_RELOC_UNUSED, BFD_RELOC_UNUSED};
 
@@ -2677,25 +2683,27 @@ struct regname {
   unsigned int num;
 };
 
-#define RNUM_MASK	0x00000ff
-#define RTYPE_MASK	0x0ffff00
-#define RTYPE_NUM	0x0000100
-#define RTYPE_FPU	0x0000200
-#define RTYPE_FCC	0x0000400
-#define RTYPE_VEC	0x0000800
-#define RTYPE_GP	0x0001000
-#define RTYPE_CP0	0x0002000
-#define RTYPE_PC	0x0004000
-#define RTYPE_ACC	0x0008000
-#define RTYPE_CCC	0x0010000
-#define RTYPE_VI	0x0020000
-#define RTYPE_VF	0x0040000
-#define RTYPE_R5900_I	0x0080000
-#define RTYPE_R5900_Q	0x0100000
-#define RTYPE_R5900_R	0x0200000
-#define RTYPE_R5900_ACC	0x0400000
-#define RTYPE_MSA	0x0800000
-#define RWARN		0x8000000
+#define RNUM_MASK	0x00000fff
+#define RTYPE_MASK	0x0ffff000
+#define RTYPE_NUM	0x00001000
+#define RTYPE_FPU	0x00002000
+#define RTYPE_FCC	0x00004000
+#define RTYPE_VEC	0x00008000
+#define RTYPE_GP	0x00010000
+#define RTYPE_CP0	0x00020000
+#define RTYPE_PC	0x00040000
+#define RTYPE_ACC	0x00080000
+#define RTYPE_CCC	0x00100000
+#define RTYPE_VI	0x00200000
+#define RTYPE_VF	0x00400000
+#define RTYPE_R5900_I	0x00800000
+#define RTYPE_R5900_Q	0x01000000
+#define RTYPE_R5900_R	0x02000000
+#define RTYPE_R5900_ACC	0x04000000
+#define RTYPE_MSA	0x08000000
+#define RTYPE_VFPU     	0x10000000
+#define RTYPE_VFPU_CTR  0x20000000
+#define RWARN		0x80000000
 
 #define GENERIC_REGISTER_NUMBERS \
     {"$0",	RTYPE_NUM | 0},  \
@@ -2899,6 +2907,2145 @@ struct regname {
     {"$ac2",	RTYPE_ACC | 2}, \
     {"$ac3",	RTYPE_ACC | 3}
 
+// The two top bits encode the register type, needed for semantic
+// with the opcode and other operands
+
+#define VFPU_RSINGLE         (0 << 8)
+#define VFPU_VECTOR_ANY      (1 << 8)
+#define VFPU_VECTOR_PAIR     (2 << 8)
+#define VFPU_VECTOR_TRIPLE   (3 << 8)
+#define VFPU_VECTOR_QUAD     (4 << 8)
+#define VFPU_MATRIX_ANY      (6 << 8)
+#define VFPU_MATRIX_PAIR     (7 << 8)
+#define VFPU_MATRIX_TRIPLE   (8 << 8)
+#define VFPU_MATRIX_QUAD     (9 << 8)
+
+#define VFPU_REGISTER_NAMES \
+    /* VFPU condition codes */         \
+    {"FL",	RTYPE_VFPU_CTR |   0}, \
+    {"fl",	RTYPE_VFPU_CTR |   0}, \
+    {"EQ",	RTYPE_VFPU_CTR |   1}, \
+    {"eq",	RTYPE_VFPU_CTR |   1}, \
+    {"LT",	RTYPE_VFPU_CTR |   2}, \
+    {"lt",	RTYPE_VFPU_CTR |   2}, \
+    {"LE",	RTYPE_VFPU_CTR |   3}, \
+    {"le",	RTYPE_VFPU_CTR |   3}, \
+    {"TR",	RTYPE_VFPU_CTR |   4}, \
+    {"tr",	RTYPE_VFPU_CTR |   4}, \
+    {"NE",	RTYPE_VFPU_CTR |   5}, \
+    {"ne",	RTYPE_VFPU_CTR |   5}, \
+    {"GE",	RTYPE_VFPU_CTR |   6}, \
+    {"ge",	RTYPE_VFPU_CTR |   6}, \
+    {"GT",	RTYPE_VFPU_CTR |   7}, \
+    {"gt",	RTYPE_VFPU_CTR |   7}, \
+    {"EZ",	RTYPE_VFPU_CTR |   8}, \
+    {"ez",	RTYPE_VFPU_CTR |   8}, \
+    {"EN",	RTYPE_VFPU_CTR |   9}, \
+    {"en",	RTYPE_VFPU_CTR |   9}, \
+    {"EI",	RTYPE_VFPU_CTR |  10}, \
+    {"ei",	RTYPE_VFPU_CTR |  10}, \
+    {"ES",	RTYPE_VFPU_CTR |  11}, \
+    {"es",	RTYPE_VFPU_CTR |  11}, \
+    {"NZ",	RTYPE_VFPU_CTR |  12}, \
+    {"nz",	RTYPE_VFPU_CTR |  12}, \
+    {"NN",	RTYPE_VFPU_CTR |  13}, \
+    {"nn",	RTYPE_VFPU_CTR |  13}, \
+    {"NI",	RTYPE_VFPU_CTR |  14}, \
+    {"ni",	RTYPE_VFPU_CTR |  14}, \
+    {"NS",	RTYPE_VFPU_CTR |  15}, \
+    {"ns",	RTYPE_VFPU_CTR |  15}, \
+    /* VFPU sv.q write back suffix */  \
+    {"WT",	RTYPE_VFPU_CTR |  16}, \
+    {"wt",	RTYPE_VFPU_CTR |  16}, \
+    {"WB",	RTYPE_VFPU_CTR |  17}, \
+    {"wb",	RTYPE_VFPU_CTR |  17}, \
+    /* VFPU magic constants */         \
+    {"VFPU_HUGE",      RTYPE_VFPU_CTR | 33}, \
+    {"VFPU_SQRT2",     RTYPE_VFPU_CTR | 34}, \
+    {"VFPU_SQRT1_2",   RTYPE_VFPU_CTR | 35}, \
+    {"VFPU_2_SQRTPI",  RTYPE_VFPU_CTR | 36}, \
+    {"VFPU_2_PI",      RTYPE_VFPU_CTR | 37}, \
+    {"VFPU_1_PI",      RTYPE_VFPU_CTR | 38}, \
+    {"VFPU_PI_4",      RTYPE_VFPU_CTR | 39}, \
+    {"VFPU_PI_2",      RTYPE_VFPU_CTR | 40}, \
+    {"VFPU_PI",        RTYPE_VFPU_CTR | 41}, \
+    {"VFPU_E",         RTYPE_VFPU_CTR | 42}, \
+    {"VFPU_LOG2E",     RTYPE_VFPU_CTR | 43}, \
+    {"VFPU_LOG10E",    RTYPE_VFPU_CTR | 44}, \
+    {"VFPU_LN2",       RTYPE_VFPU_CTR | 45}, \
+    {"VFPU_LN10",      RTYPE_VFPU_CTR | 46}, \
+    {"VFPU_2PI",       RTYPE_VFPU_CTR | 47}, \
+    {"VFPU_PI_6",      RTYPE_VFPU_CTR | 48}, \
+    {"VFPU_LOG10TWO",  RTYPE_VFPU_CTR | 49}, \
+    {"VFPU_LOG2TEN",   RTYPE_VFPU_CTR | 50}, \
+    {"VFPU_SQRT3_2",   RTYPE_VFPU_CTR | 51}, \
+    /* VFPU control registers */       \
+    {"$128",	RTYPE_VFPU_CTR | 128}, \
+    {"$129",	RTYPE_VFPU_CTR | 129}, \
+    {"$130",	RTYPE_VFPU_CTR | 130}, \
+    {"$131",	RTYPE_VFPU_CTR | 131}, \
+    {"$132",	RTYPE_VFPU_CTR | 132}, \
+    {"$133",	RTYPE_VFPU_CTR | 133}, \
+    {"$134",	RTYPE_VFPU_CTR | 134}, \
+    {"$135",	RTYPE_VFPU_CTR | 135}, \
+    {"$136",	RTYPE_VFPU_CTR | 136}, \
+    {"$137",	RTYPE_VFPU_CTR | 137}, \
+    {"$138",	RTYPE_VFPU_CTR | 138}, \
+    {"$139",	RTYPE_VFPU_CTR | 139}, \
+    {"$140",	RTYPE_VFPU_CTR | 140}, \
+    {"$141",	RTYPE_VFPU_CTR | 141}, \
+    {"$142",	RTYPE_VFPU_CTR | 142}, \
+    {"$143",	RTYPE_VFPU_CTR | 143}, \
+    /* VFPU vector registers */    \
+    {"s000",	RTYPE_VFPU |       VFPU_RSINGLE |   0}, \
+    {"S000",	RTYPE_VFPU |       VFPU_RSINGLE |   0}, \
+    {"s000.s",	RTYPE_VFPU |       VFPU_RSINGLE |   0}, \
+    {"S000.s",	RTYPE_VFPU |       VFPU_RSINGLE |   0}, \
+    {"s001",	RTYPE_VFPU |       VFPU_RSINGLE |  32}, \
+    {"S001",	RTYPE_VFPU |       VFPU_RSINGLE |  32}, \
+    {"s001.s",	RTYPE_VFPU |       VFPU_RSINGLE |  32}, \
+    {"S001.s",	RTYPE_VFPU |       VFPU_RSINGLE |  32}, \
+    {"s002",	RTYPE_VFPU |       VFPU_RSINGLE |  64}, \
+    {"S002",	RTYPE_VFPU |       VFPU_RSINGLE |  64}, \
+    {"s002.s",	RTYPE_VFPU |       VFPU_RSINGLE |  64}, \
+    {"S002.s",	RTYPE_VFPU |       VFPU_RSINGLE |  64}, \
+    {"s003",	RTYPE_VFPU |       VFPU_RSINGLE |  96}, \
+    {"S003",	RTYPE_VFPU |       VFPU_RSINGLE |  96}, \
+    {"s003.s",	RTYPE_VFPU |       VFPU_RSINGLE |  96}, \
+    {"S003.s",	RTYPE_VFPU |       VFPU_RSINGLE |  96}, \
+    {"s010",	RTYPE_VFPU |       VFPU_RSINGLE |   1}, \
+    {"S010",	RTYPE_VFPU |       VFPU_RSINGLE |   1}, \
+    {"s010.s",	RTYPE_VFPU |       VFPU_RSINGLE |   1}, \
+    {"S010.s",	RTYPE_VFPU |       VFPU_RSINGLE |   1}, \
+    {"s011",	RTYPE_VFPU |       VFPU_RSINGLE |  33}, \
+    {"S011",	RTYPE_VFPU |       VFPU_RSINGLE |  33}, \
+    {"s011.s",	RTYPE_VFPU |       VFPU_RSINGLE |  33}, \
+    {"S011.s",	RTYPE_VFPU |       VFPU_RSINGLE |  33}, \
+    {"s012",	RTYPE_VFPU |       VFPU_RSINGLE |  65}, \
+    {"S012",	RTYPE_VFPU |       VFPU_RSINGLE |  65}, \
+    {"s012.s",	RTYPE_VFPU |       VFPU_RSINGLE |  65}, \
+    {"S012.s",	RTYPE_VFPU |       VFPU_RSINGLE |  65}, \
+    {"s013",	RTYPE_VFPU |       VFPU_RSINGLE |  97}, \
+    {"S013",	RTYPE_VFPU |       VFPU_RSINGLE |  97}, \
+    {"s013.s",	RTYPE_VFPU |       VFPU_RSINGLE |  97}, \
+    {"S013.s",	RTYPE_VFPU |       VFPU_RSINGLE |  97}, \
+    {"s020",	RTYPE_VFPU |       VFPU_RSINGLE |   2}, \
+    {"S020",	RTYPE_VFPU |       VFPU_RSINGLE |   2}, \
+    {"s020.s",	RTYPE_VFPU |       VFPU_RSINGLE |   2}, \
+    {"S020.s",	RTYPE_VFPU |       VFPU_RSINGLE |   2}, \
+    {"s021",	RTYPE_VFPU |       VFPU_RSINGLE |  34}, \
+    {"S021",	RTYPE_VFPU |       VFPU_RSINGLE |  34}, \
+    {"s021.s",	RTYPE_VFPU |       VFPU_RSINGLE |  34}, \
+    {"S021.s",	RTYPE_VFPU |       VFPU_RSINGLE |  34}, \
+    {"s022",	RTYPE_VFPU |       VFPU_RSINGLE |  66}, \
+    {"S022",	RTYPE_VFPU |       VFPU_RSINGLE |  66}, \
+    {"s022.s",	RTYPE_VFPU |       VFPU_RSINGLE |  66}, \
+    {"S022.s",	RTYPE_VFPU |       VFPU_RSINGLE |  66}, \
+    {"s023",	RTYPE_VFPU |       VFPU_RSINGLE |  98}, \
+    {"S023",	RTYPE_VFPU |       VFPU_RSINGLE |  98}, \
+    {"s023.s",	RTYPE_VFPU |       VFPU_RSINGLE |  98}, \
+    {"S023.s",	RTYPE_VFPU |       VFPU_RSINGLE |  98}, \
+    {"s030",	RTYPE_VFPU |       VFPU_RSINGLE |   3}, \
+    {"S030",	RTYPE_VFPU |       VFPU_RSINGLE |   3}, \
+    {"s030.s",	RTYPE_VFPU |       VFPU_RSINGLE |   3}, \
+    {"S030.s",	RTYPE_VFPU |       VFPU_RSINGLE |   3}, \
+    {"s031",	RTYPE_VFPU |       VFPU_RSINGLE |  35}, \
+    {"S031",	RTYPE_VFPU |       VFPU_RSINGLE |  35}, \
+    {"s031.s",	RTYPE_VFPU |       VFPU_RSINGLE |  35}, \
+    {"S031.s",	RTYPE_VFPU |       VFPU_RSINGLE |  35}, \
+    {"s032",	RTYPE_VFPU |       VFPU_RSINGLE |  67}, \
+    {"S032",	RTYPE_VFPU |       VFPU_RSINGLE |  67}, \
+    {"s032.s",	RTYPE_VFPU |       VFPU_RSINGLE |  67}, \
+    {"S032.s",	RTYPE_VFPU |       VFPU_RSINGLE |  67}, \
+    {"s033",	RTYPE_VFPU |       VFPU_RSINGLE |  99}, \
+    {"S033",	RTYPE_VFPU |       VFPU_RSINGLE |  99}, \
+    {"s033.s",	RTYPE_VFPU |       VFPU_RSINGLE |  99}, \
+    {"S033.s",	RTYPE_VFPU |       VFPU_RSINGLE |  99}, \
+    {"s100",	RTYPE_VFPU |       VFPU_RSINGLE |   4}, \
+    {"S100",	RTYPE_VFPU |       VFPU_RSINGLE |   4}, \
+    {"s100.s",	RTYPE_VFPU |       VFPU_RSINGLE |   4}, \
+    {"S100.s",	RTYPE_VFPU |       VFPU_RSINGLE |   4}, \
+    {"s101",	RTYPE_VFPU |       VFPU_RSINGLE |  36}, \
+    {"S101",	RTYPE_VFPU |       VFPU_RSINGLE |  36}, \
+    {"s101.s",	RTYPE_VFPU |       VFPU_RSINGLE |  36}, \
+    {"S101.s",	RTYPE_VFPU |       VFPU_RSINGLE |  36}, \
+    {"s102",	RTYPE_VFPU |       VFPU_RSINGLE |  68}, \
+    {"S102",	RTYPE_VFPU |       VFPU_RSINGLE |  68}, \
+    {"s102.s",	RTYPE_VFPU |       VFPU_RSINGLE |  68}, \
+    {"S102.s",	RTYPE_VFPU |       VFPU_RSINGLE |  68}, \
+    {"s103",	RTYPE_VFPU |       VFPU_RSINGLE | 100}, \
+    {"S103",	RTYPE_VFPU |       VFPU_RSINGLE | 100}, \
+    {"s103.s",	RTYPE_VFPU |       VFPU_RSINGLE | 100}, \
+    {"S103.s",	RTYPE_VFPU |       VFPU_RSINGLE | 100}, \
+    {"s110",	RTYPE_VFPU |       VFPU_RSINGLE |   5}, \
+    {"S110",	RTYPE_VFPU |       VFPU_RSINGLE |   5}, \
+    {"s110.s",	RTYPE_VFPU |       VFPU_RSINGLE |   5}, \
+    {"S110.s",	RTYPE_VFPU |       VFPU_RSINGLE |   5}, \
+    {"s111",	RTYPE_VFPU |       VFPU_RSINGLE |  37}, \
+    {"S111",	RTYPE_VFPU |       VFPU_RSINGLE |  37}, \
+    {"s111.s",	RTYPE_VFPU |       VFPU_RSINGLE |  37}, \
+    {"S111.s",	RTYPE_VFPU |       VFPU_RSINGLE |  37}, \
+    {"s112",	RTYPE_VFPU |       VFPU_RSINGLE |  69}, \
+    {"S112",	RTYPE_VFPU |       VFPU_RSINGLE |  69}, \
+    {"s112.s",	RTYPE_VFPU |       VFPU_RSINGLE |  69}, \
+    {"S112.s",	RTYPE_VFPU |       VFPU_RSINGLE |  69}, \
+    {"s113",	RTYPE_VFPU |       VFPU_RSINGLE | 101}, \
+    {"S113",	RTYPE_VFPU |       VFPU_RSINGLE | 101}, \
+    {"s113.s",	RTYPE_VFPU |       VFPU_RSINGLE | 101}, \
+    {"S113.s",	RTYPE_VFPU |       VFPU_RSINGLE | 101}, \
+    {"s120",	RTYPE_VFPU |       VFPU_RSINGLE |   6}, \
+    {"S120",	RTYPE_VFPU |       VFPU_RSINGLE |   6}, \
+    {"s120.s",	RTYPE_VFPU |       VFPU_RSINGLE |   6}, \
+    {"S120.s",	RTYPE_VFPU |       VFPU_RSINGLE |   6}, \
+    {"s121",	RTYPE_VFPU |       VFPU_RSINGLE |  38}, \
+    {"S121",	RTYPE_VFPU |       VFPU_RSINGLE |  38}, \
+    {"s121.s",	RTYPE_VFPU |       VFPU_RSINGLE |  38}, \
+    {"S121.s",	RTYPE_VFPU |       VFPU_RSINGLE |  38}, \
+    {"s122",	RTYPE_VFPU |       VFPU_RSINGLE |  70}, \
+    {"S122",	RTYPE_VFPU |       VFPU_RSINGLE |  70}, \
+    {"s122.s",	RTYPE_VFPU |       VFPU_RSINGLE |  70}, \
+    {"S122.s",	RTYPE_VFPU |       VFPU_RSINGLE |  70}, \
+    {"s123",	RTYPE_VFPU |       VFPU_RSINGLE | 102}, \
+    {"S123",	RTYPE_VFPU |       VFPU_RSINGLE | 102}, \
+    {"s123.s",	RTYPE_VFPU |       VFPU_RSINGLE | 102}, \
+    {"S123.s",	RTYPE_VFPU |       VFPU_RSINGLE | 102}, \
+    {"s130",	RTYPE_VFPU |       VFPU_RSINGLE |   7}, \
+    {"S130",	RTYPE_VFPU |       VFPU_RSINGLE |   7}, \
+    {"s130.s",	RTYPE_VFPU |       VFPU_RSINGLE |   7}, \
+    {"S130.s",	RTYPE_VFPU |       VFPU_RSINGLE |   7}, \
+    {"s131",	RTYPE_VFPU |       VFPU_RSINGLE |  39}, \
+    {"S131",	RTYPE_VFPU |       VFPU_RSINGLE |  39}, \
+    {"s131.s",	RTYPE_VFPU |       VFPU_RSINGLE |  39}, \
+    {"S131.s",	RTYPE_VFPU |       VFPU_RSINGLE |  39}, \
+    {"s132",	RTYPE_VFPU |       VFPU_RSINGLE |  71}, \
+    {"S132",	RTYPE_VFPU |       VFPU_RSINGLE |  71}, \
+    {"s132.s",	RTYPE_VFPU |       VFPU_RSINGLE |  71}, \
+    {"S132.s",	RTYPE_VFPU |       VFPU_RSINGLE |  71}, \
+    {"s133",	RTYPE_VFPU |       VFPU_RSINGLE | 103}, \
+    {"S133",	RTYPE_VFPU |       VFPU_RSINGLE | 103}, \
+    {"s133.s",	RTYPE_VFPU |       VFPU_RSINGLE | 103}, \
+    {"S133.s",	RTYPE_VFPU |       VFPU_RSINGLE | 103}, \
+    {"s200",	RTYPE_VFPU |       VFPU_RSINGLE |   8}, \
+    {"S200",	RTYPE_VFPU |       VFPU_RSINGLE |   8}, \
+    {"s200.s",	RTYPE_VFPU |       VFPU_RSINGLE |   8}, \
+    {"S200.s",	RTYPE_VFPU |       VFPU_RSINGLE |   8}, \
+    {"s201",	RTYPE_VFPU |       VFPU_RSINGLE |  40}, \
+    {"S201",	RTYPE_VFPU |       VFPU_RSINGLE |  40}, \
+    {"s201.s",	RTYPE_VFPU |       VFPU_RSINGLE |  40}, \
+    {"S201.s",	RTYPE_VFPU |       VFPU_RSINGLE |  40}, \
+    {"s202",	RTYPE_VFPU |       VFPU_RSINGLE |  72}, \
+    {"S202",	RTYPE_VFPU |       VFPU_RSINGLE |  72}, \
+    {"s202.s",	RTYPE_VFPU |       VFPU_RSINGLE |  72}, \
+    {"S202.s",	RTYPE_VFPU |       VFPU_RSINGLE |  72}, \
+    {"s203",	RTYPE_VFPU |       VFPU_RSINGLE | 104}, \
+    {"S203",	RTYPE_VFPU |       VFPU_RSINGLE | 104}, \
+    {"s203.s",	RTYPE_VFPU |       VFPU_RSINGLE | 104}, \
+    {"S203.s",	RTYPE_VFPU |       VFPU_RSINGLE | 104}, \
+    {"s210",	RTYPE_VFPU |       VFPU_RSINGLE |   9}, \
+    {"S210",	RTYPE_VFPU |       VFPU_RSINGLE |   9}, \
+    {"s210.s",	RTYPE_VFPU |       VFPU_RSINGLE |   9}, \
+    {"S210.s",	RTYPE_VFPU |       VFPU_RSINGLE |   9}, \
+    {"s211",	RTYPE_VFPU |       VFPU_RSINGLE |  41}, \
+    {"S211",	RTYPE_VFPU |       VFPU_RSINGLE |  41}, \
+    {"s211.s",	RTYPE_VFPU |       VFPU_RSINGLE |  41}, \
+    {"S211.s",	RTYPE_VFPU |       VFPU_RSINGLE |  41}, \
+    {"s212",	RTYPE_VFPU |       VFPU_RSINGLE |  73}, \
+    {"S212",	RTYPE_VFPU |       VFPU_RSINGLE |  73}, \
+    {"s212.s",	RTYPE_VFPU |       VFPU_RSINGLE |  73}, \
+    {"S212.s",	RTYPE_VFPU |       VFPU_RSINGLE |  73}, \
+    {"s213",	RTYPE_VFPU |       VFPU_RSINGLE | 105}, \
+    {"S213",	RTYPE_VFPU |       VFPU_RSINGLE | 105}, \
+    {"s213.s",	RTYPE_VFPU |       VFPU_RSINGLE | 105}, \
+    {"S213.s",	RTYPE_VFPU |       VFPU_RSINGLE | 105}, \
+    {"s220",	RTYPE_VFPU |       VFPU_RSINGLE |  10}, \
+    {"S220",	RTYPE_VFPU |       VFPU_RSINGLE |  10}, \
+    {"s220.s",	RTYPE_VFPU |       VFPU_RSINGLE |  10}, \
+    {"S220.s",	RTYPE_VFPU |       VFPU_RSINGLE |  10}, \
+    {"s221",	RTYPE_VFPU |       VFPU_RSINGLE |  42}, \
+    {"S221",	RTYPE_VFPU |       VFPU_RSINGLE |  42}, \
+    {"s221.s",	RTYPE_VFPU |       VFPU_RSINGLE |  42}, \
+    {"S221.s",	RTYPE_VFPU |       VFPU_RSINGLE |  42}, \
+    {"s222",	RTYPE_VFPU |       VFPU_RSINGLE |  74}, \
+    {"S222",	RTYPE_VFPU |       VFPU_RSINGLE |  74}, \
+    {"s222.s",	RTYPE_VFPU |       VFPU_RSINGLE |  74}, \
+    {"S222.s",	RTYPE_VFPU |       VFPU_RSINGLE |  74}, \
+    {"s223",	RTYPE_VFPU |       VFPU_RSINGLE | 106}, \
+    {"S223",	RTYPE_VFPU |       VFPU_RSINGLE | 106}, \
+    {"s223.s",	RTYPE_VFPU |       VFPU_RSINGLE | 106}, \
+    {"S223.s",	RTYPE_VFPU |       VFPU_RSINGLE | 106}, \
+    {"s230",	RTYPE_VFPU |       VFPU_RSINGLE |  11}, \
+    {"S230",	RTYPE_VFPU |       VFPU_RSINGLE |  11}, \
+    {"s230.s",	RTYPE_VFPU |       VFPU_RSINGLE |  11}, \
+    {"S230.s",	RTYPE_VFPU |       VFPU_RSINGLE |  11}, \
+    {"s231",	RTYPE_VFPU |       VFPU_RSINGLE |  43}, \
+    {"S231",	RTYPE_VFPU |       VFPU_RSINGLE |  43}, \
+    {"s231.s",	RTYPE_VFPU |       VFPU_RSINGLE |  43}, \
+    {"S231.s",	RTYPE_VFPU |       VFPU_RSINGLE |  43}, \
+    {"s232",	RTYPE_VFPU |       VFPU_RSINGLE |  75}, \
+    {"S232",	RTYPE_VFPU |       VFPU_RSINGLE |  75}, \
+    {"s232.s",	RTYPE_VFPU |       VFPU_RSINGLE |  75}, \
+    {"S232.s",	RTYPE_VFPU |       VFPU_RSINGLE |  75}, \
+    {"s233",	RTYPE_VFPU |       VFPU_RSINGLE | 107}, \
+    {"S233",	RTYPE_VFPU |       VFPU_RSINGLE | 107}, \
+    {"s233.s",	RTYPE_VFPU |       VFPU_RSINGLE | 107}, \
+    {"S233.s",	RTYPE_VFPU |       VFPU_RSINGLE | 107}, \
+    {"s300",	RTYPE_VFPU |       VFPU_RSINGLE |  12}, \
+    {"S300",	RTYPE_VFPU |       VFPU_RSINGLE |  12}, \
+    {"s300.s",	RTYPE_VFPU |       VFPU_RSINGLE |  12}, \
+    {"S300.s",	RTYPE_VFPU |       VFPU_RSINGLE |  12}, \
+    {"s301",	RTYPE_VFPU |       VFPU_RSINGLE |  44}, \
+    {"S301",	RTYPE_VFPU |       VFPU_RSINGLE |  44}, \
+    {"s301.s",	RTYPE_VFPU |       VFPU_RSINGLE |  44}, \
+    {"S301.s",	RTYPE_VFPU |       VFPU_RSINGLE |  44}, \
+    {"s302",	RTYPE_VFPU |       VFPU_RSINGLE |  76}, \
+    {"S302",	RTYPE_VFPU |       VFPU_RSINGLE |  76}, \
+    {"s302.s",	RTYPE_VFPU |       VFPU_RSINGLE |  76}, \
+    {"S302.s",	RTYPE_VFPU |       VFPU_RSINGLE |  76}, \
+    {"s303",	RTYPE_VFPU |       VFPU_RSINGLE | 108}, \
+    {"S303",	RTYPE_VFPU |       VFPU_RSINGLE | 108}, \
+    {"s303.s",	RTYPE_VFPU |       VFPU_RSINGLE | 108}, \
+    {"S303.s",	RTYPE_VFPU |       VFPU_RSINGLE | 108}, \
+    {"s310",	RTYPE_VFPU |       VFPU_RSINGLE |  13}, \
+    {"S310",	RTYPE_VFPU |       VFPU_RSINGLE |  13}, \
+    {"s310.s",	RTYPE_VFPU |       VFPU_RSINGLE |  13}, \
+    {"S310.s",	RTYPE_VFPU |       VFPU_RSINGLE |  13}, \
+    {"s311",	RTYPE_VFPU |       VFPU_RSINGLE |  45}, \
+    {"S311",	RTYPE_VFPU |       VFPU_RSINGLE |  45}, \
+    {"s311.s",	RTYPE_VFPU |       VFPU_RSINGLE |  45}, \
+    {"S311.s",	RTYPE_VFPU |       VFPU_RSINGLE |  45}, \
+    {"s312",	RTYPE_VFPU |       VFPU_RSINGLE |  77}, \
+    {"S312",	RTYPE_VFPU |       VFPU_RSINGLE |  77}, \
+    {"s312.s",	RTYPE_VFPU |       VFPU_RSINGLE |  77}, \
+    {"S312.s",	RTYPE_VFPU |       VFPU_RSINGLE |  77}, \
+    {"s313",	RTYPE_VFPU |       VFPU_RSINGLE | 109}, \
+    {"S313",	RTYPE_VFPU |       VFPU_RSINGLE | 109}, \
+    {"s313.s",	RTYPE_VFPU |       VFPU_RSINGLE | 109}, \
+    {"S313.s",	RTYPE_VFPU |       VFPU_RSINGLE | 109}, \
+    {"s320",	RTYPE_VFPU |       VFPU_RSINGLE |  14}, \
+    {"S320",	RTYPE_VFPU |       VFPU_RSINGLE |  14}, \
+    {"s320.s",	RTYPE_VFPU |       VFPU_RSINGLE |  14}, \
+    {"S320.s",	RTYPE_VFPU |       VFPU_RSINGLE |  14}, \
+    {"s321",	RTYPE_VFPU |       VFPU_RSINGLE |  46}, \
+    {"S321",	RTYPE_VFPU |       VFPU_RSINGLE |  46}, \
+    {"s321.s",	RTYPE_VFPU |       VFPU_RSINGLE |  46}, \
+    {"S321.s",	RTYPE_VFPU |       VFPU_RSINGLE |  46}, \
+    {"s322",	RTYPE_VFPU |       VFPU_RSINGLE |  78}, \
+    {"S322",	RTYPE_VFPU |       VFPU_RSINGLE |  78}, \
+    {"s322.s",	RTYPE_VFPU |       VFPU_RSINGLE |  78}, \
+    {"S322.s",	RTYPE_VFPU |       VFPU_RSINGLE |  78}, \
+    {"s323",	RTYPE_VFPU |       VFPU_RSINGLE | 110}, \
+    {"S323",	RTYPE_VFPU |       VFPU_RSINGLE | 110}, \
+    {"s323.s",	RTYPE_VFPU |       VFPU_RSINGLE | 110}, \
+    {"S323.s",	RTYPE_VFPU |       VFPU_RSINGLE | 110}, \
+    {"s330",	RTYPE_VFPU |       VFPU_RSINGLE |  15}, \
+    {"S330",	RTYPE_VFPU |       VFPU_RSINGLE |  15}, \
+    {"s330.s",	RTYPE_VFPU |       VFPU_RSINGLE |  15}, \
+    {"S330.s",	RTYPE_VFPU |       VFPU_RSINGLE |  15}, \
+    {"s331",	RTYPE_VFPU |       VFPU_RSINGLE |  47}, \
+    {"S331",	RTYPE_VFPU |       VFPU_RSINGLE |  47}, \
+    {"s331.s",	RTYPE_VFPU |       VFPU_RSINGLE |  47}, \
+    {"S331.s",	RTYPE_VFPU |       VFPU_RSINGLE |  47}, \
+    {"s332",	RTYPE_VFPU |       VFPU_RSINGLE |  79}, \
+    {"S332",	RTYPE_VFPU |       VFPU_RSINGLE |  79}, \
+    {"s332.s",	RTYPE_VFPU |       VFPU_RSINGLE |  79}, \
+    {"S332.s",	RTYPE_VFPU |       VFPU_RSINGLE |  79}, \
+    {"s333",	RTYPE_VFPU |       VFPU_RSINGLE | 111}, \
+    {"S333",	RTYPE_VFPU |       VFPU_RSINGLE | 111}, \
+    {"s333.s",	RTYPE_VFPU |       VFPU_RSINGLE | 111}, \
+    {"S333.s",	RTYPE_VFPU |       VFPU_RSINGLE | 111}, \
+    {"s400",	RTYPE_VFPU |       VFPU_RSINGLE |  16}, \
+    {"S400",	RTYPE_VFPU |       VFPU_RSINGLE |  16}, \
+    {"s400.s",	RTYPE_VFPU |       VFPU_RSINGLE |  16}, \
+    {"S400.s",	RTYPE_VFPU |       VFPU_RSINGLE |  16}, \
+    {"s401",	RTYPE_VFPU |       VFPU_RSINGLE |  48}, \
+    {"S401",	RTYPE_VFPU |       VFPU_RSINGLE |  48}, \
+    {"s401.s",	RTYPE_VFPU |       VFPU_RSINGLE |  48}, \
+    {"S401.s",	RTYPE_VFPU |       VFPU_RSINGLE |  48}, \
+    {"s402",	RTYPE_VFPU |       VFPU_RSINGLE |  80}, \
+    {"S402",	RTYPE_VFPU |       VFPU_RSINGLE |  80}, \
+    {"s402.s",	RTYPE_VFPU |       VFPU_RSINGLE |  80}, \
+    {"S402.s",	RTYPE_VFPU |       VFPU_RSINGLE |  80}, \
+    {"s403",	RTYPE_VFPU |       VFPU_RSINGLE | 112}, \
+    {"S403",	RTYPE_VFPU |       VFPU_RSINGLE | 112}, \
+    {"s403.s",	RTYPE_VFPU |       VFPU_RSINGLE | 112}, \
+    {"S403.s",	RTYPE_VFPU |       VFPU_RSINGLE | 112}, \
+    {"s410",	RTYPE_VFPU |       VFPU_RSINGLE |  17}, \
+    {"S410",	RTYPE_VFPU |       VFPU_RSINGLE |  17}, \
+    {"s410.s",	RTYPE_VFPU |       VFPU_RSINGLE |  17}, \
+    {"S410.s",	RTYPE_VFPU |       VFPU_RSINGLE |  17}, \
+    {"s411",	RTYPE_VFPU |       VFPU_RSINGLE |  49}, \
+    {"S411",	RTYPE_VFPU |       VFPU_RSINGLE |  49}, \
+    {"s411.s",	RTYPE_VFPU |       VFPU_RSINGLE |  49}, \
+    {"S411.s",	RTYPE_VFPU |       VFPU_RSINGLE |  49}, \
+    {"s412",	RTYPE_VFPU |       VFPU_RSINGLE |  81}, \
+    {"S412",	RTYPE_VFPU |       VFPU_RSINGLE |  81}, \
+    {"s412.s",	RTYPE_VFPU |       VFPU_RSINGLE |  81}, \
+    {"S412.s",	RTYPE_VFPU |       VFPU_RSINGLE |  81}, \
+    {"s413",	RTYPE_VFPU |       VFPU_RSINGLE | 113}, \
+    {"S413",	RTYPE_VFPU |       VFPU_RSINGLE | 113}, \
+    {"s413.s",	RTYPE_VFPU |       VFPU_RSINGLE | 113}, \
+    {"S413.s",	RTYPE_VFPU |       VFPU_RSINGLE | 113}, \
+    {"s420",	RTYPE_VFPU |       VFPU_RSINGLE |  18}, \
+    {"S420",	RTYPE_VFPU |       VFPU_RSINGLE |  18}, \
+    {"s420.s",	RTYPE_VFPU |       VFPU_RSINGLE |  18}, \
+    {"S420.s",	RTYPE_VFPU |       VFPU_RSINGLE |  18}, \
+    {"s421",	RTYPE_VFPU |       VFPU_RSINGLE |  50}, \
+    {"S421",	RTYPE_VFPU |       VFPU_RSINGLE |  50}, \
+    {"s421.s",	RTYPE_VFPU |       VFPU_RSINGLE |  50}, \
+    {"S421.s",	RTYPE_VFPU |       VFPU_RSINGLE |  50}, \
+    {"s422",	RTYPE_VFPU |       VFPU_RSINGLE |  82}, \
+    {"S422",	RTYPE_VFPU |       VFPU_RSINGLE |  82}, \
+    {"s422.s",	RTYPE_VFPU |       VFPU_RSINGLE |  82}, \
+    {"S422.s",	RTYPE_VFPU |       VFPU_RSINGLE |  82}, \
+    {"s423",	RTYPE_VFPU |       VFPU_RSINGLE | 114}, \
+    {"S423",	RTYPE_VFPU |       VFPU_RSINGLE | 114}, \
+    {"s423.s",	RTYPE_VFPU |       VFPU_RSINGLE | 114}, \
+    {"S423.s",	RTYPE_VFPU |       VFPU_RSINGLE | 114}, \
+    {"s430",	RTYPE_VFPU |       VFPU_RSINGLE |  19}, \
+    {"S430",	RTYPE_VFPU |       VFPU_RSINGLE |  19}, \
+    {"s430.s",	RTYPE_VFPU |       VFPU_RSINGLE |  19}, \
+    {"S430.s",	RTYPE_VFPU |       VFPU_RSINGLE |  19}, \
+    {"s431",	RTYPE_VFPU |       VFPU_RSINGLE |  51}, \
+    {"S431",	RTYPE_VFPU |       VFPU_RSINGLE |  51}, \
+    {"s431.s",	RTYPE_VFPU |       VFPU_RSINGLE |  51}, \
+    {"S431.s",	RTYPE_VFPU |       VFPU_RSINGLE |  51}, \
+    {"s432",	RTYPE_VFPU |       VFPU_RSINGLE |  83}, \
+    {"S432",	RTYPE_VFPU |       VFPU_RSINGLE |  83}, \
+    {"s432.s",	RTYPE_VFPU |       VFPU_RSINGLE |  83}, \
+    {"S432.s",	RTYPE_VFPU |       VFPU_RSINGLE |  83}, \
+    {"s433",	RTYPE_VFPU |       VFPU_RSINGLE | 115}, \
+    {"S433",	RTYPE_VFPU |       VFPU_RSINGLE | 115}, \
+    {"s433.s",	RTYPE_VFPU |       VFPU_RSINGLE | 115}, \
+    {"S433.s",	RTYPE_VFPU |       VFPU_RSINGLE | 115}, \
+    {"s500",	RTYPE_VFPU |       VFPU_RSINGLE |  20}, \
+    {"S500",	RTYPE_VFPU |       VFPU_RSINGLE |  20}, \
+    {"s500.s",	RTYPE_VFPU |       VFPU_RSINGLE |  20}, \
+    {"S500.s",	RTYPE_VFPU |       VFPU_RSINGLE |  20}, \
+    {"s501",	RTYPE_VFPU |       VFPU_RSINGLE |  52}, \
+    {"S501",	RTYPE_VFPU |       VFPU_RSINGLE |  52}, \
+    {"s501.s",	RTYPE_VFPU |       VFPU_RSINGLE |  52}, \
+    {"S501.s",	RTYPE_VFPU |       VFPU_RSINGLE |  52}, \
+    {"s502",	RTYPE_VFPU |       VFPU_RSINGLE |  84}, \
+    {"S502",	RTYPE_VFPU |       VFPU_RSINGLE |  84}, \
+    {"s502.s",	RTYPE_VFPU |       VFPU_RSINGLE |  84}, \
+    {"S502.s",	RTYPE_VFPU |       VFPU_RSINGLE |  84}, \
+    {"s503",	RTYPE_VFPU |       VFPU_RSINGLE | 116}, \
+    {"S503",	RTYPE_VFPU |       VFPU_RSINGLE | 116}, \
+    {"s503.s",	RTYPE_VFPU |       VFPU_RSINGLE | 116}, \
+    {"S503.s",	RTYPE_VFPU |       VFPU_RSINGLE | 116}, \
+    {"s510",	RTYPE_VFPU |       VFPU_RSINGLE |  21}, \
+    {"S510",	RTYPE_VFPU |       VFPU_RSINGLE |  21}, \
+    {"s510.s",	RTYPE_VFPU |       VFPU_RSINGLE |  21}, \
+    {"S510.s",	RTYPE_VFPU |       VFPU_RSINGLE |  21}, \
+    {"s511",	RTYPE_VFPU |       VFPU_RSINGLE |  53}, \
+    {"S511",	RTYPE_VFPU |       VFPU_RSINGLE |  53}, \
+    {"s511.s",	RTYPE_VFPU |       VFPU_RSINGLE |  53}, \
+    {"S511.s",	RTYPE_VFPU |       VFPU_RSINGLE |  53}, \
+    {"s512",	RTYPE_VFPU |       VFPU_RSINGLE |  85}, \
+    {"S512",	RTYPE_VFPU |       VFPU_RSINGLE |  85}, \
+    {"s512.s",	RTYPE_VFPU |       VFPU_RSINGLE |  85}, \
+    {"S512.s",	RTYPE_VFPU |       VFPU_RSINGLE |  85}, \
+    {"s513",	RTYPE_VFPU |       VFPU_RSINGLE | 117}, \
+    {"S513",	RTYPE_VFPU |       VFPU_RSINGLE | 117}, \
+    {"s513.s",	RTYPE_VFPU |       VFPU_RSINGLE | 117}, \
+    {"S513.s",	RTYPE_VFPU |       VFPU_RSINGLE | 117}, \
+    {"s520",	RTYPE_VFPU |       VFPU_RSINGLE |  22}, \
+    {"S520",	RTYPE_VFPU |       VFPU_RSINGLE |  22}, \
+    {"s520.s",	RTYPE_VFPU |       VFPU_RSINGLE |  22}, \
+    {"S520.s",	RTYPE_VFPU |       VFPU_RSINGLE |  22}, \
+    {"s521",	RTYPE_VFPU |       VFPU_RSINGLE |  54}, \
+    {"S521",	RTYPE_VFPU |       VFPU_RSINGLE |  54}, \
+    {"s521.s",	RTYPE_VFPU |       VFPU_RSINGLE |  54}, \
+    {"S521.s",	RTYPE_VFPU |       VFPU_RSINGLE |  54}, \
+    {"s522",	RTYPE_VFPU |       VFPU_RSINGLE |  86}, \
+    {"S522",	RTYPE_VFPU |       VFPU_RSINGLE |  86}, \
+    {"s522.s",	RTYPE_VFPU |       VFPU_RSINGLE |  86}, \
+    {"S522.s",	RTYPE_VFPU |       VFPU_RSINGLE |  86}, \
+    {"s523",	RTYPE_VFPU |       VFPU_RSINGLE | 118}, \
+    {"S523",	RTYPE_VFPU |       VFPU_RSINGLE | 118}, \
+    {"s523.s",	RTYPE_VFPU |       VFPU_RSINGLE | 118}, \
+    {"S523.s",	RTYPE_VFPU |       VFPU_RSINGLE | 118}, \
+    {"s530",	RTYPE_VFPU |       VFPU_RSINGLE |  23}, \
+    {"S530",	RTYPE_VFPU |       VFPU_RSINGLE |  23}, \
+    {"s530.s",	RTYPE_VFPU |       VFPU_RSINGLE |  23}, \
+    {"S530.s",	RTYPE_VFPU |       VFPU_RSINGLE |  23}, \
+    {"s531",	RTYPE_VFPU |       VFPU_RSINGLE |  55}, \
+    {"S531",	RTYPE_VFPU |       VFPU_RSINGLE |  55}, \
+    {"s531.s",	RTYPE_VFPU |       VFPU_RSINGLE |  55}, \
+    {"S531.s",	RTYPE_VFPU |       VFPU_RSINGLE |  55}, \
+    {"s532",	RTYPE_VFPU |       VFPU_RSINGLE |  87}, \
+    {"S532",	RTYPE_VFPU |       VFPU_RSINGLE |  87}, \
+    {"s532.s",	RTYPE_VFPU |       VFPU_RSINGLE |  87}, \
+    {"S532.s",	RTYPE_VFPU |       VFPU_RSINGLE |  87}, \
+    {"s533",	RTYPE_VFPU |       VFPU_RSINGLE | 119}, \
+    {"S533",	RTYPE_VFPU |       VFPU_RSINGLE | 119}, \
+    {"s533.s",	RTYPE_VFPU |       VFPU_RSINGLE | 119}, \
+    {"S533.s",	RTYPE_VFPU |       VFPU_RSINGLE | 119}, \
+    {"s600",	RTYPE_VFPU |       VFPU_RSINGLE |  24}, \
+    {"S600",	RTYPE_VFPU |       VFPU_RSINGLE |  24}, \
+    {"s600.s",	RTYPE_VFPU |       VFPU_RSINGLE |  24}, \
+    {"S600.s",	RTYPE_VFPU |       VFPU_RSINGLE |  24}, \
+    {"s601",	RTYPE_VFPU |       VFPU_RSINGLE |  56}, \
+    {"S601",	RTYPE_VFPU |       VFPU_RSINGLE |  56}, \
+    {"s601.s",	RTYPE_VFPU |       VFPU_RSINGLE |  56}, \
+    {"S601.s",	RTYPE_VFPU |       VFPU_RSINGLE |  56}, \
+    {"s602",	RTYPE_VFPU |       VFPU_RSINGLE |  88}, \
+    {"S602",	RTYPE_VFPU |       VFPU_RSINGLE |  88}, \
+    {"s602.s",	RTYPE_VFPU |       VFPU_RSINGLE |  88}, \
+    {"S602.s",	RTYPE_VFPU |       VFPU_RSINGLE |  88}, \
+    {"s603",	RTYPE_VFPU |       VFPU_RSINGLE | 120}, \
+    {"S603",	RTYPE_VFPU |       VFPU_RSINGLE | 120}, \
+    {"s603.s",	RTYPE_VFPU |       VFPU_RSINGLE | 120}, \
+    {"S603.s",	RTYPE_VFPU |       VFPU_RSINGLE | 120}, \
+    {"s610",	RTYPE_VFPU |       VFPU_RSINGLE |  25}, \
+    {"S610",	RTYPE_VFPU |       VFPU_RSINGLE |  25}, \
+    {"s610.s",	RTYPE_VFPU |       VFPU_RSINGLE |  25}, \
+    {"S610.s",	RTYPE_VFPU |       VFPU_RSINGLE |  25}, \
+    {"s611",	RTYPE_VFPU |       VFPU_RSINGLE |  57}, \
+    {"S611",	RTYPE_VFPU |       VFPU_RSINGLE |  57}, \
+    {"s611.s",	RTYPE_VFPU |       VFPU_RSINGLE |  57}, \
+    {"S611.s",	RTYPE_VFPU |       VFPU_RSINGLE |  57}, \
+    {"s612",	RTYPE_VFPU |       VFPU_RSINGLE |  89}, \
+    {"S612",	RTYPE_VFPU |       VFPU_RSINGLE |  89}, \
+    {"s612.s",	RTYPE_VFPU |       VFPU_RSINGLE |  89}, \
+    {"S612.s",	RTYPE_VFPU |       VFPU_RSINGLE |  89}, \
+    {"s613",	RTYPE_VFPU |       VFPU_RSINGLE | 121}, \
+    {"S613",	RTYPE_VFPU |       VFPU_RSINGLE | 121}, \
+    {"s613.s",	RTYPE_VFPU |       VFPU_RSINGLE | 121}, \
+    {"S613.s",	RTYPE_VFPU |       VFPU_RSINGLE | 121}, \
+    {"s620",	RTYPE_VFPU |       VFPU_RSINGLE |  26}, \
+    {"S620",	RTYPE_VFPU |       VFPU_RSINGLE |  26}, \
+    {"s620.s",	RTYPE_VFPU |       VFPU_RSINGLE |  26}, \
+    {"S620.s",	RTYPE_VFPU |       VFPU_RSINGLE |  26}, \
+    {"s621",	RTYPE_VFPU |       VFPU_RSINGLE |  58}, \
+    {"S621",	RTYPE_VFPU |       VFPU_RSINGLE |  58}, \
+    {"s621.s",	RTYPE_VFPU |       VFPU_RSINGLE |  58}, \
+    {"S621.s",	RTYPE_VFPU |       VFPU_RSINGLE |  58}, \
+    {"s622",	RTYPE_VFPU |       VFPU_RSINGLE |  90}, \
+    {"S622",	RTYPE_VFPU |       VFPU_RSINGLE |  90}, \
+    {"s622.s",	RTYPE_VFPU |       VFPU_RSINGLE |  90}, \
+    {"S622.s",	RTYPE_VFPU |       VFPU_RSINGLE |  90}, \
+    {"s623",	RTYPE_VFPU |       VFPU_RSINGLE | 122}, \
+    {"S623",	RTYPE_VFPU |       VFPU_RSINGLE | 122}, \
+    {"s623.s",	RTYPE_VFPU |       VFPU_RSINGLE | 122}, \
+    {"S623.s",	RTYPE_VFPU |       VFPU_RSINGLE | 122}, \
+    {"s630",	RTYPE_VFPU |       VFPU_RSINGLE |  27}, \
+    {"S630",	RTYPE_VFPU |       VFPU_RSINGLE |  27}, \
+    {"s630.s",	RTYPE_VFPU |       VFPU_RSINGLE |  27}, \
+    {"S630.s",	RTYPE_VFPU |       VFPU_RSINGLE |  27}, \
+    {"s631",	RTYPE_VFPU |       VFPU_RSINGLE |  59}, \
+    {"S631",	RTYPE_VFPU |       VFPU_RSINGLE |  59}, \
+    {"s631.s",	RTYPE_VFPU |       VFPU_RSINGLE |  59}, \
+    {"S631.s",	RTYPE_VFPU |       VFPU_RSINGLE |  59}, \
+    {"s632",	RTYPE_VFPU |       VFPU_RSINGLE |  91}, \
+    {"S632",	RTYPE_VFPU |       VFPU_RSINGLE |  91}, \
+    {"s632.s",	RTYPE_VFPU |       VFPU_RSINGLE |  91}, \
+    {"S632.s",	RTYPE_VFPU |       VFPU_RSINGLE |  91}, \
+    {"s633",	RTYPE_VFPU |       VFPU_RSINGLE | 123}, \
+    {"S633",	RTYPE_VFPU |       VFPU_RSINGLE | 123}, \
+    {"s633.s",	RTYPE_VFPU |       VFPU_RSINGLE | 123}, \
+    {"S633.s",	RTYPE_VFPU |       VFPU_RSINGLE | 123}, \
+    {"s700",	RTYPE_VFPU |       VFPU_RSINGLE |  28}, \
+    {"S700",	RTYPE_VFPU |       VFPU_RSINGLE |  28}, \
+    {"s700.s",	RTYPE_VFPU |       VFPU_RSINGLE |  28}, \
+    {"S700.s",	RTYPE_VFPU |       VFPU_RSINGLE |  28}, \
+    {"s701",	RTYPE_VFPU |       VFPU_RSINGLE |  60}, \
+    {"S701",	RTYPE_VFPU |       VFPU_RSINGLE |  60}, \
+    {"s701.s",	RTYPE_VFPU |       VFPU_RSINGLE |  60}, \
+    {"S701.s",	RTYPE_VFPU |       VFPU_RSINGLE |  60}, \
+    {"s702",	RTYPE_VFPU |       VFPU_RSINGLE |  92}, \
+    {"S702",	RTYPE_VFPU |       VFPU_RSINGLE |  92}, \
+    {"s702.s",	RTYPE_VFPU |       VFPU_RSINGLE |  92}, \
+    {"S702.s",	RTYPE_VFPU |       VFPU_RSINGLE |  92}, \
+    {"s703",	RTYPE_VFPU |       VFPU_RSINGLE | 124}, \
+    {"S703",	RTYPE_VFPU |       VFPU_RSINGLE | 124}, \
+    {"s703.s",	RTYPE_VFPU |       VFPU_RSINGLE | 124}, \
+    {"S703.s",	RTYPE_VFPU |       VFPU_RSINGLE | 124}, \
+    {"s710",	RTYPE_VFPU |       VFPU_RSINGLE |  29}, \
+    {"S710",	RTYPE_VFPU |       VFPU_RSINGLE |  29}, \
+    {"s710.s",	RTYPE_VFPU |       VFPU_RSINGLE |  29}, \
+    {"S710.s",	RTYPE_VFPU |       VFPU_RSINGLE |  29}, \
+    {"s711",	RTYPE_VFPU |       VFPU_RSINGLE |  61}, \
+    {"S711",	RTYPE_VFPU |       VFPU_RSINGLE |  61}, \
+    {"s711.s",	RTYPE_VFPU |       VFPU_RSINGLE |  61}, \
+    {"S711.s",	RTYPE_VFPU |       VFPU_RSINGLE |  61}, \
+    {"s712",	RTYPE_VFPU |       VFPU_RSINGLE |  93}, \
+    {"S712",	RTYPE_VFPU |       VFPU_RSINGLE |  93}, \
+    {"s712.s",	RTYPE_VFPU |       VFPU_RSINGLE |  93}, \
+    {"S712.s",	RTYPE_VFPU |       VFPU_RSINGLE |  93}, \
+    {"s713",	RTYPE_VFPU |       VFPU_RSINGLE | 125}, \
+    {"S713",	RTYPE_VFPU |       VFPU_RSINGLE | 125}, \
+    {"s713.s",	RTYPE_VFPU |       VFPU_RSINGLE | 125}, \
+    {"S713.s",	RTYPE_VFPU |       VFPU_RSINGLE | 125}, \
+    {"s720",	RTYPE_VFPU |       VFPU_RSINGLE |  30}, \
+    {"S720",	RTYPE_VFPU |       VFPU_RSINGLE |  30}, \
+    {"s720.s",	RTYPE_VFPU |       VFPU_RSINGLE |  30}, \
+    {"S720.s",	RTYPE_VFPU |       VFPU_RSINGLE |  30}, \
+    {"s721",	RTYPE_VFPU |       VFPU_RSINGLE |  62}, \
+    {"S721",	RTYPE_VFPU |       VFPU_RSINGLE |  62}, \
+    {"s721.s",	RTYPE_VFPU |       VFPU_RSINGLE |  62}, \
+    {"S721.s",	RTYPE_VFPU |       VFPU_RSINGLE |  62}, \
+    {"s722",	RTYPE_VFPU |       VFPU_RSINGLE |  94}, \
+    {"S722",	RTYPE_VFPU |       VFPU_RSINGLE |  94}, \
+    {"s722.s",	RTYPE_VFPU |       VFPU_RSINGLE |  94}, \
+    {"S722.s",	RTYPE_VFPU |       VFPU_RSINGLE |  94}, \
+    {"s723",	RTYPE_VFPU |       VFPU_RSINGLE | 126}, \
+    {"S723",	RTYPE_VFPU |       VFPU_RSINGLE | 126}, \
+    {"s723.s",	RTYPE_VFPU |       VFPU_RSINGLE | 126}, \
+    {"S723.s",	RTYPE_VFPU |       VFPU_RSINGLE | 126}, \
+    {"s730",	RTYPE_VFPU |       VFPU_RSINGLE |  31}, \
+    {"S730",	RTYPE_VFPU |       VFPU_RSINGLE |  31}, \
+    {"s730.s",	RTYPE_VFPU |       VFPU_RSINGLE |  31}, \
+    {"S730.s",	RTYPE_VFPU |       VFPU_RSINGLE |  31}, \
+    {"s731",	RTYPE_VFPU |       VFPU_RSINGLE |  63}, \
+    {"S731",	RTYPE_VFPU |       VFPU_RSINGLE |  63}, \
+    {"s731.s",	RTYPE_VFPU |       VFPU_RSINGLE |  63}, \
+    {"S731.s",	RTYPE_VFPU |       VFPU_RSINGLE |  63}, \
+    {"s732",	RTYPE_VFPU |       VFPU_RSINGLE |  95}, \
+    {"S732",	RTYPE_VFPU |       VFPU_RSINGLE |  95}, \
+    {"s732.s",	RTYPE_VFPU |       VFPU_RSINGLE |  95}, \
+    {"S732.s",	RTYPE_VFPU |       VFPU_RSINGLE |  95}, \
+    {"s733",	RTYPE_VFPU |       VFPU_RSINGLE | 127}, \
+    {"S733",	RTYPE_VFPU |       VFPU_RSINGLE | 127}, \
+    {"s733.s",	RTYPE_VFPU |       VFPU_RSINGLE | 127}, \
+    {"S733.s",	RTYPE_VFPU |       VFPU_RSINGLE | 127}, \
+    {"r000",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  32}, \
+    {"R000",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  32}, \
+    {"r000.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  32}, \
+    {"R000.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  32}, \
+    {"r000.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  32}, \
+    {"R000.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  32}, \
+    {"r000.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  32}, \
+    {"R000.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  32}, \
+    {"r001",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  33}, \
+    {"R001",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  33}, \
+    {"r001.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  33}, \
+    {"R001.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  33}, \
+    {"r001.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  33}, \
+    {"R001.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  33}, \
+    {"r001.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  33}, \
+    {"R001.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  33}, \
+    {"r002",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  34}, \
+    {"R002",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  34}, \
+    {"r002.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  34}, \
+    {"R002.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  34}, \
+    {"r002.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  34}, \
+    {"R002.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  34}, \
+    {"r002.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  34}, \
+    {"R002.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  34}, \
+    {"r003",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  35}, \
+    {"R003",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  35}, \
+    {"r003.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  35}, \
+    {"R003.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  35}, \
+    {"r003.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  35}, \
+    {"R003.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  35}, \
+    {"r003.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  35}, \
+    {"R003.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  35}, \
+    {"r010",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  96}, \
+    {"R010",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  96}, \
+    {"r010.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  96}, \
+    {"R010.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  96}, \
+    {"r011",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  97}, \
+    {"R011",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  97}, \
+    {"r011.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  97}, \
+    {"R011.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  97}, \
+    {"r012",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  98}, \
+    {"R012",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  98}, \
+    {"r012.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  98}, \
+    {"R012.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  98}, \
+    {"r013",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  99}, \
+    {"R013",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  99}, \
+    {"r013.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  99}, \
+    {"R013.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  99}, \
+    {"r020",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  96}, \
+    {"R020",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  96}, \
+    {"r020.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  96}, \
+    {"R020.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  96}, \
+    {"r021",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  97}, \
+    {"R021",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  97}, \
+    {"r021.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  97}, \
+    {"R021.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  97}, \
+    {"r022",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  98}, \
+    {"R022",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  98}, \
+    {"r022.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  98}, \
+    {"R022.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  98}, \
+    {"r023",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  99}, \
+    {"R023",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  99}, \
+    {"r023.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  99}, \
+    {"R023.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  99}, \
+    {"r100",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  36}, \
+    {"R100",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  36}, \
+    {"r100.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  36}, \
+    {"R100.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  36}, \
+    {"r100.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  36}, \
+    {"R100.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  36}, \
+    {"r100.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  36}, \
+    {"R100.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  36}, \
+    {"r101",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  37}, \
+    {"R101",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  37}, \
+    {"r101.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  37}, \
+    {"R101.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  37}, \
+    {"r101.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  37}, \
+    {"R101.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  37}, \
+    {"r101.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  37}, \
+    {"R101.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  37}, \
+    {"r102",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  38}, \
+    {"R102",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  38}, \
+    {"r102.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  38}, \
+    {"R102.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  38}, \
+    {"r102.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  38}, \
+    {"R102.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  38}, \
+    {"r102.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  38}, \
+    {"R102.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  38}, \
+    {"r103",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  39}, \
+    {"R103",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  39}, \
+    {"r103.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  39}, \
+    {"R103.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  39}, \
+    {"r103.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  39}, \
+    {"R103.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  39}, \
+    {"r103.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  39}, \
+    {"R103.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  39}, \
+    {"r110",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 100}, \
+    {"R110",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 100}, \
+    {"r110.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 100}, \
+    {"R110.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 100}, \
+    {"r111",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 101}, \
+    {"R111",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 101}, \
+    {"r111.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 101}, \
+    {"R111.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 101}, \
+    {"r112",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 102}, \
+    {"R112",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 102}, \
+    {"r112.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 102}, \
+    {"R112.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 102}, \
+    {"r113",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 103}, \
+    {"R113",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 103}, \
+    {"r113.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 103}, \
+    {"R113.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 103}, \
+    {"r120",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 100}, \
+    {"R120",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 100}, \
+    {"r120.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 100}, \
+    {"R120.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 100}, \
+    {"r121",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 101}, \
+    {"R121",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 101}, \
+    {"r121.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 101}, \
+    {"R121.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 101}, \
+    {"r122",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 102}, \
+    {"R122",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 102}, \
+    {"r122.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 102}, \
+    {"R122.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 102}, \
+    {"r123",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 103}, \
+    {"R123",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 103}, \
+    {"r123.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 103}, \
+    {"R123.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 103}, \
+    {"r200",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  40}, \
+    {"R200",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  40}, \
+    {"r200.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  40}, \
+    {"R200.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  40}, \
+    {"r200.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  40}, \
+    {"R200.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  40}, \
+    {"r200.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  40}, \
+    {"R200.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  40}, \
+    {"r201",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  41}, \
+    {"R201",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  41}, \
+    {"r201.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  41}, \
+    {"R201.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  41}, \
+    {"r201.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  41}, \
+    {"R201.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  41}, \
+    {"r201.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  41}, \
+    {"R201.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  41}, \
+    {"r202",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  42}, \
+    {"R202",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  42}, \
+    {"r202.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  42}, \
+    {"R202.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  42}, \
+    {"r202.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  42}, \
+    {"R202.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  42}, \
+    {"r202.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  42}, \
+    {"R202.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  42}, \
+    {"r203",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  43}, \
+    {"R203",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  43}, \
+    {"r203.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  43}, \
+    {"R203.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  43}, \
+    {"r203.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  43}, \
+    {"R203.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  43}, \
+    {"r203.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  43}, \
+    {"R203.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  43}, \
+    {"r210",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 104}, \
+    {"R210",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 104}, \
+    {"r210.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 104}, \
+    {"R210.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 104}, \
+    {"r211",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 105}, \
+    {"R211",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 105}, \
+    {"r211.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 105}, \
+    {"R211.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 105}, \
+    {"r212",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 106}, \
+    {"R212",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 106}, \
+    {"r212.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 106}, \
+    {"R212.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 106}, \
+    {"r213",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 107}, \
+    {"R213",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 107}, \
+    {"r213.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 107}, \
+    {"R213.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 107}, \
+    {"r220",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 104}, \
+    {"R220",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 104}, \
+    {"r220.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 104}, \
+    {"R220.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 104}, \
+    {"r221",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 105}, \
+    {"R221",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 105}, \
+    {"r221.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 105}, \
+    {"R221.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 105}, \
+    {"r222",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 106}, \
+    {"R222",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 106}, \
+    {"r222.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 106}, \
+    {"R222.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 106}, \
+    {"r223",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 107}, \
+    {"R223",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 107}, \
+    {"r223.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 107}, \
+    {"R223.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 107}, \
+    {"r300",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  44}, \
+    {"R300",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  44}, \
+    {"r300.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  44}, \
+    {"R300.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  44}, \
+    {"r300.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  44}, \
+    {"R300.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  44}, \
+    {"r300.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  44}, \
+    {"R300.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  44}, \
+    {"r301",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  45}, \
+    {"R301",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  45}, \
+    {"r301.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  45}, \
+    {"R301.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  45}, \
+    {"r301.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  45}, \
+    {"R301.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  45}, \
+    {"r301.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  45}, \
+    {"R301.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  45}, \
+    {"r302",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  46}, \
+    {"R302",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  46}, \
+    {"r302.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  46}, \
+    {"R302.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  46}, \
+    {"r302.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  46}, \
+    {"R302.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  46}, \
+    {"r302.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  46}, \
+    {"R302.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  46}, \
+    {"r303",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  47}, \
+    {"R303",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  47}, \
+    {"r303.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  47}, \
+    {"R303.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  47}, \
+    {"r303.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  47}, \
+    {"R303.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  47}, \
+    {"r303.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  47}, \
+    {"R303.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  47}, \
+    {"r310",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 108}, \
+    {"R310",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 108}, \
+    {"r310.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 108}, \
+    {"R310.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 108}, \
+    {"r311",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 109}, \
+    {"R311",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 109}, \
+    {"r311.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 109}, \
+    {"R311.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 109}, \
+    {"r312",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 110}, \
+    {"R312",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 110}, \
+    {"r312.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 110}, \
+    {"R312.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 110}, \
+    {"r313",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 111}, \
+    {"R313",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 111}, \
+    {"r313.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 111}, \
+    {"R313.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 111}, \
+    {"r320",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 108}, \
+    {"R320",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 108}, \
+    {"r320.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 108}, \
+    {"R320.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 108}, \
+    {"r321",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 109}, \
+    {"R321",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 109}, \
+    {"r321.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 109}, \
+    {"R321.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 109}, \
+    {"r322",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 110}, \
+    {"R322",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 110}, \
+    {"r322.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 110}, \
+    {"R322.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 110}, \
+    {"r323",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 111}, \
+    {"R323",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 111}, \
+    {"r323.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 111}, \
+    {"R323.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 111}, \
+    {"r400",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  48}, \
+    {"R400",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  48}, \
+    {"r400.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  48}, \
+    {"R400.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  48}, \
+    {"r400.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  48}, \
+    {"R400.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  48}, \
+    {"r400.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  48}, \
+    {"R400.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  48}, \
+    {"r401",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  49}, \
+    {"R401",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  49}, \
+    {"r401.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  49}, \
+    {"R401.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  49}, \
+    {"r401.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  49}, \
+    {"R401.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  49}, \
+    {"r401.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  49}, \
+    {"R401.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  49}, \
+    {"r402",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  50}, \
+    {"R402",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  50}, \
+    {"r402.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  50}, \
+    {"R402.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  50}, \
+    {"r402.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  50}, \
+    {"R402.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  50}, \
+    {"r402.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  50}, \
+    {"R402.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  50}, \
+    {"r403",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  51}, \
+    {"R403",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  51}, \
+    {"r403.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  51}, \
+    {"R403.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  51}, \
+    {"r403.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  51}, \
+    {"R403.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  51}, \
+    {"r403.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  51}, \
+    {"R403.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  51}, \
+    {"r410",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 112}, \
+    {"R410",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 112}, \
+    {"r410.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 112}, \
+    {"R410.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 112}, \
+    {"r411",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 113}, \
+    {"R411",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 113}, \
+    {"r411.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 113}, \
+    {"R411.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 113}, \
+    {"r412",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 114}, \
+    {"R412",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 114}, \
+    {"r412.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 114}, \
+    {"R412.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 114}, \
+    {"r413",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 115}, \
+    {"R413",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 115}, \
+    {"r413.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 115}, \
+    {"R413.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 115}, \
+    {"r420",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 112}, \
+    {"R420",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 112}, \
+    {"r420.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 112}, \
+    {"R420.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 112}, \
+    {"r421",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 113}, \
+    {"R421",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 113}, \
+    {"r421.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 113}, \
+    {"R421.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 113}, \
+    {"r422",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 114}, \
+    {"R422",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 114}, \
+    {"r422.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 114}, \
+    {"R422.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 114}, \
+    {"r423",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 115}, \
+    {"R423",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 115}, \
+    {"r423.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 115}, \
+    {"R423.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 115}, \
+    {"r500",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  52}, \
+    {"R500",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  52}, \
+    {"r500.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  52}, \
+    {"R500.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  52}, \
+    {"r500.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  52}, \
+    {"R500.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  52}, \
+    {"r500.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  52}, \
+    {"R500.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  52}, \
+    {"r501",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  53}, \
+    {"R501",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  53}, \
+    {"r501.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  53}, \
+    {"R501.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  53}, \
+    {"r501.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  53}, \
+    {"R501.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  53}, \
+    {"r501.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  53}, \
+    {"R501.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  53}, \
+    {"r502",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  54}, \
+    {"R502",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  54}, \
+    {"r502.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  54}, \
+    {"R502.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  54}, \
+    {"r502.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  54}, \
+    {"R502.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  54}, \
+    {"r502.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  54}, \
+    {"R502.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  54}, \
+    {"r503",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  55}, \
+    {"R503",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  55}, \
+    {"r503.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  55}, \
+    {"R503.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  55}, \
+    {"r503.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  55}, \
+    {"R503.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  55}, \
+    {"r503.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  55}, \
+    {"R503.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  55}, \
+    {"r510",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 116}, \
+    {"R510",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 116}, \
+    {"r510.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 116}, \
+    {"R510.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 116}, \
+    {"r511",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 117}, \
+    {"R511",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 117}, \
+    {"r511.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 117}, \
+    {"R511.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 117}, \
+    {"r512",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 118}, \
+    {"R512",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 118}, \
+    {"r512.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 118}, \
+    {"R512.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 118}, \
+    {"r513",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 119}, \
+    {"R513",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 119}, \
+    {"r513.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 119}, \
+    {"R513.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 119}, \
+    {"r520",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 116}, \
+    {"R520",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 116}, \
+    {"r520.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 116}, \
+    {"R520.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 116}, \
+    {"r521",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 117}, \
+    {"R521",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 117}, \
+    {"r521.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 117}, \
+    {"R521.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 117}, \
+    {"r522",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 118}, \
+    {"R522",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 118}, \
+    {"r522.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 118}, \
+    {"R522.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 118}, \
+    {"r523",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 119}, \
+    {"R523",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 119}, \
+    {"r523.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 119}, \
+    {"R523.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 119}, \
+    {"r600",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  56}, \
+    {"R600",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  56}, \
+    {"r600.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  56}, \
+    {"R600.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  56}, \
+    {"r600.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  56}, \
+    {"R600.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  56}, \
+    {"r600.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  56}, \
+    {"R600.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  56}, \
+    {"r601",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  57}, \
+    {"R601",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  57}, \
+    {"r601.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  57}, \
+    {"R601.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  57}, \
+    {"r601.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  57}, \
+    {"R601.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  57}, \
+    {"r601.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  57}, \
+    {"R601.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  57}, \
+    {"r602",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  58}, \
+    {"R602",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  58}, \
+    {"r602.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  58}, \
+    {"R602.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  58}, \
+    {"r602.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  58}, \
+    {"R602.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  58}, \
+    {"r602.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  58}, \
+    {"R602.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  58}, \
+    {"r603",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  59}, \
+    {"R603",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  59}, \
+    {"r603.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  59}, \
+    {"R603.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  59}, \
+    {"r603.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  59}, \
+    {"R603.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  59}, \
+    {"r603.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  59}, \
+    {"R603.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  59}, \
+    {"r610",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 120}, \
+    {"R610",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 120}, \
+    {"r610.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 120}, \
+    {"R610.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 120}, \
+    {"r611",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 121}, \
+    {"R611",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 121}, \
+    {"r611.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 121}, \
+    {"R611.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 121}, \
+    {"r612",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 122}, \
+    {"R612",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 122}, \
+    {"r612.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 122}, \
+    {"R612.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 122}, \
+    {"r613",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 123}, \
+    {"R613",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 123}, \
+    {"r613.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 123}, \
+    {"R613.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 123}, \
+    {"r620",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 120}, \
+    {"R620",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 120}, \
+    {"r620.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 120}, \
+    {"R620.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 120}, \
+    {"r621",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 121}, \
+    {"R621",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 121}, \
+    {"r621.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 121}, \
+    {"R621.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 121}, \
+    {"r622",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 122}, \
+    {"R622",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 122}, \
+    {"r622.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 122}, \
+    {"R622.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 122}, \
+    {"r623",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 123}, \
+    {"R623",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 123}, \
+    {"r623.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 123}, \
+    {"R623.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 123}, \
+    {"r700",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  60}, \
+    {"R700",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  60}, \
+    {"r700.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  60}, \
+    {"R700.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  60}, \
+    {"r700.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  60}, \
+    {"R700.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  60}, \
+    {"r700.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  60}, \
+    {"R700.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  60}, \
+    {"r701",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  61}, \
+    {"R701",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  61}, \
+    {"r701.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  61}, \
+    {"R701.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  61}, \
+    {"r701.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  61}, \
+    {"R701.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  61}, \
+    {"r701.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  61}, \
+    {"R701.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  61}, \
+    {"r702",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  62}, \
+    {"R702",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  62}, \
+    {"r702.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  62}, \
+    {"R702.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  62}, \
+    {"r702.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  62}, \
+    {"R702.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  62}, \
+    {"r702.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  62}, \
+    {"R702.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  62}, \
+    {"r703",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  63}, \
+    {"R703",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  63}, \
+    {"r703.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  63}, \
+    {"R703.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  63}, \
+    {"r703.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  63}, \
+    {"R703.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  63}, \
+    {"r703.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  63}, \
+    {"R703.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  63}, \
+    {"r710",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 124}, \
+    {"R710",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 124}, \
+    {"r710.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 124}, \
+    {"R710.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 124}, \
+    {"r711",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 125}, \
+    {"R711",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 125}, \
+    {"r711.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 125}, \
+    {"R711.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 125}, \
+    {"r712",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 126}, \
+    {"R712",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 126}, \
+    {"r712.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 126}, \
+    {"R712.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 126}, \
+    {"r713",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 127}, \
+    {"R713",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 127}, \
+    {"r713.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 127}, \
+    {"R713.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE | 127}, \
+    {"r720",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 124}, \
+    {"R720",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 124}, \
+    {"r720.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 124}, \
+    {"R720.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 124}, \
+    {"r721",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 125}, \
+    {"R721",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 125}, \
+    {"r721.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 125}, \
+    {"R721.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 125}, \
+    {"r722",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 126}, \
+    {"R722",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 126}, \
+    {"r722.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 126}, \
+    {"R722.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 126}, \
+    {"r723",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 127}, \
+    {"R723",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 127}, \
+    {"r723.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 127}, \
+    {"R723.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR | 127}, \
+    {"c000",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   0}, \
+    {"C000",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   0}, \
+    {"c000.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   0}, \
+    {"C000.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   0}, \
+    {"c000.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   0}, \
+    {"C000.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   0}, \
+    {"c000.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   0}, \
+    {"C000.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   0}, \
+    {"c001",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  64}, \
+    {"C001",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  64}, \
+    {"c001.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  64}, \
+    {"C001.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  64}, \
+    {"c002",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  64}, \
+    {"C002",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  64}, \
+    {"c002.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  64}, \
+    {"C002.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  64}, \
+    {"c010",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   1}, \
+    {"C010",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   1}, \
+    {"c010.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   1}, \
+    {"C010.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   1}, \
+    {"c010.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   1}, \
+    {"C010.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   1}, \
+    {"c010.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   1}, \
+    {"C010.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   1}, \
+    {"c011",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  65}, \
+    {"C011",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  65}, \
+    {"c011.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  65}, \
+    {"C011.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  65}, \
+    {"c012",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  65}, \
+    {"C012",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  65}, \
+    {"c012.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  65}, \
+    {"C012.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  65}, \
+    {"c020",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   2}, \
+    {"C020",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   2}, \
+    {"c020.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   2}, \
+    {"C020.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   2}, \
+    {"c020.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   2}, \
+    {"C020.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   2}, \
+    {"c020.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   2}, \
+    {"C020.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   2}, \
+    {"c021",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  66}, \
+    {"C021",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  66}, \
+    {"c021.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  66}, \
+    {"C021.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  66}, \
+    {"c022",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  66}, \
+    {"C022",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  66}, \
+    {"c022.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  66}, \
+    {"C022.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  66}, \
+    {"c030",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   3}, \
+    {"C030",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   3}, \
+    {"c030.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   3}, \
+    {"C030.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   3}, \
+    {"c030.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   3}, \
+    {"C030.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   3}, \
+    {"c030.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   3}, \
+    {"C030.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   3}, \
+    {"c031",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  67}, \
+    {"C031",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  67}, \
+    {"c031.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  67}, \
+    {"C031.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  67}, \
+    {"c032",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  67}, \
+    {"C032",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  67}, \
+    {"c032.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  67}, \
+    {"C032.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  67}, \
+    {"c100",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   4}, \
+    {"C100",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   4}, \
+    {"c100.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   4}, \
+    {"C100.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   4}, \
+    {"c100.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   4}, \
+    {"C100.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   4}, \
+    {"c100.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   4}, \
+    {"C100.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   4}, \
+    {"c101",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  68}, \
+    {"C101",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  68}, \
+    {"c101.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  68}, \
+    {"C101.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  68}, \
+    {"c102",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  68}, \
+    {"C102",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  68}, \
+    {"c102.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  68}, \
+    {"C102.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  68}, \
+    {"c110",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   5}, \
+    {"C110",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   5}, \
+    {"c110.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   5}, \
+    {"C110.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   5}, \
+    {"c110.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   5}, \
+    {"C110.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   5}, \
+    {"c110.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   5}, \
+    {"C110.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   5}, \
+    {"c111",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  69}, \
+    {"C111",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  69}, \
+    {"c111.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  69}, \
+    {"C111.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  69}, \
+    {"c112",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  69}, \
+    {"C112",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  69}, \
+    {"c112.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  69}, \
+    {"C112.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  69}, \
+    {"c120",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   6}, \
+    {"C120",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   6}, \
+    {"c120.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   6}, \
+    {"C120.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   6}, \
+    {"c120.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   6}, \
+    {"C120.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   6}, \
+    {"c120.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   6}, \
+    {"C120.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   6}, \
+    {"c121",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  70}, \
+    {"C121",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  70}, \
+    {"c121.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  70}, \
+    {"C121.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  70}, \
+    {"c122",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  70}, \
+    {"C122",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  70}, \
+    {"c122.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  70}, \
+    {"C122.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  70}, \
+    {"c130",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   7}, \
+    {"C130",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   7}, \
+    {"c130.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   7}, \
+    {"C130.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   7}, \
+    {"c130.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   7}, \
+    {"C130.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   7}, \
+    {"c130.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   7}, \
+    {"C130.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   7}, \
+    {"c131",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  71}, \
+    {"C131",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  71}, \
+    {"c131.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  71}, \
+    {"C131.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  71}, \
+    {"c132",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  71}, \
+    {"C132",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  71}, \
+    {"c132.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  71}, \
+    {"C132.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  71}, \
+    {"c200",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   8}, \
+    {"C200",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   8}, \
+    {"c200.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   8}, \
+    {"C200.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   8}, \
+    {"c200.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   8}, \
+    {"C200.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   8}, \
+    {"c200.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   8}, \
+    {"C200.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   8}, \
+    {"c201",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  72}, \
+    {"C201",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  72}, \
+    {"c201.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  72}, \
+    {"C201.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  72}, \
+    {"c202",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  72}, \
+    {"C202",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  72}, \
+    {"c202.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  72}, \
+    {"C202.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  72}, \
+    {"c210",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   9}, \
+    {"C210",	RTYPE_VFPU |    VFPU_VECTOR_ANY |   9}, \
+    {"c210.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   9}, \
+    {"C210.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |   9}, \
+    {"c210.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   9}, \
+    {"C210.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |   9}, \
+    {"c210.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   9}, \
+    {"C210.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |   9}, \
+    {"c211",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  73}, \
+    {"C211",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  73}, \
+    {"c211.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  73}, \
+    {"C211.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  73}, \
+    {"c212",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  73}, \
+    {"C212",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  73}, \
+    {"c212.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  73}, \
+    {"C212.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  73}, \
+    {"c220",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  10}, \
+    {"C220",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  10}, \
+    {"c220.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  10}, \
+    {"C220.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  10}, \
+    {"c220.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  10}, \
+    {"C220.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  10}, \
+    {"c220.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  10}, \
+    {"C220.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  10}, \
+    {"c221",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  74}, \
+    {"C221",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  74}, \
+    {"c221.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  74}, \
+    {"C221.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  74}, \
+    {"c222",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  74}, \
+    {"C222",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  74}, \
+    {"c222.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  74}, \
+    {"C222.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  74}, \
+    {"c230",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  11}, \
+    {"C230",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  11}, \
+    {"c230.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  11}, \
+    {"C230.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  11}, \
+    {"c230.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  11}, \
+    {"C230.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  11}, \
+    {"c230.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  11}, \
+    {"C230.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  11}, \
+    {"c231",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  75}, \
+    {"C231",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  75}, \
+    {"c231.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  75}, \
+    {"C231.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  75}, \
+    {"c232",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  75}, \
+    {"C232",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  75}, \
+    {"c232.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  75}, \
+    {"C232.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  75}, \
+    {"c300",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  12}, \
+    {"C300",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  12}, \
+    {"c300.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  12}, \
+    {"C300.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  12}, \
+    {"c300.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  12}, \
+    {"C300.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  12}, \
+    {"c300.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  12}, \
+    {"C300.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  12}, \
+    {"c301",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  76}, \
+    {"C301",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  76}, \
+    {"c301.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  76}, \
+    {"C301.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  76}, \
+    {"c302",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  76}, \
+    {"C302",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  76}, \
+    {"c302.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  76}, \
+    {"C302.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  76}, \
+    {"c310",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  13}, \
+    {"C310",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  13}, \
+    {"c310.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  13}, \
+    {"C310.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  13}, \
+    {"c310.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  13}, \
+    {"C310.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  13}, \
+    {"c310.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  13}, \
+    {"C310.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  13}, \
+    {"c311",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  77}, \
+    {"C311",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  77}, \
+    {"c311.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  77}, \
+    {"C311.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  77}, \
+    {"c312",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  77}, \
+    {"C312",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  77}, \
+    {"c312.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  77}, \
+    {"C312.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  77}, \
+    {"c320",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  14}, \
+    {"C320",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  14}, \
+    {"c320.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  14}, \
+    {"C320.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  14}, \
+    {"c320.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  14}, \
+    {"C320.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  14}, \
+    {"c320.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  14}, \
+    {"C320.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  14}, \
+    {"c321",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  78}, \
+    {"C321",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  78}, \
+    {"c321.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  78}, \
+    {"C321.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  78}, \
+    {"c322",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  78}, \
+    {"C322",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  78}, \
+    {"c322.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  78}, \
+    {"C322.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  78}, \
+    {"c330",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  15}, \
+    {"C330",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  15}, \
+    {"c330.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  15}, \
+    {"C330.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  15}, \
+    {"c330.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  15}, \
+    {"C330.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  15}, \
+    {"c330.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  15}, \
+    {"C330.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  15}, \
+    {"c331",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  79}, \
+    {"C331",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  79}, \
+    {"c331.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  79}, \
+    {"C331.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  79}, \
+    {"c332",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  79}, \
+    {"C332",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  79}, \
+    {"c332.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  79}, \
+    {"C332.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  79}, \
+    {"c400",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  16}, \
+    {"C400",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  16}, \
+    {"c400.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  16}, \
+    {"C400.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  16}, \
+    {"c400.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  16}, \
+    {"C400.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  16}, \
+    {"c400.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  16}, \
+    {"C400.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  16}, \
+    {"c401",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  80}, \
+    {"C401",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  80}, \
+    {"c401.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  80}, \
+    {"C401.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  80}, \
+    {"c402",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  80}, \
+    {"C402",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  80}, \
+    {"c402.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  80}, \
+    {"C402.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  80}, \
+    {"c410",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  17}, \
+    {"C410",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  17}, \
+    {"c410.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  17}, \
+    {"C410.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  17}, \
+    {"c410.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  17}, \
+    {"C410.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  17}, \
+    {"c410.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  17}, \
+    {"C410.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  17}, \
+    {"c411",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  81}, \
+    {"C411",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  81}, \
+    {"c411.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  81}, \
+    {"C411.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  81}, \
+    {"c412",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  81}, \
+    {"C412",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  81}, \
+    {"c412.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  81}, \
+    {"C412.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  81}, \
+    {"c420",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  18}, \
+    {"C420",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  18}, \
+    {"c420.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  18}, \
+    {"C420.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  18}, \
+    {"c420.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  18}, \
+    {"C420.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  18}, \
+    {"c420.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  18}, \
+    {"C420.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  18}, \
+    {"c421",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  82}, \
+    {"C421",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  82}, \
+    {"c421.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  82}, \
+    {"C421.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  82}, \
+    {"c422",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  82}, \
+    {"C422",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  82}, \
+    {"c422.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  82}, \
+    {"C422.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  82}, \
+    {"c430",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  19}, \
+    {"C430",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  19}, \
+    {"c430.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  19}, \
+    {"C430.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  19}, \
+    {"c430.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  19}, \
+    {"C430.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  19}, \
+    {"c430.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  19}, \
+    {"C430.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  19}, \
+    {"c431",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  83}, \
+    {"C431",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  83}, \
+    {"c431.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  83}, \
+    {"C431.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  83}, \
+    {"c432",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  83}, \
+    {"C432",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  83}, \
+    {"c432.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  83}, \
+    {"C432.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  83}, \
+    {"c500",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  20}, \
+    {"C500",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  20}, \
+    {"c500.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  20}, \
+    {"C500.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  20}, \
+    {"c500.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  20}, \
+    {"C500.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  20}, \
+    {"c500.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  20}, \
+    {"C500.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  20}, \
+    {"c501",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  84}, \
+    {"C501",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  84}, \
+    {"c501.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  84}, \
+    {"C501.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  84}, \
+    {"c502",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  84}, \
+    {"C502",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  84}, \
+    {"c502.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  84}, \
+    {"C502.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  84}, \
+    {"c510",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  21}, \
+    {"C510",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  21}, \
+    {"c510.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  21}, \
+    {"C510.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  21}, \
+    {"c510.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  21}, \
+    {"C510.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  21}, \
+    {"c510.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  21}, \
+    {"C510.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  21}, \
+    {"c511",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  85}, \
+    {"C511",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  85}, \
+    {"c511.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  85}, \
+    {"C511.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  85}, \
+    {"c512",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  85}, \
+    {"C512",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  85}, \
+    {"c512.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  85}, \
+    {"C512.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  85}, \
+    {"c520",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  22}, \
+    {"C520",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  22}, \
+    {"c520.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  22}, \
+    {"C520.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  22}, \
+    {"c520.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  22}, \
+    {"C520.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  22}, \
+    {"c520.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  22}, \
+    {"C520.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  22}, \
+    {"c521",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  86}, \
+    {"C521",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  86}, \
+    {"c521.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  86}, \
+    {"C521.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  86}, \
+    {"c522",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  86}, \
+    {"C522",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  86}, \
+    {"c522.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  86}, \
+    {"C522.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  86}, \
+    {"c530",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  23}, \
+    {"C530",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  23}, \
+    {"c530.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  23}, \
+    {"C530.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  23}, \
+    {"c530.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  23}, \
+    {"C530.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  23}, \
+    {"c530.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  23}, \
+    {"C530.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  23}, \
+    {"c531",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  87}, \
+    {"C531",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  87}, \
+    {"c531.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  87}, \
+    {"C531.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  87}, \
+    {"c532",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  87}, \
+    {"C532",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  87}, \
+    {"c532.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  87}, \
+    {"C532.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  87}, \
+    {"c600",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  24}, \
+    {"C600",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  24}, \
+    {"c600.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  24}, \
+    {"C600.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  24}, \
+    {"c600.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  24}, \
+    {"C600.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  24}, \
+    {"c600.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  24}, \
+    {"C600.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  24}, \
+    {"c601",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  88}, \
+    {"C601",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  88}, \
+    {"c601.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  88}, \
+    {"C601.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  88}, \
+    {"c602",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  88}, \
+    {"C602",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  88}, \
+    {"c602.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  88}, \
+    {"C602.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  88}, \
+    {"c610",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  25}, \
+    {"C610",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  25}, \
+    {"c610.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  25}, \
+    {"C610.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  25}, \
+    {"c610.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  25}, \
+    {"C610.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  25}, \
+    {"c610.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  25}, \
+    {"C610.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  25}, \
+    {"c611",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  89}, \
+    {"C611",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  89}, \
+    {"c611.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  89}, \
+    {"C611.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  89}, \
+    {"c612",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  89}, \
+    {"C612",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  89}, \
+    {"c612.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  89}, \
+    {"C612.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  89}, \
+    {"c620",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  26}, \
+    {"C620",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  26}, \
+    {"c620.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  26}, \
+    {"C620.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  26}, \
+    {"c620.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  26}, \
+    {"C620.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  26}, \
+    {"c620.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  26}, \
+    {"C620.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  26}, \
+    {"c621",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  90}, \
+    {"C621",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  90}, \
+    {"c621.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  90}, \
+    {"C621.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  90}, \
+    {"c622",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  90}, \
+    {"C622",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  90}, \
+    {"c622.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  90}, \
+    {"C622.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  90}, \
+    {"c630",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  27}, \
+    {"C630",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  27}, \
+    {"c630.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  27}, \
+    {"C630.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  27}, \
+    {"c630.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  27}, \
+    {"C630.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  27}, \
+    {"c630.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  27}, \
+    {"C630.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  27}, \
+    {"c631",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  91}, \
+    {"C631",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  91}, \
+    {"c631.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  91}, \
+    {"C631.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  91}, \
+    {"c632",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  91}, \
+    {"C632",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  91}, \
+    {"c632.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  91}, \
+    {"C632.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  91}, \
+    {"c700",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  28}, \
+    {"C700",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  28}, \
+    {"c700.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  28}, \
+    {"C700.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  28}, \
+    {"c700.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  28}, \
+    {"C700.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  28}, \
+    {"c700.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  28}, \
+    {"C700.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  28}, \
+    {"c701",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  92}, \
+    {"C701",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  92}, \
+    {"c701.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  92}, \
+    {"C701.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  92}, \
+    {"c702",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  92}, \
+    {"C702",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  92}, \
+    {"c702.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  92}, \
+    {"C702.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  92}, \
+    {"c710",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  29}, \
+    {"C710",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  29}, \
+    {"c710.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  29}, \
+    {"C710.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  29}, \
+    {"c710.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  29}, \
+    {"C710.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  29}, \
+    {"c710.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  29}, \
+    {"C710.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  29}, \
+    {"c711",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  93}, \
+    {"C711",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  93}, \
+    {"c711.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  93}, \
+    {"C711.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  93}, \
+    {"c712",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  93}, \
+    {"C712",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  93}, \
+    {"c712.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  93}, \
+    {"C712.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  93}, \
+    {"c720",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  30}, \
+    {"C720",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  30}, \
+    {"c720.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  30}, \
+    {"C720.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  30}, \
+    {"c720.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  30}, \
+    {"C720.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  30}, \
+    {"c720.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  30}, \
+    {"C720.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  30}, \
+    {"c721",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  94}, \
+    {"C721",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  94}, \
+    {"c721.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  94}, \
+    {"C721.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  94}, \
+    {"c722",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  94}, \
+    {"C722",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  94}, \
+    {"c722.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  94}, \
+    {"C722.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  94}, \
+    {"c730",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  31}, \
+    {"C730",	RTYPE_VFPU |    VFPU_VECTOR_ANY |  31}, \
+    {"c730.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  31}, \
+    {"C730.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  31}, \
+    {"c730.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  31}, \
+    {"C730.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  31}, \
+    {"c730.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  31}, \
+    {"C730.q",	RTYPE_VFPU |   VFPU_VECTOR_QUAD |  31}, \
+    {"c731",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  95}, \
+    {"C731",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  95}, \
+    {"c731.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  95}, \
+    {"C731.t",	RTYPE_VFPU | VFPU_VECTOR_TRIPLE |  95}, \
+    {"c732",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  95}, \
+    {"C732",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  95}, \
+    {"c732.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  95}, \
+    {"C732.p",	RTYPE_VFPU |   VFPU_VECTOR_PAIR |  95}, \
+    {"m000",	RTYPE_VFPU |    VFPU_MATRIX_ANY |   0}, \
+    {"M000",	RTYPE_VFPU |    VFPU_MATRIX_ANY |   0}, \
+    {"m000.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   0}, \
+    {"M000.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   0}, \
+    {"m000.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   0}, \
+    {"M000.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   0}, \
+    {"m000.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |   0}, \
+    {"M000.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |   0}, \
+    {"m001",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  64}, \
+    {"M001",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  64}, \
+    {"m001.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  64}, \
+    {"M001.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  64}, \
+    {"m002",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  64}, \
+    {"M002",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  64}, \
+    {"m002.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  64}, \
+    {"M002.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  64}, \
+    {"m010",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   1}, \
+    {"M010",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   1}, \
+    {"m010.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   1}, \
+    {"M010.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   1}, \
+    {"m011",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  65}, \
+    {"M011",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  65}, \
+    {"m011.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  65}, \
+    {"M011.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  65}, \
+    {"m020",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   2}, \
+    {"M020",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   2}, \
+    {"m020.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   2}, \
+    {"M020.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   2}, \
+    {"m022",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  66}, \
+    {"M022",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  66}, \
+    {"m022.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  66}, \
+    {"M022.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  66}, \
+    {"m100",	RTYPE_VFPU |    VFPU_MATRIX_ANY |   4}, \
+    {"M100",	RTYPE_VFPU |    VFPU_MATRIX_ANY |   4}, \
+    {"m100.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   4}, \
+    {"M100.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   4}, \
+    {"m100.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   4}, \
+    {"M100.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   4}, \
+    {"m100.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |   4}, \
+    {"M100.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |   4}, \
+    {"m101",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  68}, \
+    {"M101",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  68}, \
+    {"m101.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  68}, \
+    {"M101.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  68}, \
+    {"m102",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  68}, \
+    {"M102",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  68}, \
+    {"m102.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  68}, \
+    {"M102.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  68}, \
+    {"m110",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   5}, \
+    {"M110",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   5}, \
+    {"m110.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   5}, \
+    {"M110.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   5}, \
+    {"m111",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  69}, \
+    {"M111",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  69}, \
+    {"m111.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  69}, \
+    {"M111.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  69}, \
+    {"m120",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   6}, \
+    {"M120",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   6}, \
+    {"m120.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   6}, \
+    {"M120.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   6}, \
+    {"m122",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  70}, \
+    {"M122",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  70}, \
+    {"m122.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  70}, \
+    {"M122.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  70}, \
+    {"m200",	RTYPE_VFPU |    VFPU_MATRIX_ANY |   8}, \
+    {"M200",	RTYPE_VFPU |    VFPU_MATRIX_ANY |   8}, \
+    {"m200.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   8}, \
+    {"M200.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |   8}, \
+    {"m200.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   8}, \
+    {"M200.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   8}, \
+    {"m200.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |   8}, \
+    {"M200.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |   8}, \
+    {"m201",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  72}, \
+    {"M201",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  72}, \
+    {"m201.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  72}, \
+    {"M201.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  72}, \
+    {"m202",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  72}, \
+    {"M202",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  72}, \
+    {"m202.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  72}, \
+    {"M202.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  72}, \
+    {"m210",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   9}, \
+    {"M210",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   9}, \
+    {"m210.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   9}, \
+    {"M210.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |   9}, \
+    {"m211",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  73}, \
+    {"M211",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  73}, \
+    {"m211.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  73}, \
+    {"M211.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  73}, \
+    {"m220",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  10}, \
+    {"M220",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  10}, \
+    {"m220.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  10}, \
+    {"M220.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  10}, \
+    {"m222",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  74}, \
+    {"M222",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  74}, \
+    {"m222.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  74}, \
+    {"M222.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  74}, \
+    {"m300",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  12}, \
+    {"M300",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  12}, \
+    {"m300.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  12}, \
+    {"M300.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  12}, \
+    {"m300.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  12}, \
+    {"M300.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  12}, \
+    {"m300.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  12}, \
+    {"M300.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  12}, \
+    {"m301",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  76}, \
+    {"M301",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  76}, \
+    {"m301.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  76}, \
+    {"M301.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  76}, \
+    {"m302",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  76}, \
+    {"M302",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  76}, \
+    {"m302.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  76}, \
+    {"M302.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  76}, \
+    {"m310",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  13}, \
+    {"M310",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  13}, \
+    {"m310.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  13}, \
+    {"M310.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  13}, \
+    {"m311",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  77}, \
+    {"M311",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  77}, \
+    {"m311.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  77}, \
+    {"M311.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  77}, \
+    {"m320",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  14}, \
+    {"M320",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  14}, \
+    {"m320.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  14}, \
+    {"M320.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  14}, \
+    {"m322",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  78}, \
+    {"M322",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  78}, \
+    {"m322.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  78}, \
+    {"M322.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  78}, \
+    {"m400",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  16}, \
+    {"M400",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  16}, \
+    {"m400.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  16}, \
+    {"M400.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  16}, \
+    {"m400.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  16}, \
+    {"M400.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  16}, \
+    {"m400.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  16}, \
+    {"M400.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  16}, \
+    {"m401",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  80}, \
+    {"M401",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  80}, \
+    {"m401.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  80}, \
+    {"M401.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  80}, \
+    {"m402",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  80}, \
+    {"M402",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  80}, \
+    {"m402.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  80}, \
+    {"M402.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  80}, \
+    {"m410",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  17}, \
+    {"M410",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  17}, \
+    {"m410.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  17}, \
+    {"M410.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  17}, \
+    {"m411",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  81}, \
+    {"M411",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  81}, \
+    {"m411.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  81}, \
+    {"M411.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  81}, \
+    {"m420",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  18}, \
+    {"M420",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  18}, \
+    {"m420.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  18}, \
+    {"M420.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  18}, \
+    {"m422",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  82}, \
+    {"M422",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  82}, \
+    {"m422.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  82}, \
+    {"M422.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  82}, \
+    {"m500",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  20}, \
+    {"M500",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  20}, \
+    {"m500.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  20}, \
+    {"M500.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  20}, \
+    {"m500.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  20}, \
+    {"M500.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  20}, \
+    {"m500.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  20}, \
+    {"M500.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  20}, \
+    {"m501",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  84}, \
+    {"M501",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  84}, \
+    {"m501.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  84}, \
+    {"M501.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  84}, \
+    {"m502",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  84}, \
+    {"M502",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  84}, \
+    {"m502.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  84}, \
+    {"M502.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  84}, \
+    {"m510",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  21}, \
+    {"M510",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  21}, \
+    {"m510.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  21}, \
+    {"M510.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  21}, \
+    {"m511",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  85}, \
+    {"M511",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  85}, \
+    {"m511.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  85}, \
+    {"M511.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  85}, \
+    {"m520",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  22}, \
+    {"M520",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  22}, \
+    {"m520.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  22}, \
+    {"M520.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  22}, \
+    {"m522",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  86}, \
+    {"M522",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  86}, \
+    {"m522.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  86}, \
+    {"M522.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  86}, \
+    {"m600",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  24}, \
+    {"M600",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  24}, \
+    {"m600.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  24}, \
+    {"M600.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  24}, \
+    {"m600.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  24}, \
+    {"M600.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  24}, \
+    {"m600.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  24}, \
+    {"M600.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  24}, \
+    {"m601",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  88}, \
+    {"M601",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  88}, \
+    {"m601.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  88}, \
+    {"M601.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  88}, \
+    {"m602",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  88}, \
+    {"M602",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  88}, \
+    {"m602.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  88}, \
+    {"M602.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  88}, \
+    {"m610",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  25}, \
+    {"M610",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  25}, \
+    {"m610.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  25}, \
+    {"M610.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  25}, \
+    {"m611",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  89}, \
+    {"M611",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  89}, \
+    {"m611.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  89}, \
+    {"M611.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  89}, \
+    {"m620",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  26}, \
+    {"M620",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  26}, \
+    {"m620.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  26}, \
+    {"M620.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  26}, \
+    {"m622",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  90}, \
+    {"M622",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  90}, \
+    {"m622.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  90}, \
+    {"M622.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  90}, \
+    {"m700",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  28}, \
+    {"M700",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  28}, \
+    {"m700.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  28}, \
+    {"M700.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  28}, \
+    {"m700.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  28}, \
+    {"M700.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  28}, \
+    {"m700.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  28}, \
+    {"M700.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  28}, \
+    {"m701",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  92}, \
+    {"M701",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  92}, \
+    {"m701.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  92}, \
+    {"M701.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  92}, \
+    {"m702",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  92}, \
+    {"M702",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  92}, \
+    {"m702.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  92}, \
+    {"M702.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  92}, \
+    {"m710",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  29}, \
+    {"M710",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  29}, \
+    {"m710.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  29}, \
+    {"M710.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  29}, \
+    {"m711",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  93}, \
+    {"M711",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  93}, \
+    {"m711.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  93}, \
+    {"M711.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  93}, \
+    {"m720",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  30}, \
+    {"M720",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  30}, \
+    {"m720.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  30}, \
+    {"M720.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  30}, \
+    {"m722",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  94}, \
+    {"M722",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  94}, \
+    {"m722.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  94}, \
+    {"M722.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  94}, \
+    {"e000",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  32}, \
+    {"E000",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  32}, \
+    {"e000.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  32}, \
+    {"E000.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  32}, \
+    {"e000.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  32}, \
+    {"E000.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  32}, \
+    {"e000.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  32}, \
+    {"E000.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  32}, \
+    {"e001",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  33}, \
+    {"E001",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  33}, \
+    {"e001.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  33}, \
+    {"E001.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  33}, \
+    {"e002",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  34}, \
+    {"E002",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  34}, \
+    {"e002.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  34}, \
+    {"E002.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  34}, \
+    {"e010",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  96}, \
+    {"E010",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  96}, \
+    {"e010.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  96}, \
+    {"E010.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  96}, \
+    {"e011",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  97}, \
+    {"E011",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  97}, \
+    {"e011.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  97}, \
+    {"E011.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  97}, \
+    {"e020",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  96}, \
+    {"E020",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  96}, \
+    {"e020.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  96}, \
+    {"E020.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  96}, \
+    {"e022",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  98}, \
+    {"E022",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  98}, \
+    {"e022.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  98}, \
+    {"E022.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  98}, \
+    {"e100",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  36}, \
+    {"E100",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  36}, \
+    {"e100.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  36}, \
+    {"E100.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  36}, \
+    {"e100.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  36}, \
+    {"E100.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  36}, \
+    {"e100.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  36}, \
+    {"E100.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  36}, \
+    {"e101",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  37}, \
+    {"E101",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  37}, \
+    {"e101.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  37}, \
+    {"E101.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  37}, \
+    {"e102",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  38}, \
+    {"E102",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  38}, \
+    {"e102.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  38}, \
+    {"E102.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  38}, \
+    {"e110",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 100}, \
+    {"E110",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 100}, \
+    {"e110.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 100}, \
+    {"E110.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 100}, \
+    {"e111",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 101}, \
+    {"E111",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 101}, \
+    {"e111.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 101}, \
+    {"E111.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 101}, \
+    {"e120",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 100}, \
+    {"E120",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 100}, \
+    {"e120.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 100}, \
+    {"E120.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 100}, \
+    {"e122",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 102}, \
+    {"E122",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 102}, \
+    {"e122.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 102}, \
+    {"E122.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 102}, \
+    {"e200",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  40}, \
+    {"E200",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  40}, \
+    {"e200.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  40}, \
+    {"E200.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  40}, \
+    {"e200.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  40}, \
+    {"E200.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  40}, \
+    {"e200.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  40}, \
+    {"E200.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  40}, \
+    {"e201",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  41}, \
+    {"E201",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  41}, \
+    {"e201.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  41}, \
+    {"E201.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  41}, \
+    {"e202",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  42}, \
+    {"E202",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  42}, \
+    {"e202.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  42}, \
+    {"E202.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  42}, \
+    {"e210",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 104}, \
+    {"E210",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 104}, \
+    {"e210.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 104}, \
+    {"E210.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 104}, \
+    {"e211",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 105}, \
+    {"E211",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 105}, \
+    {"e211.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 105}, \
+    {"E211.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 105}, \
+    {"e220",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 104}, \
+    {"E220",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 104}, \
+    {"e220.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 104}, \
+    {"E220.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 104}, \
+    {"e222",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 106}, \
+    {"E222",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 106}, \
+    {"e222.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 106}, \
+    {"E222.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 106}, \
+    {"e300",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  44}, \
+    {"E300",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  44}, \
+    {"e300.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  44}, \
+    {"E300.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  44}, \
+    {"e300.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  44}, \
+    {"E300.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  44}, \
+    {"e300.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  44}, \
+    {"E300.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  44}, \
+    {"e301",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  45}, \
+    {"E301",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  45}, \
+    {"e301.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  45}, \
+    {"E301.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  45}, \
+    {"e302",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  46}, \
+    {"E302",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  46}, \
+    {"e302.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  46}, \
+    {"E302.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  46}, \
+    {"e310",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 108}, \
+    {"E310",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 108}, \
+    {"e310.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 108}, \
+    {"E310.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 108}, \
+    {"e311",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 109}, \
+    {"E311",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 109}, \
+    {"e311.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 109}, \
+    {"E311.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 109}, \
+    {"e320",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 108}, \
+    {"E320",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 108}, \
+    {"e320.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 108}, \
+    {"E320.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 108}, \
+    {"e322",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 110}, \
+    {"E322",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 110}, \
+    {"e322.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 110}, \
+    {"E322.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 110}, \
+    {"e400",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  48}, \
+    {"E400",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  48}, \
+    {"e400.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  48}, \
+    {"E400.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  48}, \
+    {"e400.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  48}, \
+    {"E400.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  48}, \
+    {"e400.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  48}, \
+    {"E400.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  48}, \
+    {"e401",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  49}, \
+    {"E401",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  49}, \
+    {"e401.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  49}, \
+    {"E401.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  49}, \
+    {"e402",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  50}, \
+    {"E402",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  50}, \
+    {"e402.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  50}, \
+    {"E402.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  50}, \
+    {"e410",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 112}, \
+    {"E410",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 112}, \
+    {"e410.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 112}, \
+    {"E410.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 112}, \
+    {"e411",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 113}, \
+    {"E411",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 113}, \
+    {"e411.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 113}, \
+    {"E411.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 113}, \
+    {"e420",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 112}, \
+    {"E420",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 112}, \
+    {"e420.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 112}, \
+    {"E420.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 112}, \
+    {"e422",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 114}, \
+    {"E422",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 114}, \
+    {"e422.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 114}, \
+    {"E422.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 114}, \
+    {"e500",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  52}, \
+    {"E500",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  52}, \
+    {"e500.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  52}, \
+    {"E500.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  52}, \
+    {"e500.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  52}, \
+    {"E500.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  52}, \
+    {"e500.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  52}, \
+    {"E500.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  52}, \
+    {"e501",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  53}, \
+    {"E501",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  53}, \
+    {"e501.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  53}, \
+    {"E501.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  53}, \
+    {"e502",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  54}, \
+    {"E502",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  54}, \
+    {"e502.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  54}, \
+    {"E502.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  54}, \
+    {"e510",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 116}, \
+    {"E510",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 116}, \
+    {"e510.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 116}, \
+    {"E510.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 116}, \
+    {"e511",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 117}, \
+    {"E511",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 117}, \
+    {"e511.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 117}, \
+    {"E511.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 117}, \
+    {"e520",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 116}, \
+    {"E520",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 116}, \
+    {"e520.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 116}, \
+    {"E520.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 116}, \
+    {"e522",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 118}, \
+    {"E522",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 118}, \
+    {"e522.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 118}, \
+    {"E522.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 118}, \
+    {"e600",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  56}, \
+    {"E600",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  56}, \
+    {"e600.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  56}, \
+    {"E600.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  56}, \
+    {"e600.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  56}, \
+    {"E600.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  56}, \
+    {"e600.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  56}, \
+    {"E600.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  56}, \
+    {"e601",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  57}, \
+    {"E601",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  57}, \
+    {"e601.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  57}, \
+    {"E601.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  57}, \
+    {"e602",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  58}, \
+    {"E602",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  58}, \
+    {"e602.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  58}, \
+    {"E602.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  58}, \
+    {"e610",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 120}, \
+    {"E610",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 120}, \
+    {"e610.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 120}, \
+    {"E610.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 120}, \
+    {"e611",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 121}, \
+    {"E611",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 121}, \
+    {"e611.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 121}, \
+    {"E611.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 121}, \
+    {"e620",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 120}, \
+    {"E620",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 120}, \
+    {"e620.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 120}, \
+    {"E620.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 120}, \
+    {"e622",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 122}, \
+    {"E622",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 122}, \
+    {"e622.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 122}, \
+    {"E622.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 122}, \
+    {"e700",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  60}, \
+    {"E700",	RTYPE_VFPU |    VFPU_MATRIX_ANY |  60}, \
+    {"e700.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  60}, \
+    {"E700.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  60}, \
+    {"e700.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  60}, \
+    {"E700.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  60}, \
+    {"e700.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  60}, \
+    {"E700.q",	RTYPE_VFPU |   VFPU_MATRIX_QUAD |  60}, \
+    {"e701",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  61}, \
+    {"E701",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  61}, \
+    {"e701.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  61}, \
+    {"E701.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE |  61}, \
+    {"e702",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  62}, \
+    {"E702",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  62}, \
+    {"e702.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  62}, \
+    {"E702.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR |  62}, \
+    {"e710",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 124}, \
+    {"E710",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 124}, \
+    {"e710.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 124}, \
+    {"E710.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 124}, \
+    {"e711",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 125}, \
+    {"E711",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 125}, \
+    {"e711.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 125}, \
+    {"E711.t",	RTYPE_VFPU | VFPU_MATRIX_TRIPLE | 125}, \
+    {"e720",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 124}, \
+    {"E720",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 124}, \
+    {"e720.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 124}, \
+    {"E720.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 124}, \
+    {"e722",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 126}, \
+    {"E722",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 126}, \
+    {"e722.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 126}, \
+    {"E722.p",	RTYPE_VFPU |   VFPU_MATRIX_PAIR | 126}
+
 static const struct regname reg_names[] = {
   GENERIC_REGISTER_NUMBERS,
   FPU_REGISTER_NAMES,
@@ -2917,6 +5064,7 @@ static const struct regname reg_names[] = {
   R5900_Q_NAMES,
   R5900_R_NAMES,
   R5900_ACC_NAMES,
+  VFPU_REGISTER_NAMES,
   MIPS_DSP_ACCUMULATOR_NAMES,
   {0, 0}
 };
@@ -3161,6 +5309,211 @@ mips_add_token (struct mips_operand_token *token,
   obstack_grow (&mips_operand_tokens, token, sizeof (*token));
 }
 
+#define PFX_RET(value, skip) \
+{ \
+  *channel = (value) | neg | abs; \
+  s += skip; \
+  return s; \
+}
+
+#define PFX_DEST   0x80  // Mask or saturation
+#define PFX_CONST  0x40
+#define PFX_SWZ    0x20
+#define PFX_NEG    0x10
+#define PFX_ABS    0x08
+
+#define PFX_X         0
+#define PFX_Y         1
+#define PFX_Z         2
+#define PFX_W         3
+
+#define PFX_01        1
+#define PFX_11        3
+#define PFX_MSK       4
+
+#define PFX_C0        0
+#define PFX_C1        1
+#define PFX_C2        2
+#define PFX_C12       3
+#define PFX_C3        4
+#define PFX_C13       5
+#define PFX_C14       6
+#define PFX_C16       7
+
+/* Parse one VFPU prefix channel, which can be either source or destination.
+   Returns NULL if the parsed data cannot be a valid prefix. */
+static char *
+mips_parse_vfpu_prefix (char *s, unsigned int *channel)
+{
+  unsigned abs = 0, neg = 0;
+  SKIP_SPACE_TABS (s);
+
+  /* If there's nothing, just return empty channel */
+  if (*s == ',' || *s == ']' || *s == 0)
+    return s;
+
+  /* Check for sign or abs chars */
+  if (*s == '-') {
+    neg = PFX_NEG;
+    s++;
+  }
+  SKIP_SPACE_TABS (s);
+
+  if (*s == 'm' || *s == 'M') {
+    PFX_RET(PFX_DEST | PFX_MSK, 1);    // Masked entry
+  }
+  else if (!strncmp(s, "0:1", 3)) {
+    PFX_RET(PFX_DEST | PFX_01, 3);    // 0:1  
+  }
+  else if (!strncmp(s, "[0:1]", 5)) {
+    PFX_RET(PFX_DEST | PFX_01, 5);    // 0:1  
+  }
+  else if (*s == '0') {
+    PFX_RET(PFX_CONST | PFX_C0, 1);   // 0
+  }
+  else if (!strncmp(s, "1:1", 3)) {
+    if (neg) {
+      neg = 0;
+      PFX_RET(PFX_DEST | PFX_11, 3);    // -1:1  
+    }
+    set_insn_error (0, _("invalid VFPU prefix, only 0:1 and -1:1 allowed"));
+  }
+  else if (!strncmp(s, "[-1:1]", 6)) {
+    PFX_RET(PFX_DEST | PFX_11, 6);    // -1:1  
+  }
+  else if (*s == '1') {
+    s++; SKIP_SPACE_TABS (s);
+
+    if (*s == ',' || *s == ']' || IS_SPACE_OR_NUL (*s))
+      PFX_RET(PFX_CONST | PFX_C1, 0);   // 1
+
+    if (*s == '/') {
+      s++; SKIP_SPACE_TABS (s);
+      switch (*s) {
+        case '2': PFX_RET(PFX_CONST | PFX_C12, 1);   // 1/2
+        case '3': PFX_RET(PFX_CONST | PFX_C13, 1);   // 1/3
+        case '4': PFX_RET(PFX_CONST | PFX_C14, 1);   // 1/4
+        case '6': PFX_RET(PFX_CONST | PFX_C16, 1);   // 1/6
+      };
+    }
+
+    set_insn_error (0, _("invalid VFPU prefix constant"));
+  }
+  else if (*s == '2') {
+    PFX_RET(PFX_CONST | PFX_C2, 1);
+  }
+  else if (*s == '3') {
+    PFX_RET(PFX_CONST | PFX_C3, 1);
+  }
+  else {
+    /* Must be a variable */
+    unsigned var;
+    if (*s == '|') {
+      abs = PFX_ABS;
+      s++;
+    }
+    SKIP_SPACE_TABS (s);
+
+    switch (*s++) {
+      case 'x': case 'X': var = PFX_SWZ | PFX_X; break;
+      case 'y': case 'Y': var = PFX_SWZ | PFX_Y; break;
+      case 'z': case 'Z': var = PFX_SWZ | PFX_Z; break;
+      case 'w': case 'W': var = PFX_SWZ | PFX_W; break;
+      default:
+        set_insn_error (0, _("invalid VFPU prefix"));
+        return NULL;
+    };
+    SKIP_SPACE_TABS (s);
+
+    if (abs) {
+      if (*s != '|') {
+        set_insn_error (0, _("unmatched '|' in VFPU prefix"));
+        return NULL;
+      }
+      s++;
+    }
+
+    PFX_RET(var, 0);
+  }
+  return NULL;
+}
+
+/* Parse vrot rotation code array. This encodes the argument into some
+   temporary expression to be encoded later. It accepts expressions that
+   are not encodeable but look plausibly so.  */
+static char *
+mips_parse_vfpu_vrotarg (char *s, unsigned int *immval)
+{
+  unsigned p = 0;
+  int chs[4] = {-1, -1, -1, -1};
+  int neg = -1;
+  while (*s != 0) {
+    SKIP_SPACE_TABS (s);
+
+    switch (*s++) {
+    default:
+      return NULL;
+
+    case ',':
+      if (p >= 3 || chs[p] < 0)
+        return NULL;   // Empty argument or too many args
+      p++;
+      break;
+
+    case ']':
+      if (p < 1 || chs[p] < 0)
+        return NULL;   // Missing last operand
+
+      // Calculate the final imm value
+      *immval = 0;
+      for (unsigned j = 0; j <= p; j++)
+        *immval = ((*immval) << 2) | chs[j];
+      if (neg == 1)
+        *immval |= 0x800;
+      *immval |= (p-1) << 8;
+
+      return s;
+
+    case '0':
+      if (chs[p] >= 0)
+        return NULL;
+      chs[p] = 0;
+      break;
+
+    case 'c':
+      if (chs[p] >= 0)
+        return NULL;
+      chs[p] = 3;
+      break;
+
+    case 's':
+      // Cannot mix `s` and `-s`
+      if (neg == 1)
+        return NULL;
+      if (chs[p] >= 0)
+        return NULL;
+      chs[p] = 2;
+      neg = 0;
+      break;
+
+    case '-':
+      // Only sine can be negated
+      if (TOLOWER(*s) != 's')
+        return NULL;
+      // Cannot mix `s` and `-s`
+      if (neg == 0)
+        return NULL;
+      if (chs[p] >= 0)
+        return NULL;
+      chs[p] = 2;
+      neg = 1;
+      s++;
+      break;
+    };
+  }
+  return NULL;
+}
+
 /* Check whether S is '(' followed by a register name.  Add OT_CHAR
    and OT_REG tokens for them if so, and return a pointer to the first
    unconsumed character.  Return null otherwise.  */
@@ -3286,6 +5639,38 @@ mips_parse_argument_token (char *s, char float_format)
       token.u.regno = regno1;
       mips_add_token (&token, OT_REG);
 
+      if (*s == '[' && (regno1 & RTYPE_VFPU))
+	{
+	  /* We just parsed the VFPU reg, now parse the prefix */
+	  for (unsigned i = 0; i < 4; i++) {
+	    unsigned int vchan = 0;
+	    s = mips_parse_vfpu_prefix (s + 1, &vchan);
+	    if (!s)
+	      return NULL;
+
+	    token.u.channels = vchan;
+	    mips_add_token (&token, OT_CHANNELS);
+
+	    // Check that we have a separator or EOF
+	    SKIP_SPACE_TABS (s);
+
+	    if (*s == ',') {
+	      if (i == 3) {
+	        set_insn_error (0, _("invalid VFPU prefix, too many elements"));
+	        return NULL;
+	      }
+	    }
+	    else if (*s == ']') {
+	      return s + 1;
+	    }
+	    else {
+	      set_insn_error (0, _("invalid VFPU prefix, expecting ',' or ']'"));
+	      return NULL;
+	    }
+         }
+          return s;
+	}
+
       /* Check for a vector index.  */
       if (*s == '[')
 	{
@@ -3338,6 +5723,51 @@ mips_parse_argument_token (char *s, char float_format)
 	  return end;
 	}
     }
+
+  /* Attempt to parse a VFPU prefix argument */
+  if (*s == '[') {
+    struct mips_operand_token pfxtoken[4];
+    unsigned int valid = 0;
+    char *s2 = s + 1;
+    for (unsigned i = 0; i < 4; i++) {
+      unsigned int vchan = 0;
+      s2 = mips_parse_vfpu_prefix (s2, &vchan);
+      if (!s2)
+        break;
+
+      pfxtoken[i].u.channels = vchan;
+
+      // Check that we have a separator or EOF
+      SKIP_SPACE_TABS (s2);
+
+      // We expect a colon here if i<3
+      if (i < 3 && *s2++ != ',')
+        break;
+      if (i == 3 && *s2++ != ']')
+        break;
+      valid++;
+    }
+    if (valid == 4) {
+      token.u.ch = '[';
+      mips_add_token (&token, OT_CHAR);
+      for (unsigned i = 0; i < 4; i++) {
+        mips_add_token (&pfxtoken[i], OT_CHANNELS);
+        token.u.ch = i < 3 ? ',' : ']';
+        mips_add_token (&token, OT_CHAR);
+      }
+      return s2;
+    }
+  }
+
+  /* Attempt to parse vrot constants */
+  if (*s == '[') {
+    char *endp = mips_parse_vfpu_vrotarg(s+1, &regno1);
+    if (endp) {
+      token.u.regno = regno1;
+      mips_add_token (&token, OT_REG);
+      return endp;
+    }
+  }
 
   /* Treat everything else as an integer expression.  */
   token.u.integer.relocs[0] = BFD_RELOC_UNUSED;
@@ -3583,10 +6013,19 @@ validate_mips_insn (const struct mips_opcode *opcode,
 	       operand field that cannot be fully described with LSB/SIZE.  */
 	    if (operand->type == OP_SAVE_RESTORE_LIST && operand->lsb == 6)
 	      used_bits &= ~0x6000;
+	    if (operand->type == OP_VFPU_OPERAND) {
+	      const struct mips_vfpu_operand *opvfpu = (struct mips_vfpu_operand*)operand;
+              used_bits |= ((1 << opvfpu->size2) - 1) << opvfpu->lsb2;
+	    }
 	  }
 	/* Skip prefix characters.  */
 	if (decode_operand && (*s == '+' || *s == 'm' || *s == '-'))
 	  ++s;
+	if (*s == '?') {
+	  while (s[1] != 0 && s[1] != '?' && s[1] != ',' &&
+	         s[1] != '(' && s[1] != '[' && s[1] != ')' && s[1] != ']')
+	    s++;
+	}
 	opno += 1;
 	break;
       }
@@ -4143,6 +6582,10 @@ file_mips_check_options (void)
 
   /* End of GCC-shared inference code.  */
 
+  /* R5900 and ALLEGREX only support single hardware mode */
+  if (CPU_IS_ALLEGREX (mips_opts.arch) || mips_opts.arch == CPU_R5900)
+    file_mips_opts.single_float = true;
+
   /* This flag is set when we have a 64-bit capable CPU but use only
      32-bit wide registers.  Note that EABI does not use it.  */
   if (ISA_HAS_64BIT_REGS (file_mips_opts.isa)
@@ -4643,6 +7086,7 @@ operand_reg_mask (const struct mips_cl_insn *insn,
     case OP_VU0_SUFFIX:
     case OP_VU0_MATCH_SUFFIX:
     case OP_IMM_INDEX:
+    case OP_VFPU_OPERAND:
       abort ();
 
     case OP_REG28:
@@ -5081,6 +7525,12 @@ convert_reg_type (const struct mips_opcode *opcode,
 
     case OP_REG_MSA_CTRL:
       return RTYPE_NUM;
+
+    case OP_REG_VFPU:
+      return RTYPE_VFPU;
+
+    case OP_REG_VFPU_CTR:
+      return RTYPE_VFPU_CTR;
     }
   abort ();
 }
@@ -5096,6 +7546,7 @@ check_regno (struct mips_arg_info *arg,
 
   if (type == OP_REG_FP
       && (regno & 1) != 0
+      && ! CPU_IS_ALLEGREX (mips_opts.arch)
       && !mips_oddfpreg_ok (arg->insn->insn_mo, arg->opnum))
     {
       /* This was a warning prior to introducing O32 FPXX and FP64 support
@@ -6190,6 +8641,489 @@ match_float_constant (struct mips_arg_info *arg, expressionS *imm,
   return true;
 }
 
+/* Parses the source prefix operand, into a prefix opcode */
+static unsigned int parse_vfpu_spfx_channel(unsigned chval, unsigned chn)
+{
+  unsigned int uval = 0;
+
+  /* If no value, it means empty arg, so use the natural swizzle */
+  if (!chval)
+    chval = PFX_SWZ | chn;
+
+  if (chval & PFX_NEG)
+    uval |= (1 << (16 + chn));
+
+  if (chval & PFX_CONST) {
+    uval |= (0x1000 << chn);
+    if (chval & 0x4)
+      uval |= (0x100 << chn);
+  } else {
+    /* Variable, fill abs field too */
+    if (chval & PFX_ABS)
+      uval |= (0x100 << chn);
+  }
+  uval |= (chval & 0x3) << (chn * 2);
+  return uval;
+}
+
+/* Parses the destination prefix operand, into a prefix opcode */
+static unsigned int parse_vfpu_dpfx_channel(unsigned chval, unsigned chn)
+{
+  unsigned int uval = 0;
+
+  if (chval & PFX_MSK)
+    uval |= (0x100 << chn);
+  else
+    uval |= (chval & 0x3) << (chn * 2);
+  return uval;
+}
+
+static const unsigned short vreg_usage[8][16] = {
+  { 0x0001, 0x0010, 0x0100, 0x1000,
+    0x0002, 0x0020, 0x0200, 0x2000,
+    0x0004, 0x0040, 0x0400, 0x4000,
+    0x0008, 0x0080, 0x0800, 0x8000 },
+  { 0x0003, 0x0030, 0x0300, 0x3000,
+    0x0011, 0x0022, 0x0044, 0x0088,
+    0x000c, 0x00c0, 0x0c00, 0xc000,
+    0x1100, 0x2200, 0x4400, 0x8800 },
+  { 0x0007, 0x0070, 0x0700, 0x7000,
+    0x0111, 0x0222, 0x0444, 0x0888,
+    0x000e, 0x00e0, 0x0e00, 0xe000,
+    0x1110, 0x2220, 0x4440, 0x8880 },
+  { 0x000f, 0x00f0, 0x0f00, 0xf000,
+    0x1111, 0x2222, 0x4444, 0x8888,
+    0x000f, 0x00f0, 0x0f00, 0xf000,
+    0x1111, 0x2222, 0x4444, 0x8888 },
+  { 0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000 },
+  { 0x0033, 0x0033, 0x3300, 0x3300,
+    0x0033, 0x0033, 0x00cc, 0x00cc,
+    0x00cc, 0x00cc, 0xcc00, 0xcc00,
+    0x3300, 0x3300, 0xcc00, 0xcc00 },
+  { 0x0777, 0x7770, 0x0777, 0x7770,
+    0x0777, 0x0eee, 0x0777, 0x0eee,
+    0x0eee, 0xeee0, 0x0eee, 0xeee0,
+    0x7770, 0xeee0, 0x7770, 0xeee0 },
+  { 0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff, 0xffff, 0xffff, 0xffff },
+};
+
+#define INVALID_REG(msg) \
+{ \
+  set_insn_error (arg->argnum, _(msg)); \
+  return false; \
+}
+
+#define INVALID_REG_EX(msg, ...) \
+{ \
+  char errmsg[1024]; \
+  snprintf(errmsg, sizeof(errmsg), _(msg), __VA_ARGS__); \
+  set_insn_error_ss(arg->argnum, "%s%s", errmsg, ""); \
+  return false; \
+}
+
+/* Matches VFPU operands and their subtypes */
+static bfd_boolean
+match_vfpu_operand (struct mips_arg_info *arg,
+		    const struct mips_operand *operand)
+{
+  const struct mips_vfpu_operand *vfpuop = (struct mips_vfpu_operand*)operand;
+  unsigned int uval = 0;
+
+  switch (vfpuop->op_type) {
+  case OP_VFPU_REGS:
+  case OP_VFPU_REGT:
+  case OP_VFPU_REGD:
+  case OP_VFPU_REGX:
+  case OP_VFPU_REGV:
+  {
+    unsigned isdest = (vfpuop->op_type == OP_VFPU_REGD ||
+                       vfpuop->op_type == OP_VFPU_REGX ||
+                       vfpuop->op_type == OP_VFPU_REGV);
+    unsigned regtype;
+    if (!match_reg (arg, OP_REG_VFPU, &uval))
+      return false;
+
+    /* Validate register type for this operation */
+    regtype = uval & (~127);
+
+    /* Validate register type, to ensure we use the right register prefix */
+    switch (vfpuop->extra) {
+    case 0:
+      if (regtype != VFPU_RSINGLE)
+        INVALID_REG("register type mismatch: a single register is required");
+      break;
+    case 1:
+      if (regtype != VFPU_VECTOR_ANY && regtype != VFPU_VECTOR_PAIR)
+        INVALID_REG("register type mismatch: a vector pair register is required");
+      break;
+    case 2:
+      if (regtype != VFPU_VECTOR_ANY && regtype != VFPU_VECTOR_TRIPLE)
+        INVALID_REG("register type mismatch: a vector triple register is required");
+      break;
+    case 3:
+      if (regtype != VFPU_VECTOR_ANY && regtype != VFPU_VECTOR_QUAD)
+        INVALID_REG("register type mismatch: a quad vector register is required");
+      break;
+    case 5:
+      if (regtype != VFPU_MATRIX_ANY && regtype != VFPU_MATRIX_PAIR)
+        INVALID_REG("register type mismatch: a 2x2 matrix register is required");
+      break;
+    case 6:
+      if (regtype != VFPU_MATRIX_ANY && regtype != VFPU_MATRIX_TRIPLE)
+        INVALID_REG("register type mismatch: a 3x3 matrix register is required");
+      break;
+    case 7:
+      if (regtype != VFPU_MATRIX_ANY && regtype != VFPU_MATRIX_QUAD)
+        INVALID_REG("register type mismatch: a 4x4 matrix register is required");
+      break;
+    };
+
+    /* Validate that source registers do not overlap with the destination reg */
+    switch (vfpuop->op_type) {
+    case OP_VFPU_REGD:
+      arg->dest_regno = ILLEGAL_REG;  /* No possible collisions */
+      break;
+    case OP_VFPU_REGX:
+      /* Annotate dest reg and type of conflict for further validation */
+      arg->dest_regno = (uval & 127) | (vfpuop->extra << 7);
+      break;
+    case OP_VFPU_REGV:
+      arg->dest_regno = (uval & 127) | (vfpuop->extra << 7) | 0x8000;
+      break;
+    case OP_VFPU_REGS:
+    case OP_VFPU_REGT:
+      if (arg->dest_regno != ILLEGAL_REG) {
+        unsigned dreg = arg->dest_regno;
+        /* There are no collisions across different matrices */
+        unsigned dmtx = (dreg >> VF_SH_MR_MTX) & VF_MASK_MR_MTX;
+        unsigned smtx = (uval >> VF_SH_MR_MTX) & VF_MASK_MR_MTX;
+        if (dmtx == smtx) {
+          /* Whether it's an X type (no collision allowed at all) */
+          unsigned dstexcl = dreg >> 15;
+          unsigned dstsize = (dreg >> 7) & 7;
+          unsigned srcsize = vfpuop->extra;
+          /* Decode the row/col indices, ignoring matrix id */
+          unsigned dfsl = (dreg >> VF_SH_MR_FSL) & VF_MASK_MR_FSL;
+          unsigned didx = (dreg >> VF_SH_MR_IDX) & VF_MASK_MR_IDX;
+          unsigned drxc = (dreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+          unsigned sfsl = (uval >> VF_SH_MR_FSL) & VF_MASK_MR_FSL;
+          unsigned sidx = (uval >> VF_SH_MR_IDX) & VF_MASK_MR_IDX;
+          unsigned srxc = (uval >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+
+          /* These hold a 16 bit boolean mask with the used registers */
+          unsigned dstregs = vreg_usage[dstsize][(dfsl << 2) | didx];
+          unsigned srcregs = vreg_usage[srcsize][(sfsl << 2) | sidx];
+          unsigned comregs = (srcregs & dstregs);
+
+          /* If there's register overlap we need to notify the user if
+             the destination is type V (strict overlap) or if it's X type
+             but the register overlap is not "compatible", that is, if the
+             area and direction do not match */
+            
+          if (comregs && (dstexcl || (dstregs != srcregs) || (drxc != srxc))) {
+            /* Produce some user meaningful error code */
+            unsigned dvfsl = (dreg >> VF_SH_MR_VFSL) & VF_MASK_MR_VFSL;
+            switch (dstsize) {
+            case 1:
+              dvfsl <<= 1;
+              /* fallthrough */
+            case 2:
+            case 3:
+              if (drxc)
+                INVALID_REG_EX("destination register conflict (R%u%u%u)", dmtx, dvfsl, didx)
+              else
+                INVALID_REG_EX("destination register conflict (C%u%u%u)", dmtx, didx, dvfsl)
+
+            case 5:
+              dvfsl <<= 1;
+              /* fallthrough */
+            case 6:
+            case 7:
+              if (drxc)
+                INVALID_REG_EX("destination register conflict (E%u%u%u)", dmtx, dvfsl, didx)
+              else
+                INVALID_REG_EX("destination register conflict (M%u%u%u)", dmtx, didx, dvfsl)
+            };
+          }
+        }
+      }
+      break;
+    default:
+      abort ();
+    };
+
+    /* vmmul is special for VS register, this must be done *after* register conflict */
+    if (vfpuop->op_type == OP_VFPU_REGS && !strncmp(arg->insn->insn_mo->name, "vmmul", 5))
+      uval ^= 0x20;
+
+    insn_insert_operand (arg->insn, operand, uval);
+
+    /* Now try to parse any prefix that might be there */
+    if (arg->token->type == OT_CHANNELS) {
+      unsigned int opcode = 0;
+      bfd_reloc_code_real_type unused_reloc[3]
+        = {BFD_RELOC_UNUSED, BFD_RELOC_UNUSED, BFD_RELOC_UNUSED};
+      struct mips_cl_insn pins;
+      struct mips_opcode *pop = (struct mips_opcode *) str_hash_find (
+        op_hash, vfpuop->op_type == OP_VFPU_REGS ? "vpfxs" :
+                 vfpuop->op_type == OP_VFPU_REGT ? "vpfxt" : "vpfxd");
+
+      /* Check whether the prefixes are allowed */
+      if (vfpuop->op_type == OP_VFPU_REGS && vfpuop->pfxcompat == 'f') {
+        set_insn_error (arg->argnum, _("source reg does not support prefixes"));
+        return false;
+      }
+      if (vfpuop->op_type == OP_VFPU_REGT && vfpuop->pfxcompat == 'f') {
+        set_insn_error (arg->argnum, _("target reg does not support prefixes"));
+        return false;
+      }
+      if (isdest && vfpuop->pfxcompat == 'f') {
+        set_insn_error (arg->argnum, _("destination reg does not support prefixes"));
+        return false;
+      }
+
+      /* Fill all elements, even if they are not needed (binary compat) */
+      for (unsigned i = 0; i < 4; i++) {
+        /* Mantains a default that's binary compatible, should not matter */
+        unsigned int chnv = isdest ? PFX_MSK : 0;
+        if (i <= vfpuop->extra) {
+          /* Only if this is required, otherwise will fill chnv=0 */
+          chnv = arg->token->u.channels;
+          if (arg->token->type != OT_CHANNELS) {
+            set_insn_error (arg->argnum, _("mismatched prefix size, too few elements"));
+            return false;
+          }
+          ++arg->token;
+
+          if (isdest && vfpuop->pfxcompat == 'm' && !(chnv & PFX_MSK) && chnv != 0) {
+            set_insn_error (arg->argnum, _("instruction can only do masking in destination prefix"));
+            return false;
+          }
+          if (!isdest && vfpuop->pfxcompat == 'w' && (chnv & (PFX_CONST|PFX_NEG|PFX_ABS))) {
+            set_insn_error (arg->argnum, _("instruction can only perform swizzle in source prefix"));
+            return false;
+          }
+        }
+
+        if (isdest) {
+          if (chnv & (PFX_CONST|PFX_SWZ|PFX_NEG|PFX_ABS)) {
+            set_insn_error (arg->argnum, _("destination prefix cannot contain swizzle, "
+                            "negation, constants or absolute value operations"));
+            return false;
+          }
+
+          opcode |= parse_vfpu_dpfx_channel(chnv, i);
+        } else {
+          if (chnv & PFX_DEST) {
+            set_insn_error (arg->argnum, _("source prefix cannot contain masking or saturation operations"));
+            return false;
+          }
+
+          /* Check whether this channel is even allowed */
+          if (!(chnv & PFX_CONST) && ((chnv & 3) > vfpuop->extra)) {
+            set_insn_error (arg->argnum, _("swizzle operand is out of range"));
+            return false;
+          }
+          opcode |= parse_vfpu_spfx_channel(chnv, i);
+        }
+      }
+
+      if (arg->token->type == OT_CHANNELS)
+        set_insn_error (arg->argnum, _("mismatched prefix size, too many elements"));
+
+      /* Emit prefix instruction right here */
+      create_insn (&pins, pop);
+      pins.insn_opcode |= opcode;
+      append_insn (&pins, NULL, unused_reloc, false);
+    }
+
+    return true;
+
+  }
+  case OP_VFPU_REG2:
+    if (!match_reg (arg, OP_REG_VFPU, &uval))
+      return false;
+
+    // This takes care of the two-part register encoding
+    insn_insert_operand (arg->insn, operand, uval);
+    return true;
+
+  case OP_VFPU_CREG:
+    if (!match_reg (arg, OP_REG_VFPU_CTR, &uval))
+      return false;
+
+    if (!(uval >= VF_MIN_VCR && uval <= VF_MAX_VCR)) {
+      set_insn_error (arg->argnum, _("invalid coprocessor register"));
+      return false;
+    }
+
+    insn_insert_operand (arg->insn, operand, uval);
+    return true;
+
+  case OP_VFPU_NCNT:
+    if (!match_reg (arg, OP_REG_VFPU_CTR, &uval))
+      return false;
+
+    if (uval < 32 || uval > 64) {
+      set_insn_error (arg->argnum, _("invalid constant code"));
+      return false;
+    }
+
+    insn_insert_operand (arg->insn, operand, uval & 31);
+    return true;
+
+  case OP_VFPU_COND:
+    if (!match_reg (arg, OP_REG_VFPU_CTR, &uval))
+      return false;
+
+    if (uval > 16) {
+      set_insn_error (arg->argnum, _("invalid condition code"));
+      return false;
+    }
+
+    // Validate number of operands and operation
+    switch (vfpuop->extra) {
+    case 1:
+      // Unary operations only work for some codes
+      if (uval < 8) {
+        set_insn_error (arg->argnum, _("invalid condition code for unary operation"));
+        return false;
+      }
+      break;
+    case 0:
+      if (uval != VFPU_CONDCODE_FL && uval != VFPU_CONDCODE_TR) {
+        set_insn_error (arg->argnum, _("invalid condition code: must be FL or TR"));
+        return false;
+      }
+      break;
+    };
+
+    insn_insert_operand (arg->insn, operand, uval);
+    return true;
+
+  case OP_VFPU_HFLOAT:
+    if (arg->token->type != OT_FLOAT)
+      return false;
+
+    if (arg->token->u.flt.length == 4) {
+      unsigned int f32 = bfd_getl32 (arg->token->u.flt.data);
+      unsigned int sign = (f32 >> VF_SH_F32_SIGN) & VF_MASK_F32_SIGN;
+      unsigned int mantissa = (f32 >> VF_SH_F32_FRA) & VF_MASK_F32_FRA;
+      unsigned int exponent = (f32 >> VF_SH_F32_EXP) & VF_MASK_F32_EXP;
+
+      if (exponent == VF_MAX_F32_EXP) {
+        if (mantissa)
+          // Infinite (max exponent, non-zero mantissa, picked 1 arbitrarily)
+          uval = (sign << VF_SH_F16_SIGN) | (VF_MAX_F16_EXP << VF_SH_F16_EXP) | 1;
+        else
+          // Infinite (max exponent, zero mantissa)
+          uval = (sign << VF_SH_F16_SIGN) | (VF_MAX_F16_EXP << VF_SH_F16_EXP);
+      }
+      else {
+        // Convert exponent from 0..254 (-127..127) to 0..31 (-15..15). 
+        // This just converts exponents around its biases.
+        int sexp = (signed)exponent - VF_BIAS_F32_EXP;
+        if (sexp > VF_BIAS_F16_EXP)
+          sexp = VF_BIAS_F16_EXP;
+        else if (sexp < -VF_BIAS_F16_EXP)
+          sexp = -VF_BIAS_F16_EXP;
+        exponent = sexp + VF_BIAS_F16_EXP;
+
+        // Reduce mantissa precision
+        mantissa = mantissa >> (VF_SH_F32_EXP - VF_SH_F16_EXP);
+
+        uval = (sign << VF_SH_F16_SIGN) | (exponent << VF_SH_F16_EXP) | mantissa;
+      }
+
+      insn_insert_operand (arg->insn, operand, uval);
+      ++arg->token;
+    }
+    return true;
+
+  case OP_VFPU_DECORATOR:
+    ++arg->token;
+    return true;
+
+  case OP_VFPU_SPREFIX:
+  {
+    if (arg->token->type != OT_CHANNELS)
+      return false;
+
+    if (arg->token->u.channels & PFX_DEST) {
+      set_insn_error (arg->argnum, _("source prefix cannot contain masking or saturation operations"));
+      return false;
+    }
+
+    arg->insn->insn_opcode |= parse_vfpu_spfx_channel(arg->token->u.channels, vfpuop->extra);
+    ++arg->token;
+    return true;
+  }
+
+  case OP_VFPU_DPREFIX:
+  {
+    if (arg->token->type != OT_CHANNELS)
+      return false;
+
+    if (arg->token->u.channels & (PFX_CONST|PFX_SWZ|PFX_NEG|PFX_ABS)) {
+      set_insn_error (arg->argnum, _("destination prefix cannot contain swizzle, negation, constants or absolute value operations"));
+      return false;
+    }
+
+    arg->insn->insn_opcode |= parse_vfpu_dpfx_channel(arg->token->u.channels, vfpuop->extra);
+    ++arg->token;
+    return true;
+  }
+
+  case OP_VFPU_WRAPCNT:
+  {
+    offsetT val;
+    if (!match_const_int (arg, &val))
+      return false;
+
+    insn_insert_operand (arg->insn, operand, val);
+    return true;
+  }
+
+  case OP_VFPU_ROTCNT:
+    if (arg->token->type == OT_REG) {
+      unsigned int regidx = arg->token->u.regno & 0xff;
+      unsigned int regsze = (arg->token->u.regno >> 8) & 0x3;
+      bool neg = arg->token->u.regno & 0x800;
+
+      /* Pick the first match, there might be more than one encoding */
+      for (unsigned i = 0; i < 16; i++) {
+        if (vrot_enct[i].encoded_expr[regsze] == regidx) {
+          unsigned immval = vrot_enct[i].imm5 | (neg ? 16 : 0);
+          insn_insert_operand (arg->insn, operand, immval);
+          ++arg->token;
+          return true;
+        }
+      }
+    }
+    return false;
+
+  case OP_VFPU_WRB_BOOL:
+    if (!match_reg (arg, OP_REG_VFPU_CTR, &uval))
+      return false;
+
+    if (uval != 16 && uval != 17) {
+      set_insn_error (arg->argnum, _("invalid sv.q suffix, only 'wb' and 'wt' suffixes are allowed"));
+      return false;
+    }
+
+    insn_insert_operand (arg->insn, operand, uval & 1);
+    return true;
+
+  };
+  return false;
+}
+
 /* OP_VU0_SUFFIX and OP_VU0_MATCH_SUFFIX matcher; MATCH_P selects between
    them.  */
 
@@ -6292,6 +9226,9 @@ match_operand (struct mips_arg_info *arg,
 
     case OP_VU0_MATCH_SUFFIX:
       return match_vu0_suffix_operand (arg, operand, true);
+
+    case OP_VFPU_OPERAND:
+      return match_vfpu_operand (arg, operand);
 
     case OP_IMM_INDEX:
       return match_imm_index_operand (arg, operand);
@@ -8455,6 +11392,11 @@ match_insn (struct mips_cl_insn *insn, const struct mips_opcode *opcode,
       /* Skip prefixes.  */
       if (*args == '+' || *args == 'm' || *args == '-')
 	args++;
+      if (*args == '?') {
+        while (args[1] != 0 && args[1] != '?' && args[1] != ',' &&
+               args[1] != '(' && args[1] != '[' && args[1] != ')' && args[1] != ']')
+          args++;
+      }
 
       if (mips_optional_operand_p (operand)
 	  && args[1] == ','
@@ -9153,6 +12095,55 @@ macro_build (expressionS *ep, const char *name, const char *fmt, ...)
 	  gas_assert (ep != NULL);
 	  *r = BFD_RELOC_MIPS_JMP;
 	  break;
+
+   /* VFPU fields */
+   case '?':
+     switch (*(++fmt))
+       {
+       case 'o':
+         macro_read_relocs (&args, r);
+         gas_assert (*r == BFD_RELOC_GPREL16
+             || *r == BFD_RELOC_MIPS_LITERAL
+             || *r == BFD_RELOC_MIPS_HIGHER
+             || *r == BFD_RELOC_HI16_S
+             || *r == BFD_RELOC_LO16
+             || *r == BFD_RELOC_MIPS_GOT16
+             || *r == BFD_RELOC_MIPS_CALL16
+             || *r == BFD_RELOC_MIPS_GOT_DISP
+             || *r == BFD_RELOC_MIPS_GOT_PAGE
+             || *r == BFD_RELOC_MIPS_GOT_OFST
+             || *r == BFD_RELOC_MIPS_GOT_LO16
+             || *r == BFD_RELOC_MIPS_CALL_LO16);
+         break;
+       case 'd':
+         insn.insn_opcode |= va_arg (args, int) << VF_SH_VD;
+         fmt += 2;
+         break;
+       case 's':
+         insn.insn_opcode |= va_arg (args, int) << VF_SH_VS;
+         fmt += 2;
+         break;
+       case 'm':
+       {
+         int vtreg = va_arg (args, int);
+         insn.insn_opcode |= (vtreg & VF_MASK_VML) << VF_SH_VML;
+         insn.insn_opcode |= ((vtreg >> 5) & VF_MASK_VMH) << VF_SH_VMH;
+         fmt += 2;
+         break;
+       }
+       case 'n':
+       {
+         int vtreg = va_arg (args, int);
+         insn.insn_opcode |= (vtreg & VF_MASK_VNL) << VF_SH_VNL;
+         insn.insn_opcode |= ((vtreg >> 5) & VF_MASK_VNH) << VF_SH_VNH;
+         fmt += 2;
+         break;
+       }
+       case 'e':
+         insn.insn_opcode |= va_arg (args, int) << VF_SH_MCOND;
+         break;
+       }
+     continue;
 
 	default:
 	  operand = (mips_opts.micromips
@@ -10296,6 +13287,7 @@ macro (struct mips_cl_insn *ip, char *str)
   const struct mips_operand_array *operands;
   unsigned int breg, i;
   unsigned int tempreg;
+  int vsreg, vtreg, vdreg, vmreg, vwb;
   int mask;
   int used_at = 0;
   expressionS label_expr;
@@ -10330,6 +13322,13 @@ macro (struct mips_cl_insn *ip, char *str)
       op[i] = -1;
 
   mask = ip->insn_mo->mask;
+
+  vmreg = ((ip->insn_opcode >> 16) & 0x1f)
+   | ((ip->insn_opcode <<  5) & 0x60);
+  vtreg = (ip->insn_opcode >> 16) & 0x7f;
+  vsreg = (ip->insn_opcode >> 8) & 0x7f;
+  vdreg = (ip->insn_opcode >> 0) & 0x7f;
+  vwb = (ip->insn_opcode >> 1) & 0x1;
 
   label_expr.X_op = O_constant;
   label_expr.X_op_symbol = NULL;
@@ -11973,6 +14972,34 @@ macro (struct mips_cl_insn *ip, char *str)
       /* Itbl support may require additional care here.  */
       coproc = 1;
       goto ld_st;
+    case M_LV_S_AB:
+      s = "lv.s";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?m0f,?o(b)";
+      op[0] = vmreg;
+      goto ld;
+    case M_LV_Q_AB:
+      s = "lv.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld;
+    case M_LVL_Q_AB:
+      s = "lvl.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld;
+    case M_LVR_Q_AB:
+      s = "lvr.q";
+      /* Itbl support may require additional care here.  */                                                                                  
+      coproc = 1;                                                                                                                            
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld;
     case M_LWL_AB:
       s = "lwl";
       fmt = MEM12_FMT;
@@ -12137,6 +15164,37 @@ macro (struct mips_cl_insn *ip, char *str)
       fmt = "E,o(b)";
       /* Itbl support may require additional care here.  */
       coproc = 1;
+      goto ld_st;
+    case M_SV_S_AB:
+      s = "sv.s";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?m0f,?o(b)";
+      op[0] = vmreg;
+      goto ld_st;
+    case M_SV_Q_AB:
+      if (vwb)
+   s = "vwb.q";
+      else
+   s = "sv.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld_st;
+    case M_SVL_Q_AB:
+      s = "svl.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld_st;
+    case M_SVR_Q_AB:
+      s = "svr.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
       goto ld_st;
     case M_SWL_AB:
       s = "swl";
@@ -12719,6 +15777,136 @@ macro (struct mips_cl_insn *ip, char *str)
 	  break;
 	}
 
+    case M_LVI_S_SS:
+    case M_LVI_P_SS:
+    case M_LVI_T_SS:
+    case M_LVI_Q_SS:
+      {
+   int mtx = (vtreg >> VF_SH_MR_MTX) & VF_MASK_MR_MTX;
+   int idx = (vtreg >> VF_SH_MR_IDX) & VF_MASK_MR_IDX;
+   int fsl = 0;
+   int rxc = 0;
+   int vtreg_s = 0;
+   unsigned vnum = 0;
+   int vat = 0;
+
+   switch (mask)
+     {
+     case M_LVI_S_SS:
+       vnum = 1;
+       fsl = (vtreg >> VF_SH_MR_FSL) & VF_MASK_MR_FSL;
+       rxc = 0;
+       break;
+     case M_LVI_P_SS:
+       vnum = 2;
+       fsl = ((vtreg >> VF_SH_MR_VFSL) & VF_MASK_MR_VFSL) << 1;
+       rxc = (vtreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+       break;
+     case M_LVI_T_SS:
+       vnum = 3;
+       fsl = (vtreg >> VF_SH_MR_VFSL) & VF_MASK_MR_VFSL;
+       rxc = (vtreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+       break;
+     case M_LVI_Q_SS:
+       vnum = 4;
+       fsl = 0;
+       rxc = (vtreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+       break;
+     }
+   if (rxc)
+     vtreg_s = (mtx << VF_SH_MR_MTX) | (idx << VF_SH_MR_FSL)
+         | (fsl << VF_SH_MR_IDX);
+   else
+     vtreg_s = (mtx << VF_SH_MR_MTX) | (idx << VF_SH_MR_IDX)
+         | (fsl << VF_SH_MR_FSL);
+
+   for (i = 0; i < vnum; i++) {
+     imm_expr = vimm_expr[i];
+     offset_expr = voffset_expr[i];
+
+     if (imm_expr.X_op == O_constant)
+       {
+         load_register (AT, &imm_expr, 0);
+         macro_build ((expressionS *) NULL,
+              "mtv", "t,?d0f", AT, vtreg_s);
+         vat = 1;
+       }
+     else
+       {
+         gas_assert (offset_expr.X_op == O_symbol
+             && strcmp (segment_name (S_GET_SEGMENT
+                          (offset_expr.X_add_symbol)),
+                ".lit4") == 0
+             && offset_expr.X_add_number == 0);
+         macro_build (&offset_expr,
+              "lv.s", "?m0f,?o(b)", vtreg_s,
+              (int) BFD_RELOC_MIPS_LITERAL, mips_gp_register);
+       }
+
+     if (rxc)
+       vtreg_s += (1 << VF_SH_MR_IDX);
+     else
+       vtreg_s += (1 << VF_SH_MR_FSL);
+   }
+
+   if (vat)
+     break;
+   else
+     return;
+      }
+
+    case M_LVHI_S_SS:
+    case M_LVHI_P_SS:
+      {
+   int mtx = (vtreg >> VF_SH_MR_MTX) & VF_MASK_MR_MTX;
+   int idx = (vtreg >> VF_SH_MR_IDX) & VF_MASK_MR_IDX;
+   int fsl = 0;
+   unsigned rxc = 0;
+   unsigned vtreg_s = 0;
+   unsigned vnum = 0;
+   unsigned int f16v;
+   char f16v_str[16];
+
+   switch (mask)
+     {
+     case M_LVHI_S_SS:
+       vnum = 2;
+       fsl = (vtreg >> VF_SH_MR_FSL) & VF_MASK_MR_FSL;
+       rxc = 0;
+       break;
+     case M_LVHI_P_SS:
+       vnum = 4;
+       fsl = ((vtreg >> VF_SH_MR_VFSL) & VF_MASK_MR_VFSL) << 1;
+       rxc = (vtreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+       break;
+     }
+   if (rxc)
+     vtreg_s = (mtx << VF_SH_MR_MTX) | (idx << VF_SH_MR_FSL)
+         | (fsl << VF_SH_MR_IDX);
+   else
+     vtreg_s = (mtx << VF_SH_MR_MTX) | (idx << VF_SH_MR_IDX)
+         | (fsl << VF_SH_MR_FSL);
+
+
+   for (i = 0; i < vnum; i += 2) {
+     f16v = ((vimm_expr[i + 1].X_add_number & 0xffff) << 16)
+          | (vimm_expr[i].X_add_number & 0xffff);
+     sprintf(f16v_str, "0x%08x", f16v);
+     my_getExpression (&imm_expr, f16v_str);
+
+     load_register (AT, &imm_expr, 0);
+     macro_build ((expressionS *) NULL,
+              "mtv", "t,?d0f", AT, vtreg_s);
+
+     if (rxc)
+       vtreg_s += (1 << VF_SH_MR_IDX);
+     else
+       vtreg_s += (1 << VF_SH_MR_FSL);
+   }
+
+   break;
+      }
+
     case M_LI_D:
       /* Check if we have a constant in IMM_EXPR.  If the GPRs are 64 bits
          wide, IMM_EXPR is the entire value.  Otherwise IMM_EXPR is the high
@@ -13266,6 +16454,27 @@ macro (struct mips_cl_insn *ip, char *str)
       move_register (micromips_to_32_reg_h_map2[op[0]],
 		     micromips_to_32_reg_n_map[op[2]]);
       break;
+
+    case M_VCMOV_S:
+      s = "vcmovt.s";
+      fmt = "?d0a,?s0a,?e";
+      goto vcmov;
+    case M_VCMOV_P:
+      s = "vcmovt.p";
+      fmt = "?d1a,?s1a,?e";
+      goto vcmov;
+    case M_VCMOV_T:
+      s = "vcmovt.t";
+      fmt = "?d2a,?s2a,?e";
+      goto vcmov;
+    case M_VCMOV_Q:
+      s = "vcmovt.q";
+      fmt = "?d3a,?s3a,?e";
+    vcmov:
+      macro_build ((expressionS *) NULL, s, fmt,
+          vdreg, vsreg,
+          (ip->insn_opcode >> VF_SH_MCOND) & VF_MASK_MCOND);
+      return;
 
     case M_DMUL:
       dbl = 1;
@@ -13870,6 +17079,39 @@ macro (struct mips_cl_insn *ip, char *str)
       offbits = (mips_opts.micromips ? 12 : 16);
       off = 3;
       goto uld_st;
+    case M_ULV_S:
+      if (mips_opts.arch == CPU_ALLEGREX)
+        as_bad (_("opcode not supported on this processor"));
+      off = 3;
+      if (offset_expr.X_add_number >= 0x8000 - off)
+        as_bad (_("operand overflow"));
+      if (! target_big_endian)
+        offset_expr.X_add_number += off;
+      macro_build (&offset_expr, "lwl", "t,o(b)",
+                   AT, (int) BFD_RELOC_LO16, breg);
+      if (! target_big_endian)
+        offset_expr.X_add_number -= off;
+      else
+        offset_expr.X_add_number += off;
+      macro_build (&offset_expr, "lwr", "t,o(b)",
+                   AT, (int) BFD_RELOC_LO16, breg);
+
+      macro_build ((expressionS *) NULL, "mtv", "t,?d0f",
+          AT, vmreg);
+      break;
+
+    case M_ULV_Q:
+      off = 12;
+      if (offset_expr.X_add_number >= 0x8000 - off)
+        as_bad (_("operand overflow"));
+      offset_expr.X_add_number += off;
+      macro_build (&offset_expr, "lvl.q", "?n3f,?o(b)",
+                   vmreg, (int) BFD_RELOC_LO16, breg);
+      offset_expr.X_add_number -= off;
+      macro_build (&offset_expr, "lvr.q", "?n3f,?o(b)",
+                   vmreg, (int) BFD_RELOC_LO16, breg);
+      return;
+
     case M_ULD_AB:
       s = "ldl";
       s2 = "ldr";
@@ -13889,6 +17131,56 @@ macro (struct mips_cl_insn *ip, char *str)
       off = 3;
       ust = 1;
       goto uld_st;
+
+    case M_USV_S:
+      off = 3;
+      if (offset_expr.X_add_number >= 0x8000 - off)
+        as_bad (_("operand overflow"));
+      macro_build ((expressionS *) NULL, "mfv", "t,?d0f",
+                   AT, vmreg);
+      if (mips_opts.arch != CPU_ALLEGREX)
+      {
+        if (! target_big_endian)
+          offset_expr.X_add_number += off;
+        macro_build (&offset_expr, "swl", "t,o(b)",
+                     AT, (int) BFD_RELOC_LO16, breg);
+        if (! target_big_endian)
+          offset_expr.X_add_number -= off;
+        else
+          offset_expr.X_add_number += off;
+        macro_build (&offset_expr, "swr", "t,o(b)",
+                     AT, (int) BFD_RELOC_LO16, breg);
+      }
+      else
+      {
+        if (target_big_endian)
+          offset_expr.X_add_number += off;
+        while (off-- >= 0)
+        {
+          macro_build (&offset_expr, "sb", "t,o(b)",
+                       AT, (int) BFD_RELOC_LO16, breg);
+          macro_build ((expressionS *) NULL, "ror",
+                       "d,w,<", AT, AT, 8);
+          if (target_big_endian)
+            --offset_expr.X_add_number;
+          else
+            ++offset_expr.X_add_number;
+        }
+      }
+      break;
+
+    case M_USV_Q:
+      off = 12;
+      if (offset_expr.X_add_number >= 0x8000 - off)
+   as_bad (_("operand overflow"));
+      offset_expr.X_add_number += off;
+      macro_build (&offset_expr, "svl.q", "?n3f,?o(b)",
+          vmreg, (int) BFD_RELOC_LO16, breg);
+      offset_expr.X_add_number -= off;
+      macro_build (&offset_expr, "svr.q", "?n3f,?o(b)",
+          vmreg, (int) BFD_RELOC_LO16, breg);
+      return;
+
     case M_USD_AB:
       s = "sdl";
       s2 = "sdr";
@@ -14359,6 +17651,8 @@ mips_ip (char *str, struct mips_cl_insn *insn)
     format = 'f';
   else if (strcmp (first->name, "li.d") == 0)
     format = 'd';
+  else if (!strncmp(first->name, "lvhi", 4) || !strncmp(first->name, "vfim", 4))
+    format = 'f';
   else
     format = 0;
   tokens = mips_parse_arguments (str + end, format);
@@ -20017,6 +23311,8 @@ static const struct mips_cpu_info mips_cpu_info_table[] =
 
   /* MIPS II */
   { "r6000",          0, 0,			ISA_MIPS2,    CPU_R6000 },
+  /* Sony PSP "Allegrex" CPU core */
+  { "allegrex",       0, 0,     ISA_MIPS2,    CPU_ALLEGREX },
 
   /* MIPS III */
   { "r4000",          0, 0,			ISA_MIPS3,    CPU_R4000 },

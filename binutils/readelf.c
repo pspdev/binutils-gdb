@@ -3605,7 +3605,8 @@ get_machine_flags (Filedata * filedata, unsigned e_flags, unsigned e_machine)
 	    case E_MIPS_MACH_9000: strcat (buf, ", 9000"); break;
   	    case E_MIPS_MACH_LS2E: strcat (buf, ", loongson-2e"); break;
   	    case E_MIPS_MACH_LS2F: strcat (buf, ", loongson-2f"); break;
-	    case E_MIPS_MACH_GS464: strcat (buf, ", gs464"); break;
+	    /*case E_MIPS_MACH_GS464: strcat (buf, ", gs464"); break;*/
+	    case E_MIPS_MACH_ALLEGREX: strcat(buf, ", allegrex"); break;
 	    case E_MIPS_MACH_GS464E: strcat (buf, ", gs464e"); break;
 	    case E_MIPS_MACH_GS264E: strcat (buf, ", gs264e"); break;
 	    case E_MIPS_MACH_OCTEON: strcat (buf, ", octeon"); break;

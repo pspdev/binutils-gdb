@@ -1556,6 +1556,7 @@ enum bfd_architecture
 #define bfd_mach_mips_gs464e           3004
 #define bfd_mach_mips_gs264e           3005
 #define bfd_mach_mips_sb1              12310201 /* octal 'SB', 01.  */
+#define bfd_mach_mips_allegrex         10111431 /* octal 'AL', 31 */
 #define bfd_mach_mips_octeon           6501
 #define bfd_mach_mips_octeonp          6601
 #define bfd_mach_mips_octeon2          6502

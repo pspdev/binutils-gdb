@@ -477,8 +477,8 @@ case $1 in
 				basic_os=linux
 				;;
 			psp)
-				basic_machine=mipsallegrexel-sony
-				basic_os=psp
+				basic_machine=mipsallegrexel-psp
+				os=elf
 				;;
 			pw32)
 				basic_machine=i586-unknown
@@ -1216,6 +1216,7 @@ case $cpu-$vendor in
 			| mipsisa64sr71k | mipsisa64sr71kel \
 			| mipsr5900 | mipsr5900el \
 			| mipstx39 | mipstx39el \
+			| mipsallegrex | mipsallegrexel \
 			| mmix \
 			| mn10200 | mn10300 \
 			| moxie \

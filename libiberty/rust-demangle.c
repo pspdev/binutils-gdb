@@ -75,10 +75,10 @@ struct rust_demangler
   int version;
 
   /* Recursion depth.  */
-  uint recursion;
+  uint32_t recursion;
   /* Maximum number of times demangle_path may be called recursively.  */
 #define RUST_MAX_RECURSION_COUNT  1024
-#define RUST_NO_RECURSION_LIMIT   ((uint) -1)
+#define RUST_NO_RECURSION_LIMIT   ((uint32_t) -1)
 
   uint64_t bound_lifetime_depth;
 };

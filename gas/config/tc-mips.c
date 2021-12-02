@@ -17080,16 +17080,16 @@ macro (struct mips_cl_insn *ip, char *str)
       off = 3;
       goto uld_st;
 
-    case M_ULV_Q:
+    case M_ULV_Q_AB:
       off = 12;
       if (offset_expr.X_add_number >= 0x8000 - off)
         as_bad (_("operand overflow"));
       offset_expr.X_add_number += off;
       macro_build (&offset_expr, "lvl.q", "?n3f,?o(b)",
-                   vmreg, (int) BFD_RELOC_LO16, breg);
+                   vmreg, (int) BFD_RELOC_LO16, op[2]);
       offset_expr.X_add_number -= off;
       macro_build (&offset_expr, "lvr.q", "?n3f,?o(b)",
-                   vmreg, (int) BFD_RELOC_LO16, breg);
+                   vmreg, (int) BFD_RELOC_LO16, op[2]);
       return;
 
     case M_ULD_AB:
@@ -17112,16 +17112,16 @@ macro (struct mips_cl_insn *ip, char *str)
       ust = 1;
       goto uld_st;
 
-    case M_USV_Q:
+    case M_USV_Q_AB:
       off = 12;
       if (offset_expr.X_add_number >= 0x8000 - off)
-   as_bad (_("operand overflow"));
+        as_bad (_("operand overflow"));
       offset_expr.X_add_number += off;
       macro_build (&offset_expr, "svl.q", "?n3f,?o(b)",
-          vmreg, (int) BFD_RELOC_LO16, breg);
+          vmreg, (int) BFD_RELOC_LO16, op[2]);
       offset_expr.X_add_number -= off;
       macro_build (&offset_expr, "svr.q", "?n3f,?o(b)",
-          vmreg, (int) BFD_RELOC_LO16, breg);
+          vmreg, (int) BFD_RELOC_LO16, op[2]);
       return;
 
     case M_USD_AB:

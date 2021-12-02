@@ -17079,26 +17079,6 @@ macro (struct mips_cl_insn *ip, char *str)
       offbits = (mips_opts.micromips ? 12 : 16);
       off = 3;
       goto uld_st;
-    case M_ULV_S:
-      if (mips_opts.arch == CPU_ALLEGREX)
-        as_bad (_("opcode not supported on this processor"));
-      off = 3;
-      if (offset_expr.X_add_number >= 0x8000 - off)
-        as_bad (_("operand overflow"));
-      if (! target_big_endian)
-        offset_expr.X_add_number += off;
-      macro_build (&offset_expr, "lwl", "t,o(b)",
-                   AT, (int) BFD_RELOC_LO16, breg);
-      if (! target_big_endian)
-        offset_expr.X_add_number -= off;
-      else
-        offset_expr.X_add_number += off;
-      macro_build (&offset_expr, "lwr", "t,o(b)",
-                   AT, (int) BFD_RELOC_LO16, breg);
-
-      macro_build ((expressionS *) NULL, "mtv", "t,?d0f",
-          AT, vmreg);
-      break;
 
     case M_ULV_Q:
       off = 12;
@@ -17131,43 +17111,6 @@ macro (struct mips_cl_insn *ip, char *str)
       off = 3;
       ust = 1;
       goto uld_st;
-
-    case M_USV_S:
-      off = 3;
-      if (offset_expr.X_add_number >= 0x8000 - off)
-        as_bad (_("operand overflow"));
-      macro_build ((expressionS *) NULL, "mfv", "t,?d0f",
-                   AT, vmreg);
-      if (mips_opts.arch != CPU_ALLEGREX)
-      {
-        if (! target_big_endian)
-          offset_expr.X_add_number += off;
-        macro_build (&offset_expr, "swl", "t,o(b)",
-                     AT, (int) BFD_RELOC_LO16, breg);
-        if (! target_big_endian)
-          offset_expr.X_add_number -= off;
-        else
-          offset_expr.X_add_number += off;
-        macro_build (&offset_expr, "swr", "t,o(b)",
-                     AT, (int) BFD_RELOC_LO16, breg);
-      }
-      else
-      {
-        if (target_big_endian)
-          offset_expr.X_add_number += off;
-        while (off-- >= 0)
-        {
-          macro_build (&offset_expr, "sb", "t,o(b)",
-                       AT, (int) BFD_RELOC_LO16, breg);
-          macro_build ((expressionS *) NULL, "ror",
-                       "d,w,<", AT, AT, 8);
-          if (target_big_endian)
-            --offset_expr.X_add_number;
-          else
-            ++offset_expr.X_add_number;
-        }
-      }
-      break;
 
     case M_USV_Q:
       off = 12;

@@ -1524,7 +1524,7 @@ const struct mips_opcode mips_builtin_opcodes[] =
 /* mfc2 is at the bottom of the table.  */
 /* mfhc2 is at the bottom of the table.  */
 /* mfc3 is at the bottom of the table.  */
-{"mfdr",		"t,G",		0x7000003d, 0xffe007ff,	WR_1|RD_C0|LC,		0,		N5,		0,	0 },
+{"mfdr",		"t,G",		0x7000003d, 0xffe007ff,	WR_1|RD_C0|LC,		0,		N5|AL,		0,	0 },
 {"mfhi",		"d",		0x00000010, 0xffff07ff,	WR_1|RD_HI,		0,		I1,		0,	I37 },
 {"mfhi",		"d,9",		0x00000010, 0xff9f07ff, WR_1|RD_HI,		0,		0,		D32,	0 },
 {"mfhi1",		"d",		0x70000010, 0xffff07ff,	WR_1|RD_HI,		0,		EE,		0,	0 },

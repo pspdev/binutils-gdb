@@ -1247,6 +1247,10 @@ mips_opcode_32bit_p (const struct mips_opcode *mo)
    encoding is needed or otherwise the final EXTEND entry will apply,
    for the disassembly of the prefix only.  */
 #define INSN2_SHORT_ONLY	    0x00010000
+/* Instruction reads and writes VFPU registers.  */
+#define INSN2_VFPU_REG              0x00020000
+/* Instruction uses a named condition code.  */
+#define INSN2_VFPU_CC               0x00040000
 
 /* Masks used to mark instructions to indicate which MIPS ISA level
    they were introduced in.  INSN_ISA_MASK masks an enumeration that

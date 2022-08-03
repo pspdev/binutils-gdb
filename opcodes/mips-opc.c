@@ -256,8 +256,10 @@ decode_mips_operand (const char *p)
        case 's': VFPU_REG_PFX (VF_BITCNT_VS,  VF_SH_VS, REGS, regmode, p[1]); break;
        case 't': VFPU_REG_PFX (VF_BITCNT_VT,  VF_SH_VT, REGT, regmode, p[1]); break;
        case 'd': VFPU_REG_PFX (VF_BITCNT_VD,  VF_SH_VD, REGD, regmode, p[1]); break;
-       case 'v': VFPU_REG_PFX (VF_BITCNT_VD,  VF_SH_VD, REGV, regmode, p[1]); break;
+         // Same as REGD but with partial overlap incompatibility
        case 'x': VFPU_REG_PFX (VF_BITCNT_VD,  VF_SH_VD, REGX, regmode, p[1]); break;
+         // Same as REGD but prohibits any kind of input overlap
+       case 'v': VFPU_REG_PFX (VF_BITCNT_VD,  VF_SH_VD, REGV, regmode, p[1]); break;
 
        case 'm': VFPU_FULL (VF_BITCNT_VML, VF_SH_VML, REG2, regmode, 'f',
                             VF_BITCNT_VMH, VF_SH_VMH); break;
@@ -3417,7 +3419,7 @@ const struct mips_opcode mips_builtin_opcodes[] =
 {"vmzero.t", "?d6f",       0xf3868000, 0xffffff80, RD_C2,      VFPU_REG,      AL,		0,	0 },
 {"vmone.t", "?d6f",        0xf3878000, 0xffffff80, RD_C2,      VFPU_REG,      AL,		0,	0 },
 {"vrot.t",  "?x2f,?s0f,?w",    0xf3a08000, 0xffe08080, RD_C2,      VFPU_REG,      AL,		0,	0 },
-{"vcrsp.t", "?d2f,?s2f,?t2f",  0xf2808000, 0xff808080, RD_C2,      VFPU_REG,      AL,		0,	0 },
+{"vcrsp.t", "?v2f,?s2f,?t2f",  0xf2808000, 0xff808080, RD_C2,      VFPU_REG,      AL,		0,	0 },
 {"vadd.p",  "?d1a,?s1a,?t1a",  0x60000080, 0xff808080, RD_C2,      VFPU_REG,      AL,		0,	0 },
 {"vsub.p",  "?d1a,?s1a,?t1a",  0x60800080, 0xff808080, RD_C2,      VFPU_REG,      AL,		0,	0 },
 {"vdiv.p",  "?x1f,?s1f,?t1f",  0x63800080, 0xff808080, RD_C2,      VFPU_REG,      AL,		0,	0 },

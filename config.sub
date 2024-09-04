@@ -493,8 +493,8 @@ case $1 in
 				basic_os=linux
 				;;
 			psp)
-				basic_machine=mipsallegrexel-sony
-				basic_os=psp
+				basic_machine=mipsallegrexel-psp
+				basic_os=elf
 				;;
 			pw32)
 				basic_machine=i586-unknown
@@ -1121,6 +1121,12 @@ case $cpu-$vendor in
 	tx39el-*)
 		cpu=mipstx39el
 		;;
+	allegrex-*)
+		cpu=mipsallegrex
+		;;
+	allegrexel-*)
+		cpu=mipsallegrexel
+		;;
 	x64-*)
 		cpu=x86_64
 		;;
@@ -1167,7 +1173,7 @@ case $cpu-$vendor in
 		cpu=nsx
 		vendor=tandem
 		;;
-	mipsallegrexel-sony)
+	mipsallegrexel-psp)
 		cpu=mipsallegrexel
 		vendor=sony
 		;;

@@ -80,7 +80,6 @@ case $targ in
  *-adobe-* | \
  *-*-beos* | \
  *-go32-rtems* | \
- *-sony-* | \
  *-tandem-* | \
  *-*-ieee* | \
  *-*-netbsdpe* | \

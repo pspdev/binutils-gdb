@@ -1,5 +1,6 @@
-/*
-   Copyright 2021-2024 Free Software Foundation, Inc.
+/* This testcase is part of GDB, the GNU debugger.
+
+   Copyright 2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -14,32 +15,36 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
+extern void lib_func_test_syscall (void);
+extern void lib_func_test_signal (void);
+extern void lib_func_test_fork (void);
+
+/* We use this to perform some filler work.  */
+volatile int global_var = 0;
+
+/* Just somewhere for GDB to put a breakpoint.  */
 void
-foo (int x)
+breakpt_before_exit (void)
 {
-
-}
-
-void
-bar (void)
-{ /* bar: */
-  asm ("bar_label: .globl bar_label");
-  foo (1);
-  asm ("bar_label_2: .globl bar_label_2");
-  foo (2);
-  asm ("bar_label_3: .globl bar_label_3");
-  foo (3);
-  asm ("bar_label_4: .globl bar_label_4");
-  foo (4);
-  asm ("bar_label_5: .globl bar_label_5");
+  /* Nothing.  */
 }
 
 int
 main (void)
 {
-  asm ("main_label: .globl main_label");
+#if defined TEST_SYSCALL
+  lib_func_test_syscall ();
+#elif defined TEST_SIGNAL
+  lib_func_test_signal ();
+#elif defined TEST_FORK
+  lib_func_test_fork ();
+#else
+# error compile with suitable -DTEST_xxx macro defined
+#endif
 
-  bar ();
+  ++global_var;
+
+  breakpt_before_exit ();
 
   return 0;
 }

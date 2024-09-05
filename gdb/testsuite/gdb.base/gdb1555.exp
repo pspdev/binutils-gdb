@@ -1,4 +1,4 @@
-# Copyright 2004-2021 Free Software Foundation, Inc.
+# Copyright 2004-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,9 +17,7 @@
 # a shared library (PR gdb/1555, was PR shlib/1280, shlib/1237).
 # Tested on ppc-yellowdog-linux (Yellow Dog Linux 3.0 3.2.2-2a)
 
-if {[skip_shlib_tests]} {
-    return 0
-}
+require allow_shlib_tests
 
 standard_testfile gdb1555-main.c gdb1555.c
 
@@ -30,11 +28,6 @@ set execsrc "${srcdir}/${subdir}/${srcfile}"
 
 remote_exec build "rm -f ${binfile}"
 
-# get the value of gcc_compiled
-if [get_compiler_info] {
-    return -1
-}
-
 if { [gdb_compile_shlib $libsrc $libobj {debug}] != ""
      || [gdb_compile $execsrc ${binfile} executable \
 	     [list debug shlib=${libobj}]] != "" } {
@@ -44,8 +37,7 @@ if { [gdb_compile_shlib $libsrc $libobj {debug}] != ""
 clean_restart ${binfile}
 gdb_load_shlib $libobj
 
-if ![runto_main] then {
-    fail "can't run to main"
+if {![runto_main]} {
     return 0
 }
 

@@ -1,6 +1,6 @@
 /* Routines for name->symbol lookups in GDB.
    
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2024 Free Software Foundation, Inc.
 
    Contributed by David Carlton <carlton@bactrian.org> and by Kealia,
    Inc.
@@ -20,13 +20,12 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include <ctype.h>
-#include "gdb_obstack.h"
+#include "gdbsupport/gdb_obstack.h"
 #include "symtab.h"
 #include "buildsym.h"
 #include "dictionary.h"
-#include "safe-ctype.h"
+#include "gdbsupport/gdb-safe-ctype.h"
 #include <unordered_map>
 #include "language.h"
 
@@ -522,8 +521,7 @@ free_obstack (struct dictionary *dict)
 static void
 add_symbol_nonexpandable (struct dictionary *dict, struct symbol *sym)
 {
-  internal_error (__FILE__, __LINE__,
-		  _("dict_add_symbol: non-expandable dictionary"));
+  internal_error (_("dict_add_symbol: non-expandable dictionary"));
 }
 
 /* Functions for DICT_HASHED and DICT_HASHED_EXPANDABLE.  */
@@ -651,7 +649,18 @@ insert_symbol_hashed (struct dictionary *dict,
 static int
 size_hashed (const struct dictionary *dict)
 {
-  return DICT_HASHED_NBUCKETS (dict);
+  int nbuckets = DICT_HASHED_NBUCKETS (dict);
+  int total = 0;
+
+  for (int i = 0; i < nbuckets; ++i)
+    {
+      for (struct symbol *sym = DICT_HASHED_BUCKET (dict, i);
+	   sym != nullptr;
+	   sym = sym->hash_next)
+	total++;
+    }
+
+  return total;
 }
 
 /* Functions only for DICT_HASHED_EXPANDABLE.  */
@@ -1094,8 +1103,7 @@ create_new_language_dictionary (struct multidictionary *mdict,
     {
     case DICT_HASHED:
     case DICT_LINEAR:
-      internal_error (__FILE__, __LINE__,
-		      _("create_new_language_dictionary: attempted to expand "
+      internal_error (_("create_new_language_dictionary: attempted to expand "
 			"non-expandable multidictionary"));
 
     case DICT_HASHED_EXPANDABLE:

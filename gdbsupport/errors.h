@@ -1,6 +1,6 @@
 /* Declarations for error-reporting facilities.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -36,11 +36,10 @@ extern void vwarning (const char *fmt, va_list args)
    a printf- or vprintf-style argument list.  These functions do not
    return.  The function "verror" must be provided by the client.  */
 
-extern void error (const char *fmt, ...)
-     ATTRIBUTE_NORETURN ATTRIBUTE_PRINTF (1, 2);
+[[noreturn]] extern void error (const char *fmt, ...) ATTRIBUTE_PRINTF (1, 2);
 
-extern void verror (const char *fmt, va_list args)
-     ATTRIBUTE_NORETURN ATTRIBUTE_PRINTF (1, 0);
+[[noreturn]] extern void verror (const char *fmt, va_list args)
+  ATTRIBUTE_PRINTF (1, 0);
 
 /* An internal error was detected.  Internal errors indicate
    programming errors such as assertion failures, as opposed to
@@ -48,16 +47,21 @@ extern void verror (const char *fmt, va_list args)
    functions do not return.  An error message is constructed using
    a printf- or vprintf-style argument list.  FILE and LINE
    indicate the file and line number where the programming error
-   was detected.  The function "internal_verror" must be provided
+   was detected.  Most client code should call the internal_error
+   wrapper macro instead, which expands the source location
+   automatically.  The function "internal_verror" must be provided
    by the client.  */
 
-extern void internal_error (const char *file, int line,
-			    const char *fmt, ...)
-     ATTRIBUTE_NORETURN ATTRIBUTE_PRINTF (3, 4);
+[[noreturn]] extern void internal_error_loc (const char *file, int line,
+					     const char *fmt, ...)
+  ATTRIBUTE_PRINTF (3, 4);
 
-extern void internal_verror (const char *file, int line,
-			     const char *fmt, va_list args)
-     ATTRIBUTE_NORETURN ATTRIBUTE_PRINTF (3, 0);
+#define internal_error(fmt, ...)				\
+  internal_error_loc (__FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+[[noreturn]] extern void internal_verror (const char *file, int line,
+					  const char *fmt, va_list args)
+  ATTRIBUTE_PRINTF (3, 0);
 
 /* An internal problem was detected, but the requested operation can
    still proceed.  Internal warnings indicate programming errors as
@@ -66,29 +70,61 @@ extern void internal_verror (const char *file, int line,
    argument list.  The function "internal_vwarning" must be provided
    by the client.  */
 
-extern void internal_warning (const char *file, int line,
-			      const char *fmt, ...)
+extern void internal_warning_loc (const char *file, int line,
+				  const char *fmt, ...)
      ATTRIBUTE_PRINTF (3, 4);
+
+#define internal_warning(fmt, ...)				\
+  internal_warning_loc (__FILE__, __LINE__, fmt, ##__VA_ARGS__)
 
 extern void internal_vwarning (const char *file, int line,
 			       const char *fmt, va_list args)
      ATTRIBUTE_PRINTF (3, 0);
 
 
-/* Like "error", but the error message is constructed by combining
-   STRING with the system error message for errno.  This function does
-   not return.  This function must be provided by the client.  */
+/* Return a newly allocated string, containing the PREFIX followed
+   by the system error message for errno (separated by a colon).
+   If ERRNUM is given, then use it in place of errno.  */
 
-extern void perror_with_name (const char *string) ATTRIBUTE_NORETURN;
+extern std::string perror_string (const char *prefix, int errnum = 0);
+
+/* Like "error", but the error message is constructed by combining
+   STRING with the system error message for errno.  If ERRNUM is given,
+   then use it in place of errno.  This function does not return.  */
+
+[[noreturn]] extern void perror_with_name (const char *string, int errnum = 0);
 
 /* Call this function to handle memory allocation failures.  This
    function does not return.  This function must be provided by the
    client.  */
 
-extern void malloc_failure (long size) ATTRIBUTE_NORETURN;
+[[noreturn]] extern void malloc_failure (long size);
 
 /* Flush stdout and stderr.  Must be provided by the client.  */
 
 extern void flush_streams ();
+
+#if defined(USE_WIN32API) || defined(__CYGWIN__)
+
+/* Map the Windows error number in ERROR to a locale-dependent error
+   message string and return a pointer to it.  Typically, the values
+   for ERROR come from GetLastError.
+
+   The string pointed to shall not be modified by the application,
+   but may be overwritten by a subsequent call to strwinerror
+
+   The strwinerror function does not change the current setting
+   of GetLastError.  */
+
+extern const char *strwinerror (ULONGEST error);
+
+/* Like perror_with_name, but for Windows errors.  Throw an exception
+   including STRING and the system text for the given error
+   number.  */
+
+[[noreturn]] extern void throw_winerror_with_name (const char *string,
+						   ULONGEST err);
+
+#endif /* USE_WIN32API */
 
 #endif /* COMMON_ERRORS_H */

@@ -1,6 +1,6 @@
 /* Specific command window processing.
 
-   Copyright (C) 1998-2021 Free Software Foundation, Inc.
+   Copyright (C) 1998-2024 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -19,23 +19,12 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
-#include "tui/tui.h"
-#include "tui/tui-data.h"
-#include "tui/tui-win.h"
-#include "tui/tui-io.h"
 #include "tui/tui-command.h"
 #include "tui/tui-wingeneral.h"
 
 #include "gdb_curses.h"
 
 /* See tui-command.h.  */
-
-int
-tui_cmd_window::max_height () const
-{
-  return tui_term_height () - 4;
-}
 
 void
 tui_cmd_window::resize (int height_, int width_, int origin_x, int origin_y)
@@ -68,12 +57,7 @@ tui_cmd_window::resize (int height_, int width_, int origin_x, int origin_y)
 void
 tui_refresh_cmd_win (void)
 {
-  WINDOW *w = TUI_CMD_WIN->handle.get ();
+  WINDOW *w = tui_cmd_win ()->handle.get ();
 
   tui_wrefresh (w);
-
-  /* FIXME: It's not clear why this is here.
-     It was present in the original tui_puts code and is kept in order to
-     not introduce some subtle breakage.  */
-  fflush (stdout);
 }

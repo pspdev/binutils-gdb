@@ -1,5 +1,5 @@
 /* bfd back-end for mips support
-   Copyright (C) 1990-2021 Free Software Foundation, Inc.
+   Copyright (C) 1990-2024 Free Software Foundation, Inc.
    Written by Steve Chamberlain of Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -108,6 +108,7 @@ enum
   I_mipsocteon3,
   I_xlr,
   I_interaptiv_mr2,
+  I_allegrex,
   I_micromips
 };
 
@@ -151,6 +152,7 @@ static const bfd_arch_info_type arch_info_struct[] =
   N (64, 64, bfd_mach_mipsisa64r5,"mips:isa64r5", false, NN(I_mipsisa64r5)),
   N (64, 64, bfd_mach_mipsisa64r6,"mips:isa64r6", false, NN(I_mipsisa64r6)),
   N (64, 64, bfd_mach_mips_sb1, "mips:sb1",	  false, NN(I_sb1)),
+  N (32, 32, bfd_mach_mips_allegrex, "mips:allegrex", false, NN(I_allegrex)),
   N (64, 64, bfd_mach_mips_loongson_2e, "mips:loongson_2e", false, NN(I_loongson_2e)),
   N (64, 64, bfd_mach_mips_loongson_2f, "mips:loongson_2f", false, NN(I_loongson_2f)),
   N (64, 64, bfd_mach_mips_gs464, "mips:gs464",	  false, NN(I_gs464)),
@@ -163,6 +165,7 @@ static const bfd_arch_info_type arch_info_struct[] =
   N (64, 64, bfd_mach_mips_xlr, "mips:xlr",	   false, NN(I_xlr)),
   N (32, 32, bfd_mach_mips_interaptiv_mr2, "mips:interaptiv-mr2", false,
      NN(I_interaptiv_mr2)),
+  N (32, 32, bfd_mach_mips_allegrex, "mips:allegrex", false, NN(I_allegrex)),
   N (64, 64, bfd_mach_mips_micromips, "mips:micromips", false, NULL)
 };
 

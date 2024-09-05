@@ -1,6 +1,6 @@
 /* Pascal language support definitions for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -116,7 +116,7 @@ public:
 
     print_one_char (ch, stream, &in_quotes);
     if (in_quotes)
-      fputs_filtered ("'", stream);
+      gdb_puts ("'", stream);
   }
 
   /* See language.h.  */

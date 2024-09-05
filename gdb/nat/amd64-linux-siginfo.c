@@ -1,6 +1,6 @@
 /* Low-level siginfo manipulation for amd64.
 
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "gdbsupport/common-defs.h"
 #include <signal.h>
 #include "amd64-linux-siginfo.h"
 
@@ -330,6 +329,9 @@ compat_siginfo_from_siginfo (compat_siginfo_t *to, const siginfo_t *from)
       to->cpt_si_pid = from_ptrace.cpt_si_pid;
       to->cpt_si_uid = from_ptrace.cpt_si_uid;
     }
+#ifndef __ILP32__
+  /* The struct compat_x32_siginfo_t doesn't contain
+     cpt_si_lower/cpt_si_upper.  */
   else if (to->si_code == SEGV_BNDERR
 	   && to->si_signo == SIGSEGV)
     {
@@ -337,6 +339,7 @@ compat_siginfo_from_siginfo (compat_siginfo_t *to, const siginfo_t *from)
       to->cpt_si_lower = from_ptrace.cpt_si_lower;
       to->cpt_si_upper = from_ptrace.cpt_si_upper;
     }
+#endif
   else if (to->si_code < 0)
     {
       to->cpt_si_pid = from_ptrace.cpt_si_pid;
@@ -600,10 +603,10 @@ amd64_linux_siginfo_fixup_common (siginfo_t *ptrace, gdb_byte *inf,
 
 /* Sanity check for the siginfo structure sizes.  */
 
-gdb_static_assert (sizeof (siginfo_t) == GDB_SI_SIZE);
+static_assert (sizeof (siginfo_t) == GDB_SI_SIZE);
 #ifndef __ILP32__
-gdb_static_assert (sizeof (nat_siginfo_t) == GDB_SI_SIZE);
+static_assert (sizeof (nat_siginfo_t) == GDB_SI_SIZE);
 #endif
-gdb_static_assert (sizeof (compat_x32_siginfo_t) == GDB_SI_SIZE);
-gdb_static_assert (sizeof (compat_siginfo_t) == GDB_SI_SIZE);
-gdb_static_assert (sizeof (ptrace_siginfo_t) == GDB_SI_SIZE);
+static_assert (sizeof (compat_x32_siginfo_t) == GDB_SI_SIZE);
+static_assert (sizeof (compat_siginfo_t) == GDB_SI_SIZE);
+static_assert (sizeof (ptrace_siginfo_t) == GDB_SI_SIZE);

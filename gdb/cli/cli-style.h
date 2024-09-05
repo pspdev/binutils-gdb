@@ -1,6 +1,6 @@
 /* CLI stylizing
 
-   Copyright (C) 2018-2021 Free Software Foundation, Inc.
+   Copyright (C) 2018-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -43,12 +43,13 @@ public:
   /* Return the style name.  */
   const char *name () { return m_name; };
 
-  /* Call once to register this CLI style with the CLI engine.  */
-  void add_setshow_commands (enum command_class theclass,
-			     const char *prefix_doc,
-			     struct cmd_list_element **set_list,
-			     struct cmd_list_element **show_list,
-			     bool skip_intensity);
+  /* Call once to register this CLI style with the CLI engine.  Returns
+     the set/show prefix commands for the style.  */
+  set_show_commands add_setshow_commands (enum command_class theclass,
+					  const char *prefix_doc,
+					  struct cmd_list_element **set_list,
+					  struct cmd_list_element **show_list,
+					  bool skip_intensity);
 
   /* Return the 'set style NAME' command list, that can be used
      to build a lambda DO_SET to call add_setshow_commands.  */
@@ -95,6 +96,10 @@ private:
 				 const char *value);
 };
 
+/* Chains containing all defined "set/show style" subcommands.  */
+extern struct cmd_list_element *style_set_list;
+extern struct cmd_list_element *style_show_list;
+
 /* The file name style.  */
 extern cli_style_option file_name_style;
 
@@ -116,6 +121,21 @@ extern cli_style_option title_style;
 /* The metadata style.  */
 extern cli_style_option metadata_style;
 
+/* The disassembler style for mnemonics or assembler directives
+   (e.g. '.byte', etc).  */
+extern cli_style_option disasm_mnemonic_style;
+
+/* The disassembler style for register names.  */
+extern cli_style_option disasm_register_style;
+
+/* The disassembler style for numerical values that are not addresses, this
+   includes immediate operands (e.g. in, an add instruction), but also
+   address offsets (e.g. in a load instruction).  */
+extern cli_style_option disasm_immediate_style;
+
+/* The disassembler style for comments.  */
+extern cli_style_option disasm_comment_style;
+
 /* The border style of a TUI window that does not have the focus.  */
 extern cli_style_option tui_border_style;
 
@@ -127,6 +147,9 @@ extern cli_style_option version_style;
 
 /* True if source styling is enabled.  */
 extern bool source_styling;
+
+/* True if disassembler styling is enabled.  */
+extern bool disassembler_styling;
 
 /* True if styling is enabled.  */
 extern bool cli_styling;

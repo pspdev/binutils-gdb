@@ -1,6 +1,6 @@
 /* Native-dependent code for X86 BSD's.
 
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "inferior.h"
 #include "gdbthread.h"
 
@@ -33,6 +32,10 @@
 #include "inf-ptrace.h"
 
 
+/* Support for debug registers.  */
+
+#ifdef HAVE_PT_GETDBREGS
+
 static PTRACE_TYPE_RET
 gdb_ptrace (PTRACE_TYPE_ARG1 request, ptid_t ptid, PTRACE_TYPE_ARG3 addr)
 {
@@ -45,14 +48,6 @@ gdb_ptrace (PTRACE_TYPE_ARG1 request, ptid_t ptid, PTRACE_TYPE_ARG3 addr)
   return ptrace (request, pid, addr, 0);
 #endif
 }
-
-#ifdef PT_GETXSTATE_INFO
-size_t x86bsd_xsave_len;
-#endif
-
-/* Support for debug registers.  */
-
-#ifdef HAVE_PT_GETDBREGS
 
 /* Helper macro to access debug register X.  FreeBSD/amd64 and modern
    versions of FreeBSD/i386 provide this macro in system headers.  Define

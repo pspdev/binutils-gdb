@@ -149,25 +149,25 @@ check_PROGRAMS += object_unittest
 object_unittest_SOURCES = object_unittest.cc
 object_unittest_LDFLAGS = $(THREADFLAGS)
 object_unittest_LDADD = libgoldtest.a ../libgold.a ../../libiberty/libiberty.a $(LIBINTL) \
-	$(THREADLIBS) $(LIBDL) $(ZLIB)
+	$(THREADLIBS) $(LIBDL) $(ZLIB) $(ZSTD_LIBS) $(JANSSON_LIBS)
 
 check_PROGRAMS += binary_unittest
 binary_unittest_SOURCES = binary_unittest.cc
 binary_unittest_LDFLAGS = $(THREADFLAGS)
 binary_unittest_LDADD = libgoldtest.a ../libgold.a ../../libiberty/libiberty.a $(LIBINTL) \
-	$(THREADLIBS) $(LIBDL) $(ZLIB)
+	$(THREADLIBS) $(LIBDL) $(ZLIB) $(ZSTD_LIBS) $(JANSSON_LIBS)
 
 check_PROGRAMS += leb128_unittest
 leb128_unittest_SOURCES = leb128_unittest.cc
 leb128_unittest_LDFLAGS = $(THREADFLAGS)
 leb128_unittest_LDADD = libgoldtest.a ../libgold.a ../../libiberty/libiberty.a $(LIBINTL) \
-	$(THREADLIBS) $(LIBDL) $(ZLIB)
+	$(THREADLIBS) $(LIBDL) $(ZLIB) $(ZSTD_LIBS) $(JANSSON_LIBS)
 
 check_PROGRAMS += overflow_unittest
 overflow_unittest_SOURCES = overflow_unittest.cc
 overflow_unittest_LDFLAGS = $(THREADFLAGS)
 overflow_unittest_LDADD = libgoldtest.a ../libgold.a ../../libiberty/libiberty.a $(LIBINTL) \
-	$(THREADLIBS) $(LIBDL) $(ZLIB)
+	$(THREADLIBS) $(LIBDL) $(ZLIB) $(ZSTD_LIBS) $(JANSSON_LIBS)
 overflow_unittest.o: overflow_unittest.cc
 	$(CXXCOMPILE) -O3 -c -o $@ $<
 
@@ -865,6 +865,23 @@ weak_undef_file3.o: weak_undef_file3.cc
 weak_undef_file4.o: weak_undef_file4.cc
 	$(CXXCOMPILE) -c -o $@ $<
 
+check_PROGRAMS += weak_undef_test_3
+weak_undef_test_3_SOURCES = weak_undef_test_3.c
+weak_undef_test_3_DEPENDENCIES = gcctestdir/ld
+weak_undef_test_3_CFLAGS = -fPIE
+weak_undef_test_3_LDFLAGS = -pie
+
+check_PROGRAMS += weak_undef_test_4
+weak_undef_test_4_SOURCES = weak_undef_test_4.c
+weak_undef_test_4_DEPENDENCIES = gcctestdir/ld weak_undef_lib_4.so
+weak_undef_test_4_LDADD = weak_undef_lib_4.so
+weak_undef_test_4_LDFLAGS =  -Wl,-R,.
+MOSTLYCLEANFILES += weak_undef_lib_4.o weak_undef_lib_4.so
+weak_undef_lib_4.o:  weak_undef_lib_4.c
+	$(COMPILE) -fPIC -c -o $@ $<
+weak_undef_lib_4.so: gcctestdir/ld weak_undef_lib_4.o
+	$(LINK) -shared -o $@ weak_undef_lib_4.o
+
 if FN_PTRS_IN_SO_WITHOUT_PIC
 check_PROGRAMS += weak_undef_nonpic_test
 MOSTLYCLEANFILES += alt/weak_undef_lib_nonpic.so
@@ -1242,6 +1259,17 @@ x86_64_gd_to_le.o: x86_64_gd_to_le.s
 x86_64_gd_to_le: x86_64_gd_to_le.o gcctestdir/ld
 	gcctestdir/ld -o $@ $<
 x86_64_gd_to_le.stdout: x86_64_gd_to_le
+	$(TEST_OBJDUMP) -dw $< > $@
+
+check_SCRIPTS += x86_64_ie_to_le.sh
+check_DATA += x86_64_ie_to_le.stdout
+MOSTLYCLEANFILES += x86_64_ie_to_le
+
+x86_64_ie_to_le.o: x86_64_ie_to_le.s
+	$(TEST_AS) --64 -o $@ $<
+x86_64_ie_to_le: x86_64_ie_to_le.o gcctestdir/ld
+	gcctestdir/ld -o $@ $<
+x86_64_ie_to_le.stdout: x86_64_ie_to_le
 	$(TEST_OBJDUMP) -dw $< > $@
 
 check_SCRIPTS += x86_64_overflow_pc32.sh
@@ -1702,7 +1730,7 @@ flagstest_compress_debug_sections.stdout: flagstest_compress_debug_sections
 
 # Check there are compressed DWARF .debug_* sections.
 flagstest_compress_debug_sections.check: flagstest_compress_debug_sections
-	$(TEST_READELF) -SW $< | egrep ".debug_.* C *" > $@.tmp
+	$(TEST_READELF) -SW $< | grep "\.debug_.* C" > $@.tmp
 	mv -f $@.tmp $@
 
 # Compare DWARF debug info.
@@ -1765,6 +1793,13 @@ flagstest_compress_debug_sections_gabi.cmp: flagstest_compress_debug_sections_ga
 	cmp flagstest_compress_debug_sections_gabi.stdout \
 		flagstest_compress_debug_sections_none.stdout > $@.tmp
 	mv -f $@.tmp $@
+
+if HAVE_ZSTD
+check_PROGRAMS += flagstest_compress_debug_sections_zstd
+flagstest_compress_debug_sections_zstd: flagstest_debug.o gcctestdir/ld
+	$(CXXLINK) -o $@ $< -Wl,--compress-debug-sections=zstd
+	test -s $@
+endif
 
 # The specialfile output has a tricky case when we also compress debug
 # sections, because it requires output-file resizing.
@@ -1944,6 +1979,28 @@ ver_test_pr23409_1.so: gcctestdir/ld ver_test_1.o $(srcdir)/ver_test_pr23409_1.s
 	gcctestdir/ld -shared -o $@ ver_test_1.o ver_test_pr23409_2.so --version-script $(srcdir)/ver_test_pr23409_1.script
 ver_test_pr23409_2.so: gcctestdir/ld ver_test_1.o $(srcdir)/ver_test_pr23409_2.script
 	gcctestdir/ld -shared -o $@ ver_test_1.o --version-script $(srcdir)/ver_test_pr23409_2.script
+
+check_SCRIPTS += ver_test_pr31830.sh
+check_DATA += ver_test_pr31830_a.syms ver_test_pr31830_b.syms
+ver_test_pr31830_a.syms: ver_test_pr31830_a.so
+	$(TEST_READELF) --dyn-syms -W $< >$@
+ver_test_pr31830_b.syms: ver_test_pr31830_b.so
+	$(TEST_READELF) --dyn-syms -W $< >$@
+ver_test_pr31830_a.so: gcctestdir/ld ver_test_pr31830_a.o ver_test_pr31830_b.o $(srcdir)/ver_test_pr31830.script
+	gcctestdir/ld -shared -o $@ ver_test_pr31830_a.o ver_test_pr31830_b.o --version-script $(srcdir)/ver_test_pr31830.script
+ver_test_pr31830_b.so: gcctestdir/ld ver_test_pr31830_a.o ver_test_pr31830_b.o $(srcdir)/ver_test_pr31830.script
+	gcctestdir/ld -shared -o $@ ver_test_pr31830_b.o ver_test_pr31830_a.o --version-script $(srcdir)/ver_test_pr31830.script
+
+check_SCRIPTS += ver_test_pr31830_lto.sh
+check_DATA += ver_test_pr31830_lto_a.syms ver_test_pr31830_lto_b.syms
+ver_test_pr31830_lto_a.syms: ver_test_pr31830_lto_a.so
+	$(TEST_READELF) --dyn-syms -W $< >$@
+ver_test_pr31830_lto_a.so: gcctestdir/ld $(srcdir)/ver_test_pr31830_lto.c $(srcdir)/ver_test_pr31830.script
+	$(LINK) -Bgcctestdir/ -shared -o $@ -O2 -fPIC -flto-partition=max $(srcdir)/ver_test_pr31830_lto.c -Wl,--version-script,$(srcdir)/ver_test_pr31830.script
+ver_test_pr31830_lto_b.syms: ver_test_pr31830_lto_b.so
+	$(TEST_READELF) --dyn-syms -W $< >$@
+ver_test_pr31830_lto_b.so: gcctestdir/ld $(srcdir)/ver_test_pr31830_lto.c $(srcdir)/ver_test_pr31830.script
+	$(LINK) -Bgcctestdir/ -shared -o $@ -O2 -fPIC -flto-partition=max -flto=2 $(srcdir)/ver_test_pr31830_lto.c -Wl,--version-script,$(srcdir)/ver_test_pr31830.script
 
 check_SCRIPTS += weak_as_needed.sh
 check_DATA += weak_as_needed.stdout
@@ -2799,8 +2856,6 @@ ifuncmain1static_LDFLAGS = -static
 ifuncmain1static_LDADD = ifuncdep1.o
 
 check_PROGRAMS += ifuncmain1picstatic
-ifuncmain1picstatic: ifuncmain1pic.o ifuncmod1.o gcctestdir/ld
-	$(LINK) -static ifuncmain1pic.o ifuncmod1.o
 
 check_SCRIPTS += ifuncmod1.sh
 check_DATA += ifuncmod1.so.stderr
@@ -2808,6 +2863,9 @@ ifuncmod1.so.stderr: ifuncmod1.so
 	$(TEST_READELF) -s $< > /dev/null 2> $@
 endif
 endif
+
+ifuncmain1picstatic: ifuncmain1pic.o ifuncmod1.o gcctestdir/ld
+	$(LINK) -static ifuncmain1pic.o ifuncmod1.o
 
 check_PROGRAMS += ifuncmain1
 ifuncmain1_SOURCES = ifuncmain1.c
@@ -2864,10 +2922,11 @@ ifuncmain2static_LDFLAGS = -static
 ifuncmain2static_LDADD =
 
 check_PROGRAMS += ifuncmain2picstatic
+endif
+endif
+
 ifuncmain2picstatic: ifuncmain2pic.o ifuncdep2pic.o gcctestdir/ld
 	$(LINK) -static ifuncmain2pic.o ifuncdep2pic.o
-endif
-endif
 
 check_PROGRAMS += ifuncmain2
 ifuncmain2_SOURCES = ifuncmain2.c ifuncdep2.c
@@ -2901,10 +2960,11 @@ ifuncmain4static_LDFLAGS = -static
 ifuncmain4static_LDADD =
 
 check_PROGRAMS += ifuncmain4picstatic
+endif
+endif
+
 ifuncmain4picstatic: ifuncmain4pic.o gcctestdir/ld
 	$(LINK) -static ifuncmain4pic.o
-endif
-endif
 
 check_PROGRAMS += ifuncmain4
 ifuncmain4_SOURCES = ifuncmain4.c
@@ -2934,10 +2994,11 @@ ifuncmain5static_LDFLAGS = -static
 ifuncmain5static_LDADD = ifuncdep5.o
 
 check_PROGRAMS += ifuncmain5picstatic
+endif
+endif
+
 ifuncmain5picstatic: ifuncmain5pic.o ifuncmod5.o gcctestdir/ld
 	$(LINK) -static ifuncmain5pic.o ifuncmod5.o
-endif
-endif
 
 check_PROGRAMS += ifuncmain5
 ifuncmain5_SOURCES = ifuncmain5.c
@@ -2984,10 +3045,11 @@ ifuncmain7static_LDFLAGS = -static
 ifuncmain7static_LDADD =
 
 check_PROGRAMS += ifuncmain7picstatic
+endif
+endif
+
 ifuncmain7picstatic: ifuncmain7pic.o gcctestdir/ld
 	$(LINK) -static ifuncmain7pic.o
-endif
-endif
 
 check_PROGRAMS += ifuncmain7
 ifuncmain7_SOURCES = ifuncmain7.c
@@ -3120,6 +3182,17 @@ gdb_index_test_2_gabi: gdb_index_test_cdebug_gabi.o gcctestdir/ld
 	$(CXXLINK) -Wl,--gdb-index $<
 gdb_index_test_2_gabi.stdout: gdb_index_test_2_gabi
 	$(TEST_READELF) --debug-dump=gdb_index $< > $@
+if HAVE_ZSTD
+check_SCRIPTS += gdb_index_test_2_zstd.sh
+check_DATA += gdb_index_test_2_zstd.stdout
+MOSTLYCLEANFILES += gdb_index_test_2_zstd.stdout gdb_index_test_2_zstd
+gdb_index_test_cdebug_zstd.o: gdb_index_test.cc
+	$(CXXCOMPILE) -O0 -g -Wa,--compress-debug-sections=zstd -c -o $@ $<
+gdb_index_test_2_zstd: gdb_index_test_cdebug_zstd.o gcctestdir/ld
+	$(CXXLINK) -Wl,--gdb-index $<
+gdb_index_test_2_zstd.stdout: gdb_index_test_2_zstd
+	$(TEST_READELF) --debug-dump=gdb_index $< > $@
+endif
 
 # Another simple C test (DW_AT_high_pc encoding) for --gdb-index.
 check_SCRIPTS += gdb_index_test_3.sh
@@ -3325,18 +3398,6 @@ incremental_comdat_test_1: incr_comdat_test_1.o incr_comdat_test_2_v1.o incr_com
 endif DEFAULT_TARGET_X86_64
 
 if DEFAULT_TARGET_X86_64
-check_PROGRAMS += exception_x86_64_bnd_test
-exception_x86_64_bnd_test_SOURCES = exception_test_main.cc
-exception_x86_64_bnd_test_DEPENDENCIES = gcctestdir/ld exception_x86_64_bnd_1.o exception_x86_64_bnd_2.o
-exception_x86_64_bnd_test_LDFLAGS = $(exception_test_LDFLAGS) -Wl,-z,bndplt
-exception_x86_64_bnd_test_LDADD = exception_x86_64_bnd_1.o exception_x86_64_bnd_2.o
-exception_x86_64_bnd_1.o: exception_test_1.cc gcctestdir/as
-	$(CXXCOMPILE) -c -fpic -Wa,-madd-bnd-prefix -o $@ $<
-exception_x86_64_bnd_2.o: exception_test_2.cc gcctestdir/as
-	$(CXXCOMPILE) -c -Wa,-madd-bnd-prefix -o $@ $<
-endif DEFAULT_TARGET_X86_64
-
-if DEFAULT_TARGET_X86_64
 check_SCRIPTS += gnu_property_test.sh
 check_DATA += gnu_property_test.stdout
 MOSTLYCLEANFILES += gnu_property_test
@@ -3471,33 +3532,6 @@ split_x86_64_r.stdout: split_x86_64_1.o split_x86_64_n.o ../ld-new
 	../ld-new -r split_x86_64_1.o split_x86_64_n.o -o split_x86_64_r > $@ 2>&1 || exit 0
 MOSTLYCLEANFILES += split_x86_64_1 split_x86_64_2 split_x86_64_3 \
 	split_x86_64_4 split_x86_64_r
-
-check_SCRIPTS += bnd_plt_1.sh
-check_DATA += bnd_plt_1.stdout
-bnd_plt_1.o: bnd_plt_1.s
-	$(TEST_AS) --64 -o $@ $<
-bnd_plt_1.so: bnd_plt_1.o ../ld-new
-	../ld-new -shared -z bndplt bnd_plt_1.o -o $@
-bnd_plt_1.stdout: bnd_plt_1.so
-	$(TEST_OBJDUMP) -dw $< > $@
-
-check_SCRIPTS += bnd_ifunc_1.sh
-check_DATA += bnd_ifunc_1.stdout
-bnd_ifunc_1.o: bnd_ifunc_1.s
-	$(TEST_AS) --64 -madd-bnd-prefix -o $@ $<
-bnd_ifunc_1.so: bnd_ifunc_1.o ../ld-new
-	../ld-new -shared -z bndplt bnd_ifunc_1.o -o $@
-bnd_ifunc_1.stdout: bnd_ifunc_1.so
-	$(TEST_OBJDUMP) -dw $< > $@
-
-check_SCRIPTS += bnd_ifunc_2.sh
-check_DATA += bnd_ifunc_2.stdout
-bnd_ifunc_2.o: bnd_ifunc_2.s
-	$(TEST_AS) --64 -madd-bnd-prefix -o $@ $<
-bnd_ifunc_2.so: bnd_ifunc_2.o ../ld-new
-	../ld-new -shared -z bndplt bnd_ifunc_2.o -o $@
-bnd_ifunc_2.stdout: bnd_ifunc_2.so
-	$(TEST_OBJDUMP) -dw $< > $@
 
 endif DEFAULT_TARGET_X86_64
 
@@ -4435,3 +4469,10 @@ retain_2.o: retain_2.s
 	$(TEST_AS) -o $@ $<
 
 endif DEFAULT_TARGET_X86_64
+
+check_PROGRAMS += package_metadata_test
+package_metadata_test.o: package_metadata_main.c
+	$(COMPILE) -c -o $@ $<
+package_metadata_test$(EXEEXT): package_metadata_test.o gcctestdir/ld
+	$(CXXLINK) package_metadata_test.o -Wl,--package-metadata='{"foo":"bar"}'
+	$(TEST_READELF) --notes $@ | grep -q '{"foo":"bar"}'

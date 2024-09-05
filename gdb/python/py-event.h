@@ -1,6 +1,6 @@
 /* Python interface to inferior events.
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -45,21 +45,24 @@ extern int emit_exited_event (const LONGEST *exit_code, struct inferior *inf);
 /* For inferior function call events, discriminate whether event is
    before or after the call. */
 
-typedef enum
+enum inferior_call_kind
 {
   /* Before the call */
   INFERIOR_CALL_PRE,
   /* after the call */
   INFERIOR_CALL_POST,
-} inferior_call_kind;
+};
 
 extern int emit_inferior_call_event (inferior_call_kind kind,
 				     ptid_t thread, CORE_ADDR addr);
-extern int emit_register_changed_event (struct frame_info *frame,
+extern int emit_register_changed_event (const frame_info_ptr &frame,
 					int regnum);
 extern int emit_memory_changed_event (CORE_ADDR addr, ssize_t len);
 extern int evpy_emit_event (PyObject *event,
 			    eventregistry_object *registry);
+
+/* Emits a thread exit event for THREAD */
+extern int emit_thread_exit_event (thread_info * thread);
 
 extern gdbpy_ref<> create_event_object (PyTypeObject *py_type);
 
@@ -74,7 +77,8 @@ extern gdbpy_ref<> create_thread_event_object (PyTypeObject *py_type,
 					       PyObject *thread);
 
 extern int emit_new_objfile_event (struct objfile *objfile);
-extern int emit_clear_objfiles_event (void);
+extern int emit_free_objfile_event (struct objfile *objfile);
+extern int emit_clear_objfiles_event (program_space *pspace);
 
 extern void evpy_dealloc (PyObject *self);
 extern int evpy_add_attribute (PyObject *event,

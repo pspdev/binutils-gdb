@@ -1,6 +1,6 @@
 /* Target-dependent code for Solaris SPARC.
 
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "frame.h"
 #include "frame-unwind.h"
 #include "gdbcore.h"
@@ -100,7 +99,7 @@ static const struct regset sparc32_sol2_fpregset =
 
 
 static struct sparc_frame_cache *
-sparc32_sol2_sigtramp_frame_cache (struct frame_info *this_frame,
+sparc32_sol2_sigtramp_frame_cache (const frame_info_ptr &this_frame,
 				   void **this_cache)
 {
   struct sparc_frame_cache *cache;
@@ -151,7 +150,7 @@ sparc32_sol2_sigtramp_frame_cache (struct frame_info *this_frame,
 }
 
 static void
-sparc32_sol2_sigtramp_frame_this_id (struct frame_info *this_frame,
+sparc32_sol2_sigtramp_frame_this_id (const frame_info_ptr &this_frame,
 				     void **this_cache,
 				     struct frame_id *this_id)
 {
@@ -162,7 +161,7 @@ sparc32_sol2_sigtramp_frame_this_id (struct frame_info *this_frame,
 }
 
 static struct value *
-sparc32_sol2_sigtramp_frame_prev_register (struct frame_info *this_frame,
+sparc32_sol2_sigtramp_frame_prev_register (const frame_info_ptr &this_frame,
 					   void **this_cache,
 					   int regnum)
 {
@@ -174,7 +173,7 @@ sparc32_sol2_sigtramp_frame_prev_register (struct frame_info *this_frame,
 
 static int
 sparc32_sol2_sigtramp_frame_sniffer (const struct frame_unwind *self,
-				     struct frame_info *this_frame,
+				     const frame_info_ptr &this_frame,
 				     void **this_cache)
 {
   return sol2_sigtramp_p (this_frame);
@@ -196,7 +195,7 @@ static const struct frame_unwind sparc32_sol2_sigtramp_frame_unwind =
 static void
 sparc32_sol2_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (gdbarch);
 
   tdep->gregset = &sparc32_sol2_gregset;
   tdep->sizeof_gregset = 152;

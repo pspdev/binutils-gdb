@@ -1,6 +1,6 @@
 /* interp.c -- AArch64 sim interface to GDB.
 
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2024 Free Software Foundation, Inc.
 
    Contributed by Red Hat.
 
@@ -34,13 +34,15 @@
 #include "sim/callback.h"
 #include "sim/sim.h"
 #include "gdb/signals.h"
-#include "gdb/sim-aarch64.h"
+#include "sim/sim-aarch64.h"
 
 #include "sim-main.h"
 #include "sim-options.h"
 #include "memory.h"
 #include "simulator.h"
 #include "sim-assert.h"
+
+#include "aarch64-sim.h"
 
 /* Filter out (in place) symbols that are useless for disassembly.
    COUNT is the number of elements in SYMBOLS.
@@ -126,6 +128,7 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
 		     char * const *argv, char * const *env)
 {
   sim_cpu *cpu = STATE_CPU (sd, 0);
+  host_callback *cb = STATE_CALLBACK (sd);
   bfd_vma addr = 0;
 
   if (abfd != NULL)
@@ -144,6 +147,15 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
       STATE_PROG_ARGV (sd) = dupargv (argv);
     }
 
+  if (STATE_PROG_ENVP (sd) != env)
+    {
+      freeargv (STATE_PROG_ENVP (sd));
+      STATE_PROG_ENVP (sd) = dupargv (env);
+    }
+
+  cb->argv = STATE_PROG_ARGV (sd);
+  cb->envp = STATE_PROG_ENVP (sd);
+
   if (trace_load_symbols (sd))
     {
       STATE_PROG_SYMS_COUNT (sd) =
@@ -161,7 +173,7 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
 /* Read the LENGTH bytes at BUF as a little-endian value.  */
 
 static bfd_vma
-get_le (unsigned char *buf, unsigned int length)
+get_le (const unsigned char *buf, unsigned int length)
 {
   bfd_vma acc = 0;
 
@@ -200,7 +212,7 @@ reg_size (int regno)
 }
 
 static int
-aarch64_reg_get (SIM_CPU *cpu, int regno, unsigned char *buf, int length)
+aarch64_reg_get (SIM_CPU *cpu, int regno, void *buf, int length)
 {
   size_t size;
   bfd_vma val;
@@ -247,7 +259,7 @@ aarch64_reg_get (SIM_CPU *cpu, int regno, unsigned char *buf, int length)
 }
 
 static int
-aarch64_reg_set (SIM_CPU *cpu, int regno, unsigned char *buf, int length)
+aarch64_reg_set (SIM_CPU *cpu, int regno, const void *buf, int length)
 {
   size_t size;
   bfd_vma val;
@@ -336,13 +348,11 @@ sim_open (SIM_OPEN_KIND                  kind,
   current_alignment = NONSTRICT_ALIGNMENT;
 
   /* Perform the initialization steps one by one.  */
-  if (sim_cpu_alloc_all (sd, 1) != SIM_RC_OK
+  if (sim_cpu_alloc_all_extra (sd, 0, sizeof (struct aarch64_sim_cpu))
+      != SIM_RC_OK
       || sim_pre_argv_init (sd, argv[0]) != SIM_RC_OK
       || sim_parse_args (sd, argv) != SIM_RC_OK
-      || sim_analyze_program (sd,
-			      (STATE_PROG_ARGV (sd) != NULL
-			       ? *STATE_PROG_ARGV (sd)
-			       : NULL), abfd) != SIM_RC_OK
+      || sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK
       || sim_config (sd) != SIM_RC_OK
       || sim_post_argv_init (sd) != SIM_RC_OK)
     {

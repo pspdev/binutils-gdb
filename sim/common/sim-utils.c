@@ -1,5 +1,5 @@
 /* Miscellaneous simulator utilities.
-   Copyright (C) 1997-2021 Free Software Foundation, Inc.
+   Copyright (C) 1997-2024 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
 This file is part of GDB, the GNU debugger.
@@ -20,20 +20,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 /* This must come before any other includes.  */
 #include "defs.h"
 
-#include "sim-main.h"
-#include "sim-assert.h"
-
+#include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
-#include <sys/time.h> /* needed by sys/resource.h */
-
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
 #endif
-#include <string.h>
+#include <sys/time.h> /* needed by sys/resource.h */
 
-#include "libiberty.h"
 #include "bfd.h"
+#include "libiberty.h"
+
+#include "sim-main.h"
+#include "sim-assert.h"
 #include "sim-utils.h"
 
 /* Allocate zero filled memory with xcalloc - xcalloc aborts if the
@@ -98,6 +98,9 @@ sim_state_free (SIM_DESC sd)
   SIM_STATE_FREE (sd);
 #endif
 
+  free (STATE_PROG_FILE (sd));
+  free (STATE_PROG_ARGV0 (sd));
+  freeargv (STATE_PROG_ENVP (sd));
   free (sd);
 }
 
@@ -120,14 +123,17 @@ sim_cpu_lookup (SIM_DESC sd, const char *cpu_name)
 const char *
 sim_cpu_msg_prefix (sim_cpu *cpu)
 {
-#if MAX_NR_PROCESSORS == 1
-  return "";
-#else
   static char *prefix;
+
+  if (MAX_NR_PROCESSORS == 1)
+    return "";
 
   if (prefix == NULL)
     {
+      SIM_DESC sd = CPU_STATE (cpu);
       int maxlen = 0;
+      int i;
+
       for (i = 0; i < MAX_NR_PROCESSORS; ++i)
 	{
 	  int len = strlen (CPU_NAME (STATE_CPU (sd, i)));
@@ -137,8 +143,8 @@ sim_cpu_msg_prefix (sim_cpu *cpu)
       prefix = (char *) xmalloc (maxlen + 5);
     }
   sprintf (prefix, "%s: ", CPU_NAME (cpu));
+
   return prefix;
-#endif
 }
 
 /* Cover fn to sim_io_eprintf.  */

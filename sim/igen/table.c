@@ -1,6 +1,6 @@
 /* The IGEN simulator generator for GDB, the GNU Debugger.
 
-   Copyright 2002-2021 Free Software Foundation, Inc.
+   Copyright 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney.
 
@@ -80,7 +80,9 @@ set_nr_table_entry_fields (table_entry *entry, int nr_fields)
 
 void
 table_push (table *root,
-	    line_ref *line, table_include *includes, const char *file_name)
+	    const line_ref *line,
+	    table_include *includes,
+	    const char *file_name)
 {
   FILE *ff;
   open_table *file;
@@ -485,10 +487,9 @@ table_read (table *root)
 }
 
 extern void
-table_print_code (lf *file, table_entry *entry)
+table_print_code (lf *file, const table_entry *entry)
 {
   int field_nr;
-  int nr = 0;
   for (field_nr = 0; field_nr < entry->nr_fields; field_nr++)
     {
       char *chp = entry->field[field_nr];
@@ -500,20 +501,20 @@ table_print_code (lf *file, table_entry *entry)
 	  if (chp[0] == '{' && !isspace (chp[1]) && chp[1] != '\0')
 	    {
 	      in_bit_field = 1;
-	      nr += lf_putchr (file, '_');
+	      lf_putchr (file, '_');
 	    }
 	  else if (in_bit_field && chp[0] == ':')
 	    {
-	      nr += lf_putchr (file, '_');
+	      lf_putchr (file, '_');
 	    }
 	  else if (in_bit_field && *chp == '}')
 	    {
-	      nr += lf_putchr (file, '_');
+	      lf_putchr (file, '_');
 	      in_bit_field = 0;
 	    }
 	  else
 	    {
-	      nr += lf_putchr (file, *chp);
+	      lf_putchr (file, *chp);
 	    }
 	  chp++;
 	}
@@ -523,16 +524,18 @@ table_print_code (lf *file, table_entry *entry)
 	  line.line_nr += field_nr;
 	  error (&line, "Bit field brace miss match\n");
 	}
-      nr += lf_putchr (file, '\n');
+      lf_putchr (file, '\n');
     }
 }
 
 
-
 void
-dump_line_ref (lf *file, char *prefix, const line_ref *line, char *suffix)
+dump_line_ref (lf *file,
+	       const char *prefix,
+	       const line_ref *line,
+	       const char *suffix)
 {
-  lf_printf (file, "%s(line_ref*) 0x%lx", prefix, (long) line);
+  lf_printf (file, "%s(line_ref*) %p", prefix, line);
   if (line != NULL)
     {
       lf_indent (file, +1);
@@ -559,9 +562,11 @@ table_entry_type_to_str (table_entry_type type)
 
 void
 dump_table_entry (lf *file,
-		  char *prefix, const table_entry *entry, char *suffix)
+		  const char *prefix,
+		  const table_entry *entry,
+		  const char *suffix)
 {
-  lf_printf (file, "%s(table_entry*) 0x%lx", prefix, (long) entry);
+  lf_printf (file, "%s(table_entry*) %p", prefix, entry);
   if (entry != NULL)
     {
       int field;

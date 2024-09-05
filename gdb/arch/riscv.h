@@ -1,6 +1,6 @@
 /* Common target-dependent functionality for RISC-V
 
-   Copyright (C) 2018-2021 Free Software Foundation, Inc.
+   Copyright (C) 2018-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -47,19 +47,32 @@ struct riscv_gdbarch_features
   int flen = 0;
 
   /* The size of the v-registers in bytes.  The value 0 indicates a target
-     with no vector registers.  The minimum value for a standard compliant
-     target should be 16, but GDB doesn't currently mind, and will accept
-     any vector size.  */
+     with no vector registers.  The minimum value for a 'V'-extension compliant
+     target should be 16 and 4 for an embedded subset compliant target (with
+     'Zve32*' extension), but GDB doesn't currently mind, and will accept any
+     vector size.  */
   int vlen = 0;
 
   /* When true this target is RV32E.  */
   bool embedded = false;
 
+  /* Track if the target description has an fcsr, fflags, and frm
+     registers.  Some targets provide all these in their target
+     descriptions, while some only offer fcsr, while others don't even
+     offer that register.  If a target provides fcsr but not fflags and/or
+     frm, then we can emulate these registers as pseudo registers.  */
+  bool has_fcsr_reg = false;
+  bool has_fflags_reg = false;
+  bool has_frm_reg = false;
+
   /* Equality operator.  */
   bool operator== (const struct riscv_gdbarch_features &rhs) const
   {
     return (xlen == rhs.xlen && flen == rhs.flen
-	    && embedded == rhs.embedded && vlen == rhs.vlen);
+	    && embedded == rhs.embedded && vlen == rhs.vlen
+	    && has_fflags_reg == rhs.has_fflags_reg
+	    && has_frm_reg == rhs.has_frm_reg
+	    && has_fcsr_reg == rhs.has_fcsr_reg);
   }
 
   /* Inequality operator.  */
@@ -72,9 +85,12 @@ struct riscv_gdbarch_features
   std::size_t hash () const noexcept
   {
     std::size_t val = ((embedded ? 1 : 0) << 10
+		       | (has_fflags_reg ? 1 : 0) << 11
+		       | (has_frm_reg ? 1 : 0) << 12
+		       | (has_fcsr_reg ? 1 : 0) << 13
 		       | (xlen & 0x1f) << 5
 		       | (flen & 0x1f) << 0
-		       | (vlen & 0xfff) << 11);
+		       | (vlen & 0x3fff) << 14);
     return val;
   }
 };

@@ -1,6 +1,6 @@
 /* Target-dependent code for SPARC.
 
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,11 +17,11 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "arch-utils.h"
 #include "dis-asm.h"
 #include "dwarf2.h"
 #include "dwarf2/frame.h"
+#include "extract-store-integer.h"
 #include "frame.h"
 #include "frame-base.h"
 #include "frame-unwind.h"
@@ -60,10 +60,6 @@ struct regset;
    sparc64_-prefix for 64-bit specific code and the sparc_-prefix for
    code that can handle both.  The 64-bit specific code lives in
    sparc64-tdep.c; don't add any here.  */
-
-/* The SPARC Floating-Point Quad-Precision format is similar to
-   big-endian IA-64 Quad-Precision format.  */
-#define floatformats_sparc_quad floatformats_ia64_quad
 
 /* The stack pointer is offset from the stack frame by a BIAS of 2047
    (0x7ff) for 64-bit code.  BIAS is likely to be defined on SPARC
@@ -212,7 +208,7 @@ sparc_fetch_wcookie (struct gdbarch *gdbarch)
 static int
 sparc_integral_or_pointer_p (const struct type *type)
 {
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
 
   switch (type->code ())
     {
@@ -246,7 +242,7 @@ sparc_floating_p (const struct type *type)
     {
     case TYPE_CODE_FLT:
       {
-	int len = TYPE_LENGTH (type);
+	int len = type->length ();
 	return (len == 4 || len == 8 || len == 16);
       }
     default:
@@ -265,7 +261,7 @@ sparc_complex_floating_p (const struct type *type)
     {
     case TYPE_CODE_COMPLEX:
       {
-	int len = TYPE_LENGTH (type);
+	int len = type->length ();
 	return (len == 8 || len == 16 || len == 32);
       }
     default:
@@ -306,18 +302,18 @@ sparc_structure_return_p (const struct type *type)
   if (type->code () == TYPE_CODE_ARRAY && type->is_vector ())
     {
       /* Float vectors are always returned by memory.  */
-      if (sparc_floating_p (check_typedef (TYPE_TARGET_TYPE (type))))
+      if (sparc_floating_p (check_typedef (type->target_type ())))
 	return true;
       /* Integer vectors are returned by memory if the vector size
 	 is greater than 8 bytes long.  */
-      return (TYPE_LENGTH (type) > 8);
+      return (type->length () > 8);
     }
 
   if (sparc_floating_p (type))
     {
       /* Floating point types are passed by register for size 4 and
 	 8 bytes, and by memory for size 16 bytes.  */
-      return (TYPE_LENGTH (type) == 16);
+      return (type->length () == 16);
     }
 
   /* Other than that, only aggregates of all sizes get returned by
@@ -334,17 +330,17 @@ sparc_arg_by_memory_p (const struct type *type)
   if (type->code () == TYPE_CODE_ARRAY && type->is_vector ())
     {
       /* Float vectors are always passed by memory.  */
-      if (sparc_floating_p (check_typedef (TYPE_TARGET_TYPE (type))))
+      if (sparc_floating_p (check_typedef (type->target_type ())))
 	return true;
       /* Integer vectors are passed by memory if the vector size
 	 is greater than 8 bytes long.  */
-      return (TYPE_LENGTH (type) > 8);
+      return (type->length () > 8);
     }
 
   /* Floats are passed by register for size 4 and 8 bytes, and by memory
      for size 16 bytes.  */
   if (sparc_floating_p (type))
-    return (TYPE_LENGTH (type) == 16);
+    return (type->length () == 16);
 
   /* Complex floats and aggregates of all sizes are passed by memory.  */
   if (sparc_complex_floating_p (type) || sparc_structure_or_union_p (type))
@@ -402,12 +398,8 @@ sparc32_pseudo_register_name (struct gdbarch *gdbarch, int regnum)
 {
   regnum -= gdbarch_num_regs (gdbarch);
 
-  if (regnum < SPARC32_NUM_PSEUDO_REGS)
-    return sparc32_pseudo_register_names[regnum];
-
-  internal_error (__FILE__, __LINE__,
-		  _("sparc32_pseudo_register_name: bad register number %d"),
-		  regnum);
+  gdb_assert (regnum < SPARC32_NUM_PSEUDO_REGS);
+  return sparc32_pseudo_register_names[regnum];
 }
 
 /* Return the name of register REGNUM.  */
@@ -429,7 +421,7 @@ sparc32_register_name (struct gdbarch *gdbarch, int regnum)
 static struct type *
 sparc_psr_type (struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (gdbarch);
 
   if (!tdep->sparc_psr_type)
     {
@@ -451,7 +443,7 @@ sparc_psr_type (struct gdbarch *gdbarch)
 static struct type *
 sparc_fsr_type (struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (gdbarch);
 
   if (!tdep->sparc_fsr_type)
     {
@@ -492,8 +484,7 @@ sparc32_pseudo_register_type (struct gdbarch *gdbarch, int regnum)
   if (regnum >= SPARC32_D0_REGNUM && regnum <= SPARC32_D30_REGNUM)
     return builtin_type (gdbarch)->builtin_double;
 
-  internal_error (__FILE__, __LINE__,
-		  _("sparc32_pseudo_register_type: bad register number %d"),
+  internal_error (_("sparc32_pseudo_register_type: bad register number %d"),
 		  regnum);
 }
 
@@ -607,7 +598,7 @@ sparc32_push_dummy_code (struct gdbarch *gdbarch, CORE_ADDR sp,
 
       /* This is an UNIMP instruction.  */
       store_unsigned_integer (buf, 4, byte_order,
-			      TYPE_LENGTH (value_type) & 0x1fff);
+			      value_type->length () & 0x1fff);
       write_memory (sp - 8, buf, 4);
       return sp - 8;
     }
@@ -630,8 +621,8 @@ sparc32_store_arguments (struct regcache *regcache, int nargs,
 
   for (i = 0; i < nargs; i++)
     {
-      struct type *type = value_type (args[i]);
-      int len = TYPE_LENGTH (type);
+      struct type *type = args[i]->type ();
+      int len = type->length ();
 
       if (sparc_arg_by_memory_p (type))
 	{
@@ -642,7 +633,7 @@ sparc32_store_arguments (struct regcache *regcache, int nargs,
 	     correct, and wasting a few bytes shouldn't be a problem.  */
 	  sp &= ~0x7;
 
-	  write_memory (sp, value_contents (args[i]), len);
+	  write_memory (sp, args[i]->contents ().data (), len);
 	  args[i] = value_from_pointer (lookup_pointer_type (type), sp);
 	  num_elements++;
 	}
@@ -673,9 +664,9 @@ sparc32_store_arguments (struct regcache *regcache, int nargs,
 
   for (i = 0; i < nargs; i++)
     {
-      const bfd_byte *valbuf = value_contents (args[i]);
-      struct type *type = value_type (args[i]);
-      int len = TYPE_LENGTH (type);
+      const bfd_byte *valbuf = args[i]->contents ().data ();
+      struct type *type = args[i]->type ();
+      int len = type->length ();
       gdb_byte buf[4];
 
       if (len < 4)
@@ -992,7 +983,7 @@ CORE_ADDR
 sparc_analyze_prologue (struct gdbarch *gdbarch, CORE_ADDR pc,
 			CORE_ADDR current_pc, struct sparc_frame_cache *cache)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (gdbarch);
   unsigned long insn;
   int offset = 0;
   int dest = -1;
@@ -1126,7 +1117,6 @@ sparc_analyze_prologue (struct gdbarch *gdbarch, CORE_ADDR pc,
 static CORE_ADDR
 sparc32_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR start_pc)
 {
-  struct symtab_and_line sal;
   CORE_ADDR func_addr;
   struct sparc_frame_cache cache;
 
@@ -1192,7 +1182,7 @@ sparc32_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR start_pc)
 /* Normal frames.  */
 
 struct sparc_frame_cache *
-sparc_frame_cache (struct frame_info *this_frame, void **this_cache)
+sparc_frame_cache (const frame_info_ptr &this_frame, void **this_cache)
 {
   struct sparc_frame_cache *cache;
 
@@ -1234,14 +1224,14 @@ sparc_frame_cache (struct frame_info *this_frame, void **this_cache)
 static int
 sparc32_struct_return_from_sym (struct symbol *sym)
 {
-  struct type *type = check_typedef (SYMBOL_TYPE (sym));
+  struct type *type = check_typedef (sym->type ());
   enum type_code code = type->code ();
 
   if (code == TYPE_CODE_FUNC || code == TYPE_CODE_METHOD)
     {
-      type = check_typedef (TYPE_TARGET_TYPE (type));
+      type = check_typedef (type->target_type ());
       if (sparc_structure_or_union_p (type)
-	  || (sparc_floating_p (type) && TYPE_LENGTH (type) == 16))
+	  || (sparc_floating_p (type) && type->length () == 16))
 	return 1;
     }
 
@@ -1249,7 +1239,7 @@ sparc32_struct_return_from_sym (struct symbol *sym)
 }
 
 struct sparc_frame_cache *
-sparc32_frame_cache (struct frame_info *this_frame, void **this_cache)
+sparc32_frame_cache (const frame_info_ptr &this_frame, void **this_cache)
 {
   struct sparc_frame_cache *cache;
   struct symbol *sym;
@@ -1285,7 +1275,7 @@ sparc32_frame_cache (struct frame_info *this_frame, void **this_cache)
 }
 
 static void
-sparc32_frame_this_id (struct frame_info *this_frame, void **this_cache,
+sparc32_frame_this_id (const frame_info_ptr &this_frame, void **this_cache,
 		       struct frame_id *this_id)
 {
   struct sparc_frame_cache *cache =
@@ -1299,7 +1289,7 @@ sparc32_frame_this_id (struct frame_info *this_frame, void **this_cache,
 }
 
 static struct value *
-sparc32_frame_prev_register (struct frame_info *this_frame,
+sparc32_frame_prev_register (const frame_info_ptr &this_frame,
 			     void **this_cache, int regnum)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
@@ -1369,7 +1359,7 @@ static const struct frame_unwind sparc32_frame_unwind =
 
 
 static CORE_ADDR
-sparc32_frame_base_address (struct frame_info *this_frame, void **this_cache)
+sparc32_frame_base_address (const frame_info_ptr &this_frame, void **this_cache)
 {
   struct sparc_frame_cache *cache =
     sparc32_frame_cache (this_frame, this_cache);
@@ -1386,7 +1376,7 @@ static const struct frame_base sparc32_frame_base =
 };
 
 static struct frame_id
-sparc_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+sparc_dummy_id (struct gdbarch *gdbarch, const frame_info_ptr &this_frame)
 {
   CORE_ADDR sp;
 
@@ -1404,7 +1394,7 @@ static void
 sparc32_extract_return_value (struct type *type, struct regcache *regcache,
 			      gdb_byte *valbuf)
 {
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
   gdb_byte buf[32];
 
   gdb_assert (!sparc_structure_return_p (type));
@@ -1458,7 +1448,7 @@ static void
 sparc32_store_return_value (struct type *type, struct regcache *regcache,
 			    const gdb_byte *valbuf)
 {
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
   gdb_byte buf[32];
 
   gdb_assert (!sparc_structure_return_p (type));
@@ -1506,7 +1496,7 @@ sparc32_store_return_value (struct type *type, struct regcache *regcache,
 static enum return_value_convention
 sparc32_return_value (struct gdbarch *gdbarch, struct value *function,
 		      struct type *type, struct regcache *regcache,
-		      gdb_byte *readbuf, const gdb_byte *writebuf)
+		      struct value **read_value, const gdb_byte *writebuf)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
 
@@ -1522,24 +1512,28 @@ sparc32_return_value (struct gdbarch *gdbarch, struct value *function,
       ULONGEST sp;
       CORE_ADDR addr;
 
-      if (readbuf)
+      if (read_value != nullptr)
 	{
 	  regcache_cooked_read_unsigned (regcache, SPARC_SP_REGNUM, &sp);
 	  addr = read_memory_unsigned_integer (sp + 64, 4, byte_order);
-	  read_memory (addr, readbuf, TYPE_LENGTH (type));
+	  *read_value = value_at_non_lval (type, addr);
 	}
       if (writebuf)
 	{
 	  regcache_cooked_read_unsigned (regcache, SPARC_SP_REGNUM, &sp);
 	  addr = read_memory_unsigned_integer (sp + 64, 4, byte_order);
-	  write_memory (addr, writebuf, TYPE_LENGTH (type));
+	  write_memory (addr, writebuf, type->length ());
 	}
 
       return RETURN_VALUE_ABI_PRESERVES_ADDRESS;
     }
 
-  if (readbuf)
-    sparc32_extract_return_value (type, regcache, readbuf);
+  if (read_value != nullptr)
+    {
+      *read_value = value::allocate (type);
+      gdb_byte *readbuf = (*read_value)->contents_raw ().data ();
+      sparc32_extract_return_value (type, regcache, readbuf);
+    }
   if (writebuf)
     sparc32_store_return_value (type, regcache, writebuf);
 
@@ -1550,12 +1544,12 @@ static int
 sparc32_stabs_argument_has_addr (struct gdbarch *gdbarch, struct type *type)
 {
   return (sparc_structure_or_union_p (type)
-	  || (sparc_floating_p (type) && TYPE_LENGTH (type) == 16)
+	  || (sparc_floating_p (type) && type->length () == 16)
 	  || sparc_complex_floating_p (type));
 }
 
 static int
-sparc32_dwarf2_struct_return_p (struct frame_info *this_frame)
+sparc32_dwarf2_struct_return_p (const frame_info_ptr &this_frame)
 {
   CORE_ADDR pc = get_frame_address_in_block (this_frame);
   struct symbol *sym = find_pc_function (pc);
@@ -1568,7 +1562,7 @@ sparc32_dwarf2_struct_return_p (struct frame_info *this_frame)
 static void
 sparc32_dwarf2_frame_init_reg (struct gdbarch *gdbarch, int regnum,
 			       struct dwarf2_frame_state_reg *reg,
-			       struct frame_info *this_frame)
+			       const frame_info_ptr &this_frame)
 {
   int off;
 
@@ -1681,11 +1675,12 @@ sparc_analyze_control_transfer (struct regcache *regcache,
     }
   else if (X_OP (insn) == 2 && X_OP3 (insn) == 0x3a)
     {
-      struct frame_info *frame = get_current_frame ();
+      frame_info_ptr frame = get_current_frame ();
 
       /* Trap instruction (TRAP).  */
-      return gdbarch_tdep (regcache->arch ())->step_trap (frame,
-								     insn);
+      gdbarch *arch = regcache->arch ();
+      sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (arch);
+      return tdep->step_trap (frame, insn);
     }
 
   /* FIXME: Handle DONE and RETRY instructions.  */
@@ -1726,7 +1721,7 @@ sparc_analyze_control_transfer (struct regcache *regcache,
 }
 
 static CORE_ADDR
-sparc_step_trap (struct frame_info *frame, unsigned long insn)
+sparc_step_trap (const frame_info_ptr &frame, unsigned long insn)
 {
   return 0;
 }
@@ -1735,7 +1730,7 @@ static std::vector<CORE_ADDR>
 sparc_software_single_step (struct regcache *regcache)
 {
   struct gdbarch *arch = regcache->arch ();
-  struct gdbarch_tdep *tdep = gdbarch_tdep (arch);
+  sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (arch);
   CORE_ADDR npc, nnpc;
 
   CORE_ADDR pc, orig_npc;
@@ -1764,7 +1759,8 @@ sparc_software_single_step (struct regcache *regcache)
 static void
 sparc_write_pc (struct regcache *regcache, CORE_ADDR pc)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (regcache->arch ());
+  gdbarch *arch = regcache->arch ();
+  sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (arch);
 
   regcache_cooked_write_unsigned (regcache, tdep->pc_regnum, pc);
   regcache_cooked_write_unsigned (regcache, tdep->npc_regnum, pc + 4);
@@ -1779,7 +1775,7 @@ sparc_iterate_over_regset_sections (struct gdbarch *gdbarch,
 				    void *cb_data,
 				    const struct regcache *regcache)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (gdbarch);
 
   cb (".reg", tdep->sizeof_gregset, tdep->sizeof_gregset, tdep->gregset, NULL,
       cb_data);
@@ -1814,9 +1810,7 @@ validate_tdesc_registers (const struct target_desc *tdesc,
 static struct gdbarch *
 sparc32_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
-  struct gdbarch_tdep *tdep;
   const struct target_desc *tdesc = info.target_desc;
-  struct gdbarch *gdbarch;
   int valid_p = 1;
 
   /* If there is already a candidate, use it.  */
@@ -1825,8 +1819,9 @@ sparc32_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     return arches->gdbarch;
 
   /* Allocate space for the new architecture.  */
-  tdep = XCNEW (struct gdbarch_tdep);
-  gdbarch = gdbarch_alloc (&info, tdep);
+  gdbarch *gdbarch
+    = gdbarch_alloc (&info, gdbarch_tdep_up (new sparc_gdbarch_tdep));
+  sparc_gdbarch_tdep *tdep = gdbarch_tdep<sparc_gdbarch_tdep> (gdbarch);
 
   tdep->pc_regnum = SPARC32_PC_REGNUM;
   tdep->npc_regnum = SPARC32_NPC_REGNUM;
@@ -1837,7 +1832,7 @@ sparc32_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   tdep->cp0_registers_num = ARRAY_SIZE (sparc32_cp0_register_names);
 
   set_gdbarch_long_double_bit (gdbarch, 128);
-  set_gdbarch_long_double_format (gdbarch, floatformats_sparc_quad);
+  set_gdbarch_long_double_format (gdbarch, floatformats_ieee_quad);
 
   set_gdbarch_wchar_bit (gdbarch, 16);
   set_gdbarch_wchar_signed (gdbarch, 1);
@@ -1849,7 +1844,8 @@ sparc32_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_tdesc_pseudo_register_name (gdbarch, sparc32_pseudo_register_name);
   set_tdesc_pseudo_register_type (gdbarch, sparc32_pseudo_register_type);
   set_gdbarch_pseudo_register_read (gdbarch, sparc32_pseudo_register_read);
-  set_gdbarch_pseudo_register_write (gdbarch, sparc32_pseudo_register_write);
+  set_gdbarch_deprecated_pseudo_register_write (gdbarch,
+						sparc32_pseudo_register_write);
 
   /* Register numbers of various important registers.  */
   set_gdbarch_sp_regnum (gdbarch, SPARC_SP_REGNUM); /* %sp */
@@ -1862,7 +1858,7 @@ sparc32_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_push_dummy_code (gdbarch, sparc32_push_dummy_code);
   set_gdbarch_push_dummy_call (gdbarch, sparc32_push_dummy_call);
 
-  set_gdbarch_return_value (gdbarch, sparc32_return_value);
+  set_gdbarch_return_value_as_value (gdbarch, sparc32_return_value);
   set_gdbarch_stabs_argument_has_addr
     (gdbarch, sparc32_stabs_argument_has_addr);
 
@@ -2273,5 +2269,5 @@ void _initialize_sparc_tdep ();
 void
 _initialize_sparc_tdep ()
 {
-  register_gdbarch_init (bfd_arch_sparc, sparc32_gdbarch_init);
+  gdbarch_register (bfd_arch_sparc, sparc32_gdbarch_init);
 }

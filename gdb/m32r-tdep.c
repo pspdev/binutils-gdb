@@ -1,6 +1,6 @@
 /* Target-dependent code for Renesas M32R, for GDB.
 
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,13 +17,13 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "extract-store-integer.h"
 #include "frame.h"
 #include "frame-unwind.h"
 #include "frame-base.h"
 #include "symtab.h"
 #include "gdbtypes.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "gdbcore.h"
 #include "value.h"
 #include "inferior.h"
@@ -212,10 +212,7 @@ static const char * const m32r_register_names[] = {
 static const char *
 m32r_register_name (struct gdbarch *gdbarch, int reg_nr)
 {
-  if (reg_nr < 0)
-    return NULL;
-  if (reg_nr >= M32R_NUM_REGS)
-    return NULL;
+  static_assert (ARRAY_SIZE (m32r_register_names) == M32R_NUM_REGS);
   return m32r_register_names[reg_nr];
 }
 
@@ -247,7 +244,7 @@ m32r_store_return_value (struct type *type, struct regcache *regcache,
   struct gdbarch *gdbarch = regcache->arch ();
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   CORE_ADDR regval;
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
 
   regval = extract_unsigned_integer (valbuf, len > 4 ? 4 : len, byte_order);
   regcache_cooked_write_unsigned (regcache, RET1_REGNUM, regval);
@@ -519,7 +516,7 @@ struct m32r_unwind_cache
    for it IS the sp for the next frame.  */
 
 static struct m32r_unwind_cache *
-m32r_frame_unwind_cache (struct frame_info *this_frame,
+m32r_frame_unwind_cache (const frame_info_ptr &this_frame,
 			 void **this_prologue_cache)
 {
   CORE_ADDR pc, scan_limit;
@@ -685,14 +682,14 @@ m32r_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
   /* Now make sure there's space on the stack.  */
   for (argnum = 0, stack_alloc = 0; argnum < nargs; argnum++)
-    stack_alloc += ((TYPE_LENGTH (value_type (args[argnum])) + 3) & ~3);
+    stack_alloc += ((args[argnum]->type ()->length () + 3) & ~3);
   sp -= stack_alloc;		/* Make room on stack for args.  */
 
   for (argnum = 0, stack_offset = 0; argnum < nargs; argnum++)
     {
-      type = value_type (args[argnum]);
+      type = args[argnum]->type ();
       typecode = type->code ();
-      len = TYPE_LENGTH (type);
+      len = type->length ();
 
       memset (valbuf, 0, sizeof (valbuf));
 
@@ -701,7 +698,7 @@ m32r_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	  && (typecode == TYPE_CODE_STRUCT || typecode == TYPE_CODE_UNION))
 	{
 	  store_unsigned_integer (valbuf, 4, byte_order,
-				  value_address (args[argnum]));
+				  args[argnum]->address ());
 	  typecode = TYPE_CODE_PTR;
 	  len = 4;
 	  val = valbuf;
@@ -710,11 +707,11 @@ m32r_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	{
 	  /* Value gets right-justified in the register or stack word.  */
 	  memcpy (valbuf + (register_size (gdbarch, argreg) - len),
-		  (gdb_byte *) value_contents (args[argnum]), len);
+		  (gdb_byte *) args[argnum]->contents ().data (), len);
 	  val = valbuf;
 	}
       else
-	val = (gdb_byte *) value_contents (args[argnum]);
+	val = (gdb_byte *) args[argnum]->contents ().data ();
 
       while (len > 0)
 	{
@@ -758,7 +755,7 @@ m32r_extract_return_value (struct type *type, struct regcache *regcache,
 {
   struct gdbarch *gdbarch = regcache->arch ();
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
   ULONGEST tmp;
 
   /* By using store_unsigned_integer we avoid having to do
@@ -780,7 +777,7 @@ m32r_return_value (struct gdbarch *gdbarch, struct value *function,
 		   struct type *valtype, struct regcache *regcache,
 		   gdb_byte *readbuf, const gdb_byte *writebuf)
 {
-  if (TYPE_LENGTH (valtype) > 8)
+  if (valtype->length () > 8)
     return RETURN_VALUE_STRUCT_CONVENTION;
   else
     {
@@ -796,22 +793,22 @@ m32r_return_value (struct gdbarch *gdbarch, struct value *function,
    frame.  This will be used to create a new GDB frame struct.  */
 
 static void
-m32r_frame_this_id (struct frame_info *this_frame,
+m32r_frame_this_id (const frame_info_ptr &this_frame,
 		    void **this_prologue_cache, struct frame_id *this_id)
 {
   struct m32r_unwind_cache *info
     = m32r_frame_unwind_cache (this_frame, this_prologue_cache);
   CORE_ADDR base;
   CORE_ADDR func;
-  struct bound_minimal_symbol msym_stack;
   struct frame_id id;
 
   /* The FUNC is easy.  */
   func = get_frame_func (this_frame);
 
   /* Check if the stack is empty.  */
-  msym_stack = lookup_minimal_symbol ("_stack", NULL, NULL);
-  if (msym_stack.minsym && info->base == BMSYMBOL_VALUE_ADDRESS (msym_stack))
+  bound_minimal_symbol msym_stack
+    = lookup_minimal_symbol (current_program_space, "_stack");
+  if (msym_stack.minsym && info->base == msym_stack.value_address ())
     return;
 
   /* Hopefully the prologue analysis either correctly determined the
@@ -826,7 +823,7 @@ m32r_frame_this_id (struct frame_info *this_frame,
 }
 
 static struct value *
-m32r_frame_prev_register (struct frame_info *this_frame,
+m32r_frame_prev_register (const frame_info_ptr &this_frame,
 			  void **this_prologue_cache, int regnum)
 {
   struct m32r_unwind_cache *info
@@ -845,7 +842,7 @@ static const struct frame_unwind m32r_frame_unwind = {
 };
 
 static CORE_ADDR
-m32r_frame_base_address (struct frame_info *this_frame, void **this_cache)
+m32r_frame_base_address (const frame_info_ptr &this_frame, void **this_cache)
 {
   struct m32r_unwind_cache *info
     = m32r_frame_unwind_cache (this_frame, this_cache);
@@ -864,17 +861,14 @@ static gdbarch_init_ftype m32r_gdbarch_init;
 static struct gdbarch *
 m32r_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
-  struct gdbarch *gdbarch;
-  struct gdbarch_tdep *tdep;
-
   /* If there is already a candidate, use it.  */
   arches = gdbarch_list_lookup_by_info (arches, &info);
   if (arches != NULL)
     return arches->gdbarch;
 
   /* Allocate space for the new architecture.  */
-  tdep = XCNEW (struct gdbarch_tdep);
-  gdbarch = gdbarch_alloc (&info, tdep);
+  gdbarch *gdbarch
+    = gdbarch_alloc (&info, gdbarch_tdep_up (new m32r_gdbarch_tdep));
 
   set_gdbarch_wchar_bit (gdbarch, 16);
   set_gdbarch_wchar_signed (gdbarch, 0);
@@ -917,5 +911,5 @@ void _initialize_m32r_tdep ();
 void
 _initialize_m32r_tdep ()
 {
-  register_gdbarch_init (bfd_arch_m32r, m32r_gdbarch_init);
+  gdbarch_register (bfd_arch_m32r, m32r_gdbarch_init);
 }

@@ -1,5 +1,5 @@
 /* Disassembler code for CR16.
-   Copyright (C) 2007-2021 Free Software Foundation, Inc.
+   Copyright (C) 2007-2024 Free Software Foundation, Inc.
    Contributed by M R Swami Reddy (MR.Swami.Reddy@nsc.com).
 
    This file is part of GAS, GDB and the GNU binutils.
@@ -529,7 +529,7 @@ print_arg (argument *a, bfd_vma memaddr, struct disassemble_info *info)
   int sign_flag = 0;
   int relative = 0;
   bfd_vma number;
-  PTR stream = info->stream;
+  void *stream = info->stream;
   fprintf_ftype func = info->fprintf_func;
 
   switch (a->type)

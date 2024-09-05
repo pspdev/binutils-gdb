@@ -1,7 +1,7 @@
 #as:
 #source: nonrepresentable-1.c
 #source: nonrepresentable-2.c
-#objdump: --ctf=.ctf
+#objdump: --ctf
 #ld: -shared
 #name: Nonrepresentable types
 
@@ -15,7 +15,7 @@ Contents of CTF section .ctf:
 #...
   Function objects:
 #...
-    foo -> 0x[0-9]*: \(kind 5\) int \(\*\) \(\(nonrepresentable type.*\)\) \(aligned at 0x8\)
+    foo -> 0x[0-9a-f]*: \(kind 5\) int \(\*\) \(\(nonrepresentable type.*\)\) \(aligned at .*\)
 #...
   Types:
 #...

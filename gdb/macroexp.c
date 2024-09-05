@@ -1,5 +1,5 @@
 /* C preprocessor macro expansion for GDB.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
    Contributed by Red Hat, Inc.
 
    This file is part of GDB.
@@ -17,8 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
-#include "gdb_obstack.h"
+#include "gdbsupport/gdb_obstack.h"
 #include "macrotab.h"
 #include "macroexp.h"
 #include "macroscope.h"
@@ -571,7 +570,7 @@ get_token (shared_macro_buffer *tok, shared_macro_buffer *src)
    yield "< <", not "<<", etc.  */
 static void
 append_tokens_without_splicing (growable_macro_buffer *dest,
-                                shared_macro_buffer *src)
+				shared_macro_buffer *src)
 {
   int original_dest_len = dest->len;
   shared_macro_buffer dest_tail, new_token;
@@ -632,8 +631,7 @@ append_tokens_without_splicing (growable_macro_buffer *dest,
 
   /* As far as I know, there's no case where inserting a space isn't
      enough to prevent a splice.  */
-  internal_error (__FILE__, __LINE__,
-		  _("unable to avoid splicing tokens during macro expansion"));
+  internal_error (_("unable to avoid splicing tokens during macro expansion"));
 }
 
 /* Stringify an argument, and insert it into DEST.  ARG is the text to
@@ -790,12 +788,10 @@ gather_arguments (const char *name, shared_macro_buffer *src, int nargs,
 
   for (;;)
     {
-      shared_macro_buffer *arg;
       int depth;
 
       /* Initialize the next argument.  */
-      args.emplace_back ();
-      arg = &args.back ();
+      shared_macro_buffer *arg = &args.emplace_back ();
       set_token (arg, src->text, src->text);
 
       /* Gather the argument's tokens.  */
@@ -820,8 +816,7 @@ gather_arguments (const char *name, shared_macro_buffer *src, int nargs,
 		     missing.  Add an empty argument in this case.  */
 		  if (nargs != -1 && args.size () == nargs - 1)
 		    {
-		      args.emplace_back ();
-		      arg = &args.back ();
+		      arg = &args.emplace_back ();
 		      set_token (arg, src->text, src->text);
 		    }
 
@@ -1311,7 +1306,7 @@ expand (const char *id,
       return 1;
     }
   else
-    internal_error (__FILE__, __LINE__, _("bad macro definition kind"));
+    internal_error (_("bad macro definition kind"));
 }
 
 

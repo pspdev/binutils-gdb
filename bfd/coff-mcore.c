@@ -1,5 +1,5 @@
 /* BFD back-end for Motorola MCore COFF/PE
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -61,7 +61,7 @@ static reloc_howto_type mcore_coff_howto_table[] =
   /* Unused: */
   HOWTO (IMAGE_REL_MCORE_ABSOLUTE,/* type */
 	 0,			 /* rightshift */
-	 0,			 /* size (0 = byte, 1 = short, 2 = long) */
+	 0,			 /* size */
 	 0,			 /* bitsize */
 	 false,			 /* pc_relative */
 	 0,			 /* bitpos */
@@ -75,7 +75,7 @@ static reloc_howto_type mcore_coff_howto_table[] =
 
   HOWTO (IMAGE_REL_MCORE_ADDR32,/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -91,7 +91,7 @@ static reloc_howto_type mcore_coff_howto_table[] =
      Should not appear in object files.  */
   HOWTO (IMAGE_REL_MCORE_PCREL_IMM8BY4,	/* type */
 	 2,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -108,7 +108,7 @@ static reloc_howto_type mcore_coff_howto_table[] =
      Only useful pieces at the relocated address are the opcode (5 bits) */
   HOWTO (IMAGE_REL_MCORE_PCREL_IMM11BY2,/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 11,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -123,7 +123,7 @@ static reloc_howto_type mcore_coff_howto_table[] =
   /* 4 bits + 1 zero bit; 'loopt' instruction only; unsupported.  */
   HOWTO (IMAGE_REL_MCORE_PCREL_IMM4BY2,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 4,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -138,7 +138,7 @@ static reloc_howto_type mcore_coff_howto_table[] =
   /* 32-bit pc-relative. Eventually this will help support PIC code.  */
   HOWTO (IMAGE_REL_MCORE_PCREL_32,/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -159,7 +159,7 @@ static reloc_howto_type mcore_coff_howto_table[] =
      is a relocation that we are allowed to safely ignore.  */
   HOWTO (IMAGE_REL_MCORE_PCREL_JSR_IMM11BY2,/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 11,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -173,7 +173,7 @@ static reloc_howto_type mcore_coff_howto_table[] =
 
   HOWTO (IMAGE_REL_MCORE_RVA,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -220,7 +220,7 @@ mcore_emit_base_file_entry (struct bfd_link_info *info,
 		 + input_section->output_offset
 		 + input_section->output_section->vma;
 
-  if (coff_data (output_bfd)->pe)
+  if (obj_pe (output_bfd))
      addr -= pe_data (output_bfd)->pe_opthdr.ImageBase;
 
   if (fwrite (&addr, sizeof (addr), 1, (FILE *) info->base_file) == 1)
@@ -434,7 +434,13 @@ coff_mcore_relocate_section (bfd * output_bfd,
 		my_name = "*unknown*";
 	      else if (   sym->_n._n_n._n_zeroes == 0
 		       && sym->_n._n_n._n_offset != 0)
-		my_name = obj_coff_strings (input_bfd) + sym->_n._n_n._n_offset;
+		{
+		  if (sym->_n._n_n._n_offset < obj_coff_strings_len (input_bfd))
+		    my_name = (obj_coff_strings (input_bfd)
+			       + sym->_n._n_n._n_offset);
+		  else
+		    my_name = "?";
+		}
 	      else
 		{
 		  strncpy (buf, sym->_n._n_name, SYMNMLEN);

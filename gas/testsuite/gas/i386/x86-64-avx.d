@@ -6,8 +6,8 @@
 Disassembly of section .text:
 
 0+ <_start>:
-[ 	]*[a-f0-9]+:	c5 fc 77             	vzeroall 
-[ 	]*[a-f0-9]+:	c5 f8 77             	vzeroupper 
+[ 	]*[a-f0-9]+:	c5 fc 77             	vzeroall
+[ 	]*[a-f0-9]+:	c5 f8 77             	vzeroupper
 [ 	]*[a-f0-9]+:	c5 f8 ae 11          	vldmxcsr \(%rcx\)
 [ 	]*[a-f0-9]+:	c5 f8 ae 19          	vstmxcsr \(%rcx\)
 [ 	]*[a-f0-9]+:	c4 e2 5d 2d 31       	vmaskmovpd \(%rcx\),%ymm4,%ymm6
@@ -2854,9 +2854,7 @@ Disassembly of section .text:
 [ 	]*[a-f0-9]+:	c4 e1 fb 2c 09       	vcvttsd2si \(%rcx\),%rcx
 [ 	]*[a-f0-9]+:	c4 e1 db 2a f1       	vcvtsi2sd %rcx,%xmm4,%xmm6
 [ 	]*[a-f0-9]+:	c4 e1 db 2a 31       	vcvtsi2sdq \(%rcx\),%xmm4,%xmm6
-[ 	]*[a-f0-9]+:	c4 e1 db 2a 31       	vcvtsi2sdq \(%rcx\),%xmm4,%xmm6
 [ 	]*[a-f0-9]+:	c4 e1 da 2a f1       	vcvtsi2ss %rcx,%xmm4,%xmm6
-[ 	]*[a-f0-9]+:	c4 e1 da 2a 31       	vcvtsi2ssq \(%rcx\),%xmm4,%xmm6
 [ 	]*[a-f0-9]+:	c4 e1 da 2a 31       	vcvtsi2ssq \(%rcx\),%xmm4,%xmm6
 [ 	]*[a-f0-9]+:	c4 e3 d9 22 f1 07    	vpinsrq \$0x7,%rcx,%xmm4,%xmm6
 [ 	]*[a-f0-9]+:	c4 e3 d9 22 31 07    	vpinsrq \$0x7,\(%rcx\),%xmm4,%xmm6

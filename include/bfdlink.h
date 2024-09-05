@@ -1,5 +1,5 @@
 /* bfdlink.h -- header file for BFD link routines
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
    Written by Steve Chamberlain and Ian Lance Taylor, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -113,6 +113,12 @@ struct bfd_link_hash_entry
   /* Symbol is referenced in a normal dynamic object file,
      as distinct from a LTO IR object file.  */
   unsigned int non_ir_ref_dynamic : 1;
+
+  /* The symbol, SYM, is referenced by __real_SYM in an object file.  */
+  unsigned int ref_real : 1;
+
+  /* The symbol is a wrapper symbol, __wrap_SYM.  */
+  unsigned int wrapper_symbol : 1;
 
   /* Symbol is a built-in define.  These will be overridden by PROVIDE
      in a linker script.  */
@@ -413,8 +419,15 @@ struct bfd_link_info
   /* TRUE if PT_GNU_RELRO segment should be created.  */
   unsigned int relro: 1;
 
+  /* TRUE if DT_RELR should be enabled for compact relative
+     relocations.  */
+  unsigned int enable_dt_relr: 1;
+
   /* TRUE if separate code segment should be created.  */
   unsigned int separate_code: 1;
+
+  /* TRUE if only one read-only, non-code segment should be created.  */
+  unsigned int one_rosegment: 1;
 
   /* Nonzero if .eh_frame_hdr section and PT_GNU_EH_FRAME ELF segment
      should be created.  1 for DWARF2 tables, 2 for compact tables.  */
@@ -477,14 +490,56 @@ struct bfd_link_info
      --dynamic-list command line options.  */
   unsigned int dynamic: 1;
 
-  /* TRUE if PT_GNU_STACK segment should be created with PF_R|PF_W|PF_X
-     flags.  */
+  /* Set if the "-z execstack" option has been used to request that a
+     PT_GNU_STACK segment should be created with PF_R, PF_W and PF_X
+     flags set.
+
+     Note - if performing a relocatable link then a .note.GNU-stack
+     section will be created instead, if one does not exist already.
+     The section will have the SHF_EXECINSTR flag bit set.  */
   unsigned int execstack: 1;
 
-  /* TRUE if PT_GNU_STACK segment should be created with PF_R|PF_W
-     flags.  */
+  /* Set if the "-z noexecstack" option has been used to request that a
+     PT_GNU_STACK segment should be created with PF_R and PF_W flags.  Or
+     a non-executable .note.GNU-stack section for relocateable links.
+
+     Note - this flag is not quite orthogonal to execstack, since both
+     of these flags can be 0.  In this case a stack segment can still
+     be created, but it will only have the PF_X flag bit set if one or
+     more of the input files contains a .note.GNU-stack section with the
+     SHF_EXECINSTR flag bit set, or if the default behaviour for the
+     architecture is to create executable stacks.
+
+     The execstack and noexecstack flags should never both be 1.  */
   unsigned int noexecstack: 1;
 
+  /* Tri-state variable:
+     0 => do not warn when creating an executable stack.
+     1 => always warn when creating an executable stack (for any reason).
+     2 => only warn when an executable stack has been requested an object
+          file and execstack is 0 or noexecstack is 1.
+     3 => not used.  */
+  unsigned int warn_execstack: 2;
+  /* TRUE if a warning generated because of warn_execstack should be instead
+     be treated as an error.  */
+  unsigned int error_execstack: 1;
+
+  /* TRUE if warnings should NOT be generated for TLS segments with eXecute
+     permission or LOAD segments with RWX permissions.  */
+  unsigned int no_warn_rwx_segments: 1;
+  /* TRUE if the user gave either --warn-rwx-segments or
+     --no-warn-rwx-segments on the linker command line.  */
+  unsigned int user_warn_rwx_segments: 1;
+  /* TRUE if warnings generated when no_warn_rwx_segements is 0 should
+     instead be treated as errors.  */
+  unsigned int warn_is_error_for_rwx_segments: 1;
+
+  /* TRUE if the stack can be made executable because of the absence of a
+     .note.GNU-stack section in an input file.  Note - even if this field
+     is set, some targets may choose to ignore the setting and not create
+     an executable stack.  */
+  unsigned int default_execstack : 1;
+  
   /* TRUE if we want to produced optimized output files.  This might
      need much more time and therefore must be explicitly selected.  */
   unsigned int optimize: 1;
@@ -525,6 +580,12 @@ struct bfd_link_info
   /* TRUE if all symbol names should be unique.  */
   unsigned int unique_symbol : 1;
 
+  /* TRUE if maxpagesize is set on command-line.  */
+  unsigned int maxpagesize_is_set : 1;
+
+  /* TRUE if commonpagesize is set on command-line.  */
+  unsigned int commonpagesize_is_set : 1;
+
   /* Char that may appear as the first char of a symbol, but should be
      skipped (like symbol_leading_char) when looking up symbols in
      wrap_hash.  Used by PowerPC Linux for 'dot' symbols.  */
@@ -532,9 +593,6 @@ struct bfd_link_info
 
   /* Separator between archive and filename in linker script filespecs.  */
   char path_separator;
-
-  /* Compress DWARF debug sections.  */
-  enum compressed_debug_section_type compress_debug;
 
   /* Default stack size.  Zero means default (often zero itself), -1
      means explicitly zero-sized.  */

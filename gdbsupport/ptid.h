@@ -1,6 +1,6 @@
 /* The ptid_t type and common functions operating on it.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -34,10 +34,15 @@
 
 #include <functional>
 #include <string>
+#include "gdbsupport/common-types.h"
 
 class ptid_t
 {
 public:
+  using pid_type = int;
+  using lwp_type = long;
+  using tid_type = ULONGEST;
+
   /* Must have a trivial defaulted default constructor so that the
      type remains POD.  */
   ptid_t () noexcept = default;
@@ -47,13 +52,13 @@ public:
      A ptid with only a PID (LWP and TID equal to zero) is usually used to
      represent a whole process, including all its lwps/threads.  */
 
-  explicit constexpr ptid_t (int pid, long lwp = 0, long tid = 0)
+  explicit constexpr ptid_t (pid_type pid, lwp_type lwp = 0, tid_type tid = 0)
     : m_pid (pid), m_lwp (lwp), m_tid (tid)
   {}
 
   /* Fetch the pid (process id) component from the ptid.  */
 
-  constexpr int pid () const
+  constexpr pid_type pid () const
   { return m_pid; }
 
   /* Return true if the ptid's lwp member is non-zero.  */
@@ -63,7 +68,7 @@ public:
 
   /* Fetch the lwp (lightweight process) component from the ptid.  */
 
-  constexpr long lwp () const
+  constexpr lwp_type lwp () const
   { return m_lwp; }
 
   /* Return true if the ptid's tid member is non-zero.  */
@@ -73,7 +78,7 @@ public:
 
   /* Fetch the tid (thread id) component from a ptid.  */
 
-  constexpr long tid () const
+  constexpr tid_type tid () const
   { return m_tid; }
 
   /* Return true if the ptid represents a whole process, including all its
@@ -143,18 +148,19 @@ public:
 
 private:
   /* Process id.  */
-  int m_pid;
+  pid_type m_pid;
 
   /* Lightweight process id.  */
-  long m_lwp;
+  lwp_type m_lwp;
 
   /* Thread id.  */
-  long m_tid;
+  tid_type m_tid;
 };
 
-/* Functor to hash a ptid.  */
-
-struct hash_ptid
+namespace std
+{
+template<>
+struct hash<ptid_t>
 {
   size_t operator() (const ptid_t &ptid) const
   {
@@ -165,6 +171,7 @@ struct hash_ptid
 	    + long_hash (ptid.tid ()));
   }
 };
+}
 
 /* The null or zero ptid, often used to indicate no process. */
 

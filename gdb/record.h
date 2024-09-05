@@ -1,6 +1,6 @@
 /* Process record and replay target for GDB, the GNU debugger.
 
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,7 +20,7 @@
 #ifndef RECORD_H
 #define RECORD_H
 
-#include "target/waitstatus.h" /* For enum target_stop_reason.  */
+#include "target/waitstatus.h"
 #include "gdbsupport/enum-flags.h"
 
 struct address_space;
@@ -62,7 +62,10 @@ enum record_print_flag
   RECORD_PRINT_INSN_RANGE = (1 << 1),
 
   /* Indent based on call stack depth (if applicable).  */
-  RECORD_PRINT_INDENT_CALLS = (1 << 2)
+  RECORD_PRINT_INDENT_CALLS = (1 << 2),
+
+  /* Deactivate printing auxiliary data (if applicable).  */
+  RECORD_DONT_PRINT_AUX = (1 << 3)
 };
 DEF_ENUM_FLAGS_TYPE (enum record_print_flag, record_print_flags);
 

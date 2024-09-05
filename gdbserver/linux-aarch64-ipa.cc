@@ -1,7 +1,7 @@
 /* GNU/Linux/AArch64 specific low level interface, for the in-process
    agent library for GDB.
 
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,7 +18,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "server.h"
 #include <sys/mman.h>
 #include "tracepoint.h"
 #include <elf.h>
@@ -147,12 +146,12 @@ get_raw_reg (const unsigned char *raw_regs, int regnum)
 
 /* Return target_desc to use for IPA, given the tdesc index passed by
    gdbserver.  Index is ignored, since we have only one tdesc
-   at the moment.  SVE, pauth and MTE not yet supported.  */
+   at the moment.  SVE, pauth, MTE and TLS not yet supported.  */
 
 const struct target_desc *
 get_ipa_tdesc (int idx)
 {
-  return aarch64_linux_read_description (0, false, false);
+  return aarch64_linux_read_description ({});
 }
 
 /* Allocate buffer for the jump pads.  The branch instruction has a reach
@@ -204,6 +203,6 @@ alloc_jump_pad_buffer (size_t size)
 void
 initialize_low_tracepoint (void)
 {
-  /* SVE, pauth and MTE not yet supported.  */
-  aarch64_linux_read_description (0, false, false);
+  /* SVE, pauth, MTE and TLS not yet supported.  */
+  aarch64_linux_read_description ({});
 }

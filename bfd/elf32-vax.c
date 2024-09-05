@@ -1,5 +1,5 @@
 /* VAX series support for 32-bit ELF
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
    Contributed by Matt Thomas <matt@3am-software.com>.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -36,7 +36,6 @@ static bool elf_vax_check_relocs (bfd *, struct bfd_link_info *,
 				  asection *, const Elf_Internal_Rela *);
 static bool elf_vax_adjust_dynamic_symbol (struct bfd_link_info *,
 					   struct elf_link_hash_entry *);
-static bool elf_vax_size_dynamic_sections (bfd *, struct bfd_link_info *);
 static int elf_vax_relocate_section (bfd *, struct bfd_link_info *,
 				     bfd *, asection *, bfd_byte *,
 				     Elf_Internal_Rela *,
@@ -54,7 +53,7 @@ static bool elf32_vax_print_private_bfd_data (bfd *, void *);
 static reloc_howto_type howto_table[] = {
   HOWTO (R_VAX_NONE,		/* type */
 	 0,			/* rightshift */
-	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -68,7 +67,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -82,7 +81,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -96,7 +95,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -110,7 +109,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_PC32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -124,7 +123,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_PC16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -138,7 +137,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_PC8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -152,7 +151,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_GOT32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -172,7 +171,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_PLT32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -192,7 +191,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_COPY,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -206,7 +205,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_GLOB_DAT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -220,7 +219,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_JMP_SLOT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -234,7 +233,7 @@ static reloc_howto_type howto_table[] = {
 
   HOWTO (R_VAX_RELATIVE,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -249,7 +248,7 @@ static reloc_howto_type howto_table[] = {
   /* GNU extension to record C++ vtable hierarchy */
   HOWTO (R_VAX_GNU_VTINHERIT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -264,7 +263,7 @@ static reloc_howto_type howto_table[] = {
   /* GNU extension to record C++ vtable member usage */
   HOWTO (R_VAX_GNU_VTENTRY,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -985,8 +984,8 @@ elf_vax_discard_got_entries (struct elf_link_hash_entry *h,
 /* Discard unused dynamic data if this is a static link.  */
 
 static bool
-elf_vax_always_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
-			      struct bfd_link_info *info)
+elf_vax_early_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
+			     struct bfd_link_info *info)
 {
   bfd *dynobj;
   asection *s;
@@ -1024,14 +1023,15 @@ elf_vax_always_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
 /* Set the sizes of the dynamic sections.  */
 
 static bool
-elf_vax_size_dynamic_sections (bfd *output_bfd, struct bfd_link_info *info)
+elf_vax_late_size_sections (bfd *output_bfd, struct bfd_link_info *info)
 {
   bfd *dynobj;
   asection *s;
   bool relocs;
 
   dynobj = elf_hash_table (info)->dynobj;
-  BFD_ASSERT (dynobj != NULL);
+  if (dynobj == NULL)
+    return true;
 
   if (elf_hash_table (info)->dynamic_sections_created)
     {
@@ -1861,10 +1861,8 @@ elf_vax_plt_sym_val (bfd_vma i, const asection *plt,
 #define elf_backend_check_relocs	elf_vax_check_relocs
 #define elf_backend_adjust_dynamic_symbol \
 					elf_vax_adjust_dynamic_symbol
-#define elf_backend_always_size_sections \
-					elf_vax_always_size_sections
-#define elf_backend_size_dynamic_sections \
-					elf_vax_size_dynamic_sections
+#define elf_backend_early_size_sections	elf_vax_early_size_sections
+#define elf_backend_late_size_sections	elf_vax_late_size_sections
 #define elf_backend_init_index_section	_bfd_elf_init_1_index_section
 #define elf_backend_relocate_section	elf_vax_relocate_section
 #define elf_backend_finish_dynamic_symbol \

@@ -6,9 +6,8 @@ BEGIN	{
 	  print "   It is created automatically by copying.awk.";
 	  print "   Modify copying.awk instead.  <== */";
 	  print ""
-	  print "#include \"defs.h\""
 	  print "#include \"command.h\""
-	  print "#include \"gdbcmd.h\""
+	  print "#include \"cli/cli-cmds.h\""
 	  print ""
 	  print "static void show_copying_command (const char *, int);"
 	  print ""
@@ -21,11 +20,11 @@ BEGIN	{
 NR == 1,/^[ 	]*15\. Disclaimer of Warranty\.[ 	]*$/	{
 	  if ($0 ~ //)
 	    {
-	      printf "  printf_filtered (\"\\n\");\n";
+	      printf "  gdb_printf (\"\\n\");\n";
 	    }
 	  else if ($0 !~ /^[ 	]*15\. Disclaimer of Warranty\.[ 	]*$/) 
 	    {
-	      printf "  printf_filtered (\"";
+	      printf "  gdb_printf (\"";
 	      for (i = 1; i < NF; i++)
 		printf "%s\\\"", $i;
 	      printf "%s\\n\");\n", $NF;
@@ -41,7 +40,7 @@ NR == 1,/^[ 	]*15\. Disclaimer of Warranty\.[ 	]*$/	{
 /^[ 	]*15\. Disclaimer of Warranty\.[ 	]*$/, /^[ 	]*END OF TERMS AND CONDITIONS[ 	]*$/{  
 	  if (! ($0 ~ /^[ 	]*END OF TERMS AND CONDITIONS[ 	]*$/)) 
 	    {
-	      printf "  printf_filtered (\"";
+	      printf "  gdb_printf (\"";
 	      for (i = 1; i < NF; i++)
 		printf "%s\\\"", $i;
 	      printf "%s\\n\");\n", $NF;
@@ -50,8 +49,9 @@ NR == 1,/^[ 	]*15\. Disclaimer of Warranty\.[ 	]*$/	{
 END	{
 	  print "}";
 	  print "";
+	  print "void _initialize_copying ();"
 	  print "void"
-	  print "_initialize_copying (void)";
+	  print "_initialize_copying ()";
 	  print "{";
 	  print "  add_cmd (\"copying\", no_set_class, show_copying_command,";
 	  print "	   _(\"Conditions for redistributing copies of GDB.\"),";

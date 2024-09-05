@@ -1,6 +1,6 @@
 /* Internal header for GDB/Scheme code.
 
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,6 +28,8 @@
 #include "extension-priv.h"
 #include "symtab.h"
 #include "libguile.h"
+#include "objfiles.h"
+#include "top.h"
 
 struct block;
 struct frame_info;
@@ -272,7 +274,6 @@ struct eqable_gdb_smob
 #undef GDB_SMOB_HEAD
 
 struct objfile;
-struct objfile_data;
 
 /* A predicate that returns non-zero if an object is a particular kind
    of gsmob.  */
@@ -286,14 +287,6 @@ extern void gdbscm_init_chained_gsmob (chained_gdb_smob *base);
 
 extern void gdbscm_init_eqable_gsmob (eqable_gdb_smob *base,
 				      SCM containing_scm);
-
-extern void gdbscm_add_objfile_ref (struct objfile *objfile,
-				    const struct objfile_data *data_key,
-				    chained_gdb_smob *g_smob);
-
-extern void gdbscm_remove_objfile_ref (struct objfile *objfile,
-				       const struct objfile_data *data_key,
-				       chained_gdb_smob *g_smob);
 
 extern htab_t gdbscm_create_eqable_gsmob_ptr_map (htab_hash hash_fn,
 						  htab_eq eq_fn);
@@ -333,32 +326,32 @@ extern SCM gdbscm_make_type_error (const char *subr, int arg_pos,
 extern SCM gdbscm_make_invalid_object_error (const char *subr, int arg_pos,
 					     SCM bad_value, const char *error);
 
-extern void gdbscm_invalid_object_error (const char *subr, int arg_pos,
-					 SCM bad_value, const char *error)
-   ATTRIBUTE_NORETURN;
+[[noreturn]] extern void gdbscm_invalid_object_error (const char *subr,
+						      int arg_pos,
+						      SCM bad_value,
+						      const char *error);
 
 extern SCM gdbscm_make_out_of_range_error (const char *subr, int arg_pos,
 					   SCM bad_value, const char *error);
 
-extern void gdbscm_out_of_range_error (const char *subr, int arg_pos,
-				       SCM bad_value, const char *error)
-   ATTRIBUTE_NORETURN;
+[[noreturn]] extern void gdbscm_out_of_range_error (const char *subr,
+						    int arg_pos, SCM bad_value,
+						    const char *error);
 
 extern SCM gdbscm_make_misc_error (const char *subr, int arg_pos,
 				   SCM bad_value, const char *error);
 
-extern void gdbscm_misc_error (const char *subr, int arg_pos,
-			       SCM bad_value, const char *error)
-   ATTRIBUTE_NORETURN;
+[[noreturn]] extern void gdbscm_misc_error (const char *subr, int arg_pos,
+					    SCM bad_value, const char *error);
 
-extern void gdbscm_throw (SCM exception) ATTRIBUTE_NORETURN;
+[[noreturn]] extern void gdbscm_throw (SCM exception);
 
 struct gdbscm_gdb_exception;
 extern SCM gdbscm_scm_from_gdb_exception
   (const gdbscm_gdb_exception &exception);
 
-extern void gdbscm_throw_gdb_exception (gdbscm_gdb_exception exception)
-  ATTRIBUTE_NORETURN;
+[[noreturn]] extern void gdbscm_throw_gdb_exception
+  (gdbscm_gdb_exception exception);
 
 extern void gdbscm_print_exception_with_stack (SCM port, SCM stack,
 					       SCM key, SCM args);
@@ -375,8 +368,8 @@ extern excp_matcher_func gdbscm_user_error_p;
 extern SCM gdbscm_make_memory_error (const char *subr, const char *msg,
 				     SCM args);
 
-extern void gdbscm_memory_error (const char *subr, const char *msg, SCM args)
-  ATTRIBUTE_NORETURN;
+[[noreturn]] extern void gdbscm_memory_error (const char *subr,
+					      const char *msg, SCM args);
 
 /* scm-safe-call.c */
 
@@ -455,7 +448,7 @@ extern int frscm_is_frame (SCM scm);
 extern frame_smob *frscm_get_frame_smob_arg_unsafe (SCM frame_scm, int arg_pos,
 						    const char *func_name);
 
-extern struct frame_info *frscm_frame_smob_to_frame (frame_smob *);
+extern struct frame_info_ptr frscm_frame_smob_to_frame (frame_smob *);
 
 /* scm-iterator.c */
 
@@ -711,6 +704,10 @@ gdbscm_wrap (Function &&func, Args &&... args)
   try
     {
       result = func (std::forward<Args> (args)...);
+    }
+  catch (const gdb_exception_forced_quit &e)
+    {
+      quit_force (NULL, 0);
     }
   catch (const gdb_exception &except)
     {

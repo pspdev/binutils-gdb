@@ -1,6 +1,6 @@
 /* D language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "symtab.h"
 #include "language.h"
 #include "varobj.h"
@@ -39,9 +38,8 @@ static const char D_MAIN[] = "D main";
 const char *
 d_main_name (void)
 {
-  struct bound_minimal_symbol msym;
-
-  msym = lookup_minimal_symbol (D_MAIN, NULL, NULL);
+  bound_minimal_symbol msym
+    = lookup_minimal_symbol (current_program_space, D_MAIN);
   if (msym.minsym != NULL)
     return D_MAIN;
 
@@ -51,7 +49,7 @@ d_main_name (void)
 
 /* Implements the la_demangle language_defn routine for language D.  */
 
-char *
+gdb::unique_xmalloc_ptr<char>
 d_demangle (const char *symbol, int options)
 {
   return gdb_demangle (symbol, options | DMGL_DLANG);
@@ -126,8 +124,9 @@ public:
   }
 
   /* See language.h.  */
-  bool sniff_from_mangled_name (const char *mangled,
-				char **demangled) const override
+  bool sniff_from_mangled_name
+       (const char *mangled,
+	gdb::unique_xmalloc_ptr<char> *demangled) const override
   {
     *demangled = d_demangle (mangled, 0);
     return *demangled != NULL;
@@ -135,9 +134,17 @@ public:
 
   /* See language.h.  */
 
-  char *demangle_symbol (const char *mangled, int options) const override
+  gdb::unique_xmalloc_ptr<char> demangle_symbol (const char *mangled,
+						 int options) const override
   {
     return d_demangle (mangled, options);
+  }
+
+  /* See language.h.  */
+
+  bool can_print_type_offsets () const override
+  {
+    return true;
   }
 
   /* See language.h.  */
@@ -146,7 +153,7 @@ public:
 		   struct ui_file *stream, int show, int level,
 		   const struct type_print_options *flags) const override
   {
-    c_print_type (type, varstring, stream, show, level, flags);
+    c_print_type (type, varstring, stream, show, level, la_language, flags);
   }
 
   /* See language.h.  */
@@ -162,7 +169,7 @@ public:
 
   struct block_symbol lookup_symbol_nonlocal
 	(const char *name, const struct block *block,
-	 const domain_enum domain) const override
+	 const domain_search_flags domain) const override
   {
     return d_lookup_symbol_nonlocal (this, name, block, domain);
   }
@@ -186,45 +193,44 @@ static d_language d_language_defn;
 
 /* Build all D language types for the specified architecture.  */
 
-static void *
+static struct builtin_d_type *
 build_d_types (struct gdbarch *gdbarch)
 {
-  struct builtin_d_type *builtin_d_type
-    = GDBARCH_OBSTACK_ZALLOC (gdbarch, struct builtin_d_type);
+  struct builtin_d_type *builtin_d_type = new struct builtin_d_type;
 
   /* Basic types.  */
-  builtin_d_type->builtin_void
-    = arch_type (gdbarch, TYPE_CODE_VOID, TARGET_CHAR_BIT, "void");
+  type_allocator alloc (gdbarch);
+  builtin_d_type->builtin_void = builtin_type (gdbarch)->builtin_void;
   builtin_d_type->builtin_bool
-    = arch_boolean_type (gdbarch, 8, 1, "bool");
+    = init_boolean_type (alloc, 8, 1, "bool");
   builtin_d_type->builtin_byte
-    = arch_integer_type (gdbarch, 8, 0, "byte");
+    = init_integer_type (alloc, 8, 0, "byte");
   builtin_d_type->builtin_ubyte
-    = arch_integer_type (gdbarch, 8, 1, "ubyte");
+    = init_integer_type (alloc, 8, 1, "ubyte");
   builtin_d_type->builtin_short
-    = arch_integer_type (gdbarch, 16, 0, "short");
+    = init_integer_type (alloc, 16, 0, "short");
   builtin_d_type->builtin_ushort
-    = arch_integer_type (gdbarch, 16, 1, "ushort");
+    = init_integer_type (alloc, 16, 1, "ushort");
   builtin_d_type->builtin_int
-    = arch_integer_type (gdbarch, 32, 0, "int");
+    = init_integer_type (alloc, 32, 0, "int");
   builtin_d_type->builtin_uint
-    = arch_integer_type (gdbarch, 32, 1, "uint");
+    = init_integer_type (alloc, 32, 1, "uint");
   builtin_d_type->builtin_long
-    = arch_integer_type (gdbarch, 64, 0, "long");
+    = init_integer_type (alloc, 64, 0, "long");
   builtin_d_type->builtin_ulong
-    = arch_integer_type (gdbarch, 64, 1, "ulong");
+    = init_integer_type (alloc, 64, 1, "ulong");
   builtin_d_type->builtin_cent
-    = arch_integer_type (gdbarch, 128, 0, "cent");
+    = init_integer_type (alloc, 128, 0, "cent");
   builtin_d_type->builtin_ucent
-    = arch_integer_type (gdbarch, 128, 1, "ucent");
+    = init_integer_type (alloc, 128, 1, "ucent");
   builtin_d_type->builtin_float
-    = arch_float_type (gdbarch, gdbarch_float_bit (gdbarch),
+    = init_float_type (alloc, gdbarch_float_bit (gdbarch),
 		       "float", gdbarch_float_format (gdbarch));
   builtin_d_type->builtin_double
-    = arch_float_type (gdbarch, gdbarch_double_bit (gdbarch),
+    = init_float_type (alloc, gdbarch_double_bit (gdbarch),
 		       "double", gdbarch_double_format (gdbarch));
   builtin_d_type->builtin_real
-    = arch_float_type (gdbarch, gdbarch_long_double_bit (gdbarch),
+    = init_float_type (alloc, gdbarch_long_double_bit (gdbarch),
 		       "real", gdbarch_long_double_format (gdbarch));
 
   builtin_d_type->builtin_byte->set_instance_flags
@@ -237,13 +243,13 @@ build_d_types (struct gdbarch *gdbarch)
 
   /* Imaginary and complex types.  */
   builtin_d_type->builtin_ifloat
-    = arch_float_type (gdbarch, gdbarch_float_bit (gdbarch),
+    = init_float_type (alloc, gdbarch_float_bit (gdbarch),
 		       "ifloat", gdbarch_float_format (gdbarch));
   builtin_d_type->builtin_idouble
-    = arch_float_type (gdbarch, gdbarch_double_bit (gdbarch),
+    = init_float_type (alloc, gdbarch_double_bit (gdbarch),
 		       "idouble", gdbarch_double_format (gdbarch));
   builtin_d_type->builtin_ireal
-    = arch_float_type (gdbarch, gdbarch_long_double_bit (gdbarch),
+    = init_float_type (alloc, gdbarch_long_double_bit (gdbarch),
 		       "ireal", gdbarch_long_double_format (gdbarch));
   builtin_d_type->builtin_cfloat
     = init_complex_type ("cfloat", builtin_d_type->builtin_float);
@@ -254,28 +260,28 @@ build_d_types (struct gdbarch *gdbarch)
 
   /* Character types.  */
   builtin_d_type->builtin_char
-    = arch_character_type (gdbarch, 8, 1, "char");
+    = init_character_type (alloc, 8, 1, "char");
   builtin_d_type->builtin_wchar
-    = arch_character_type (gdbarch, 16, 1, "wchar");
+    = init_character_type (alloc, 16, 1, "wchar");
   builtin_d_type->builtin_dchar
-    = arch_character_type (gdbarch, 32, 1, "dchar");
+    = init_character_type (alloc, 32, 1, "dchar");
 
   return builtin_d_type;
 }
 
-static struct gdbarch_data *d_type_data;
+static const registry<gdbarch>::key<struct builtin_d_type> d_type_data;
 
 /* Return the D type table for the specified architecture.  */
 
 const struct builtin_d_type *
 builtin_d_type (struct gdbarch *gdbarch)
 {
-  return (const struct builtin_d_type *) gdbarch_data (gdbarch, d_type_data);
-}
+  struct builtin_d_type *result = d_type_data.get (gdbarch);
+  if (result == nullptr)
+    {
+      result = build_d_types (gdbarch);
+      d_type_data.set (gdbarch, result);
+    }
 
-void _initialize_d_language ();
-void
-_initialize_d_language ()
-{
-  d_type_data = gdbarch_data_register_post_init (build_d_types);
+  return result;
 }

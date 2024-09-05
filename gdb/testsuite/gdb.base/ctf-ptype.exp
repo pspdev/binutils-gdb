@@ -1,4 +1,4 @@
-# Copyright 2019-2021 Free Software Foundation, Inc.
+# Copyright 2019-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,26 +15,27 @@
 
 # This file is a subset of ptype.exp written by Rob Savoye. (rob@cygnus.com)
 
-if [skip_ctf_tests] {
-    unsupported "no CTF debug format support, or CTF disabled in GDB"
-    return 0
-}
+require allow_ctf_tests
+
+# Some tests require GCC.
+set gcc_compiled [is_c_compiler_gcc]
 
 standard_testfile .c
 
-# Using `-gt` generates full-fledged CTF debug information.
-set opts "additional_flags=-gt"
+# Using `-gctf` generates full-fledged CTF debug information.
+set opts {}
+lappend opts additional_flags=-gctf
+lappend opts ldflags=-Wl,--ctf-variables
+lappend opts nowarnings
 
 if { [prepare_for_testing "failed to prepare" ${testfile} \
-	  [list $srcfile] [list $opts nowarnings]] } {
+	  [list $srcfile] $opts] } {
     return 0
 }
 
-# Create and source the file that provides information about the compiler
-# used to compile the test case.
-if [get_compiler_info] {
-    return -1
-}
+clean_restart
+gdb_test_no_output "set always-read-ctf on"
+gdb_load $binfile
 
 # Test ptype of unnamed enumeration members before any action causes
 # the partial symbol table to be expanded to full symbols.  This fails
@@ -63,16 +64,16 @@ gdb_test "ptype struct t_struct" "type = struct t_struct \{.*\[\r\n\]    (unsign
 
 # Test the equivalence between '.' and '->' for struct member references.
 
-if [gdb_test "ptype v_struct1.v_float_member"	"type = float"]<0 then {
+if {[gdb_test "ptype v_struct1.v_float_member"	"type = float"] < 0} {
     return -1
 }
-if [gdb_test "ptype v_struct1->v_float_member"	"type = float"]<0 then {
+if {[gdb_test "ptype v_struct1->v_float_member"	"type = float"] < 0} {
     return -1
 }
-if [gdb_test "ptype v_t_struct_p.v_float_member"	"type = float"]<0 then {
+if {[gdb_test "ptype v_t_struct_p.v_float_member"	"type = float"] < 0} {
     return -1
 }
-if [gdb_test "ptype v_t_struct_p->v_float_member"	"type = float"]<0 then {
+if {[gdb_test "ptype v_t_struct_p->v_float_member"	"type = float"] < 0} {
     return -1
 }
 
@@ -277,11 +278,11 @@ ptype_maybe_prototyped "fffptr" "int (*(*(*)(char))(short int))(long int)" \
 # requires a running process.  These call malloc, and can take a long
 # time to execute over a slow serial link, so increase the timeout.
 
-if [runto_main] then {
+if {[runto_main]} {
 
   if [target_info exists gdb,cannot_call_functions] {
     unsupported "this target can not call functions"
-    continue
+    return
   }
 
   # We need to up this because this can be really slow on some boards.

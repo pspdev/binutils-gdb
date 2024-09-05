@@ -24,7 +24,8 @@ int chroot_syscall = SYS_chroot;
 int read_syscall = SYS_read;
 #ifdef SYS_pipe
 int pipe_syscall = SYS_pipe;
-#else
+#endif
+#ifdef SYS_pipe2
 int pipe2_syscall = SYS_pipe2;
 #endif
 int write_syscall = SYS_write;
@@ -37,7 +38,11 @@ int unknown_syscall = 0x0f07ff;
 #else
 int unknown_syscall = 123456789;
 #endif
+#ifdef SYS_exit_group
 int exit_group_syscall = SYS_exit_group;
+#else
+int exit_syscall = SYS_exit;
+#endif
 
 /* Set by the test when it wants execve.  */
 int do_execve = 0;

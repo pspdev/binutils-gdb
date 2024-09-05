@@ -1,4 +1,4 @@
-# Copyright 2004-2021 Free Software Foundation, Inc.
+# Copyright 2004-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,15 +21,9 @@
 # This test confirms that we can inspect signal info using the
 # $_siginfo convenience variable.
 
-if [target_info exists gdb,nosignals] {
-    verbose "Skipping siginfo-obj.exp because of nosignals."
-    continue
-}
+require {!target_info exists gdb,nosignals}
 
-if { ![supports_get_siginfo_type] } {
-    verbose "Skipping siginfo-obj.exp because of lack of support."
-    return
-}
+require supports_get_siginfo_type
 
 
 standard_testfile
@@ -39,8 +33,7 @@ if {[prepare_for_testing "failed to prepare" $testfile $srcfile debug]} {
 }
 
 # Advance to main
-if ![runto_main] then {
-    fail "can't run to main"
+if {![runto_main]} {
     return 0
 }
 
@@ -100,8 +93,7 @@ with_test_prefix "validate siginfo fields" {
 # the changed value.
 
 # Advance to main
-if ![runto_main] then {
-    fail "can't run to main"
+if {![runto_main]} {
     return 0
 }
 

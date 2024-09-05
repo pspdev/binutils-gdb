@@ -1,5 +1,5 @@
 /* 32-bit ELF support for S+core.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
    Contributed by
    Brain.lin (brain.lin@sunplusct.com)
    Mei Ligang (ligang@sunnorth.com.cn)
@@ -340,23 +340,14 @@ score_elf_final_gp (bfd *output_bfd,
 
 static bfd_reloc_status_type
 score_elf_gprel15_with_gp (bfd *abfd,
-			   asymbol *symbol,
 			   arelent *reloc_entry,
 			   asection *input_section,
 			   bool relocateable,
 			   void * data,
 			   bfd_vma gp ATTRIBUTE_UNUSED)
 {
-  bfd_vma relocation;
   unsigned long insn;
 
-  if (bfd_is_com_section (symbol->section))
-    relocation = 0;
-  else
-    relocation = symbol->value;
-
-  relocation += symbol->section->output_section->vma;
-  relocation += symbol->section->output_offset;
   if (reloc_entry->address > input_section->size)
     return bfd_reloc_outofrange;
 
@@ -441,14 +432,16 @@ score_elf_gprel15_reloc (bfd *abfd,
     {
       relocateable = false;
       output_bfd = symbol->section->output_section->owner;
+      if (output_bfd == NULL)
+	return bfd_reloc_undefined;
     }
 
   ret = score_elf_final_gp (output_bfd, symbol, relocateable, error_message, &gp);
   if (ret != bfd_reloc_ok)
     return ret;
 
-  return score_elf_gprel15_with_gp (abfd, symbol, reloc_entry,
-					 input_section, relocateable, data, gp);
+  return score_elf_gprel15_with_gp (abfd, reloc_entry,
+				    input_section, relocateable, data, gp);
 }
 
 /* Do a R_SCORE_GPREL32 relocation.  This is a 32 bit value which must
@@ -549,7 +542,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* No relocation.  */
   HOWTO (R_SCORE_NONE,		/* type */
 	 0,			/* rightshift */
-	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -564,7 +557,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* R_SCORE_HI16 */
   HOWTO (R_SCORE_HI16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 1,			/* bitpos */
@@ -579,7 +572,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* R_SCORE_LO16 */
   HOWTO (R_SCORE_LO16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 1,			/* bitpos */
@@ -594,7 +587,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /*  R_SCORE_BCMP */
   HOWTO (R_SCORE_BCMP,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 1,			/* bitpos */
@@ -608,7 +601,7 @@ static reloc_howto_type elf32_score_howto_table[] =
 
   HOWTO (R_SCORE_24,		/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 24,			/* bitsize */
 	 false,			/* pc_relative */
 	 1,			/* bitpos */
@@ -623,7 +616,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /*R_SCORE_PC19 */
   HOWTO (R_SCORE_PC19,		/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 19,			/* bitsize */
 	 true,			/* pc_relative */
 	 1,			/* bitpos */
@@ -638,7 +631,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /*R_SCORE16_11 */
   HOWTO (R_SCORE16_11,		/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 11,			/* bitsize */
 	 false,			/* pc_relative */
 	 1,			/* bitpos */
@@ -653,7 +646,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* R_SCORE16_PC8 */
   HOWTO (R_SCORE16_PC8,		/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -668,7 +661,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* 32 bit absolute */
   HOWTO (R_SCORE_ABS32,		/* type 8 */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -683,7 +676,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* 16 bit absolute */
   HOWTO (R_SCORE_ABS16,		/* type 11 */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -698,7 +691,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* R_SCORE_DUMMY2 */
   HOWTO (R_SCORE_DUMMY2,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -713,7 +706,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* R_SCORE_GP15 */
   HOWTO (R_SCORE_GP15,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -728,7 +721,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* GNU extension to record C++ vtable hierarchy.  */
   HOWTO (R_SCORE_GNU_VTINHERIT, /* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -743,7 +736,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* GNU extension to record C++ vtable member usage */
   HOWTO (R_SCORE_GNU_VTENTRY,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -758,7 +751,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* Reference to global offset table.  */
   HOWTO (R_SCORE_GOT15,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -773,7 +766,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_SCORE_GOT_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 1,			/* bitpos */
@@ -788,7 +781,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* 15 bit call through global offset table.  */
   HOWTO (R_SCORE_CALL15,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -803,7 +796,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* 32 bit GP relative reference.  */
   HOWTO (R_SCORE_GPREL32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -818,7 +811,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* 32 bit symbol relative relocation.  */
   HOWTO (R_SCORE_REL32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -833,7 +826,7 @@ static reloc_howto_type elf32_score_howto_table[] =
   /* R_SCORE_DUMMY_HI16 */
   HOWTO (R_SCORE_DUMMY_HI16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 1,			/* bitpos */
@@ -876,7 +869,7 @@ static const struct score_reloc_map elf32_score_reloc_map[] =
   {BFD_RELOC_SCORE_DUMMY_HI16,	 R_SCORE_DUMMY_HI16},
 };
 
-static INLINE hashval_t
+static inline hashval_t
 score_elf_hash_bfd_vma (bfd_vma addr)
 {
 #ifdef BFD64
@@ -982,7 +975,7 @@ score_elf_got_info (bfd *abfd, asection **sgotp)
    appear towards the end.  This reduces the amount of GOT space
    required.  MAX_LOCAL is used to set the number of local symbols
    known to be in the dynamic symbol table.  During
-   s7_bfd_score_elf_size_dynamic_sections, this value is 1.  Afterward, the
+   s7_bfd_score_elf_late_size_sections, this value is 1.  Afterward, the
    section symbols are added and the count is higher.  */
 
 static bool
@@ -2976,8 +2969,8 @@ s7_bfd_score_elf_adjust_dynamic_symbol (struct bfd_link_info *info,
    and the input sections have been assigned to output sections.  */
 
 bool
-s7_bfd_score_elf_always_size_sections (bfd *output_bfd,
-				       struct bfd_link_info *info)
+s7_bfd_score_elf_early_size_sections (bfd *output_bfd,
+				      struct bfd_link_info *info)
 {
   bfd *dynobj;
   asection *s;
@@ -3054,14 +3047,15 @@ s7_bfd_score_elf_always_size_sections (bfd *output_bfd,
 /* Set the sizes of the dynamic sections.  */
 
 bool
-s7_bfd_score_elf_size_dynamic_sections (bfd *output_bfd, struct bfd_link_info *info)
+s7_bfd_score_elf_late_size_sections (bfd *output_bfd, struct bfd_link_info *info)
 {
   bfd *dynobj;
   asection *s;
   bool reltext;
 
   dynobj = elf_hash_table (info)->dynobj;
-  BFD_ASSERT (dynobj != NULL);
+  if (dynobj == NULL)
+    return true;
 
   if (elf_hash_table (info)->dynamic_sections_created)
     {
@@ -3130,7 +3124,7 @@ s7_bfd_score_elf_size_dynamic_sections (bfd *output_bfd, struct bfd_link_info *i
 	}
       else if (startswith (name, ".got"))
 	{
-	  /* s7_bfd_score_elf_always_size_sections() has already done
+	  /* s7_bfd_score_elf_early_size_sections() has already done
 	     most of the work, but some symbols may have been mapped
 	     to versions that we must now resolve in the got_entries
 	     hash tables.  */
@@ -3303,7 +3297,13 @@ s7_bfd_score_elf_finish_dynamic_symbol (bfd *output_bfd,
 
       /* FIXME: Can h->dynindex be more than 64K?  */
       if (h->dynindx & 0xffff0000)
-	return false;
+	{
+	  _bfd_error_handler
+	    (_("%pB: cannot handle more than %d dynamic symbols"),
+	     output_bfd, 0xffff);
+	  bfd_set_error (bfd_error_bad_value);
+	  return false;
+	}
 
       /* Fill the stub.  */
       bfd_put_32 (output_bfd, STUB_LW, stub);

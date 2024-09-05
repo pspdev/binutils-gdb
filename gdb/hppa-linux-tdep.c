@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux running on PA-RISC, for GDB.
 
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "extract-store-integer.h"
 #include "gdbcore.h"
 #include "osabi.h"
 #include "target.h"
@@ -193,7 +193,7 @@ struct hppa_linux_sigtramp_unwind_cache
 };
 
 static struct hppa_linux_sigtramp_unwind_cache *
-hppa_linux_sigtramp_frame_unwind_cache (struct frame_info *this_frame,
+hppa_linux_sigtramp_frame_unwind_cache (const frame_info_ptr &this_frame,
 					void **this_cache)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
@@ -268,7 +268,7 @@ hppa_linux_sigtramp_frame_unwind_cache (struct frame_info *this_frame,
 }
 
 static void
-hppa_linux_sigtramp_frame_this_id (struct frame_info *this_frame,
+hppa_linux_sigtramp_frame_this_id (const frame_info_ptr &this_frame,
 				   void **this_prologue_cache,
 				   struct frame_id *this_id)
 {
@@ -278,7 +278,7 @@ hppa_linux_sigtramp_frame_this_id (struct frame_info *this_frame,
 }
 
 static struct value *
-hppa_linux_sigtramp_frame_prev_register (struct frame_info *this_frame,
+hppa_linux_sigtramp_frame_prev_register (const frame_info_ptr &this_frame,
 					 void **this_prologue_cache,
 					 int regnum)
 {
@@ -296,7 +296,7 @@ hppa_linux_sigtramp_frame_prev_register (struct frame_info *this_frame,
    we can find the beginning of the struct rt_sigframe.  */
 static int
 hppa_linux_sigtramp_frame_sniffer (const struct frame_unwind *self,
-				   struct frame_info *this_frame,
+				   const frame_info_ptr &this_frame,
 				   void **this_prologue_cache)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
@@ -360,49 +360,47 @@ hppa_linux_find_global_pointer (struct gdbarch *gdbarch,
   faddr_sect = find_pc_section (faddr);
   if (faddr_sect != NULL)
     {
-      struct obj_section *osect;
-
-      ALL_OBJFILE_OSECTIONS (faddr_sect->objfile, osect)
+      for (obj_section *osect : faddr_sect->objfile->sections ())
 	{
 	  if (strcmp (osect->the_bfd_section->name, ".dynamic") == 0)
-	    break;
-	}
-
-      if (osect < faddr_sect->objfile->sections_end)
-	{
-	  CORE_ADDR addr, endaddr;
-
-	  addr = osect->addr ();
-	  endaddr = osect->endaddr ();
-
-	  while (addr < endaddr)
 	    {
-	      int status;
-	      LONGEST tag;
-	      gdb_byte buf[4];
+	      CORE_ADDR addr, endaddr;
 
-	      status = target_read_memory (addr, buf, sizeof (buf));
-	      if (status != 0)
-		break;
-	      tag = extract_signed_integer (buf, sizeof (buf), byte_order);
+	      addr = osect->addr ();
+	      endaddr = osect->endaddr ();
 
-	      if (tag == DT_PLTGOT)
+	      while (addr < endaddr)
 		{
-		  CORE_ADDR global_pointer;
+		  int status;
+		  LONGEST tag;
+		  gdb_byte buf[4];
 
-		  status = target_read_memory (addr + 4, buf, sizeof (buf));
+		  status = target_read_memory (addr, buf, sizeof (buf));
 		  if (status != 0)
 		    break;
-		  global_pointer = extract_unsigned_integer (buf, sizeof (buf),
-							     byte_order);
-		  /* The payoff...  */
-		  return global_pointer;
+		  tag = extract_signed_integer (buf, byte_order);
+
+		  if (tag == DT_PLTGOT)
+		    {
+		      CORE_ADDR global_pointer;
+
+		      status = target_read_memory (addr + 4, buf,
+						   sizeof (buf));
+		      if (status != 0)
+			break;
+		      global_pointer
+			= extract_unsigned_integer (buf, sizeof (buf),
+						    byte_order);
+		      /* The payoff...  */
+		      return global_pointer;
+		    }
+
+		  if (tag == DT_NULL)
+		    break;
+
+		  addr += 8;
 		}
-
-	      if (tag == DT_NULL)
-		break;
-
-	      addr += 8;
+	      break;
 	    }
 	}
     }
@@ -476,7 +474,7 @@ hppa_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 					 void *cb_data,
 					 const struct regcache *regcache)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  hppa_gdbarch_tdep *tdep = gdbarch_tdep<hppa_gdbarch_tdep> (gdbarch);
 
   cb (".reg", 80 * tdep->bytes_per_address, 80 * tdep->bytes_per_address,
       &hppa_linux_regset, NULL, cb_data);
@@ -486,7 +484,7 @@ hppa_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 static void
 hppa_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  hppa_gdbarch_tdep *tdep = gdbarch_tdep<hppa_gdbarch_tdep> (gdbarch);
 
   linux_init_abi (info, gdbarch, 0);
 
@@ -501,7 +499,7 @@ hppa_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 
   /* GNU/Linux uses SVR4-style shared libraries.  */
   set_solib_svr4_fetch_link_map_offsets
-    (gdbarch, svr4_ilp32_fetch_link_map_offsets);
+    (gdbarch, linux_ilp32_fetch_link_map_offsets);
 
   tdep->in_solib_call_trampoline = hppa_in_solib_call_trampoline;
   set_gdbarch_skip_trampoline_code (gdbarch, hppa_skip_trampoline_code);

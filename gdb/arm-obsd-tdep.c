@@ -1,6 +1,6 @@
 /* Target-dependent code for OpenBSD/arm.
 
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "osabi.h"
 #include "trad-frame.h"
 #include "tramp-frame.h"
@@ -30,7 +29,7 @@
 
 static void
 armobsd_sigframe_init (const struct tramp_frame *self,
-		       struct frame_info *this_frame,
+		       const frame_info_ptr &this_frame,
 		       struct trad_frame_cache *cache,
 		       CORE_ADDR func)
 {
@@ -76,7 +75,7 @@ static void
 armobsd_init_abi (struct gdbarch_info info,
 		  struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  arm_gdbarch_tdep *tdep = gdbarch_tdep<arm_gdbarch_tdep> (gdbarch);
 
   if (tdep->fp_model == ARM_FLOAT_AUTO)
     tdep->fp_model = ARM_FLOAT_SOFT_VFP;

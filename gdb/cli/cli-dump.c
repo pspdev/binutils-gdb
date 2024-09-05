@@ -1,6 +1,6 @@
 /* Dump-to-file commands, for GDB, the GNU debugger.
 
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Red Hat.
 
@@ -19,7 +19,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "cli/cli-decode.h"
 #include "cli/cli-cmds.h"
 #include "value.h"
@@ -33,6 +32,7 @@
 #include "gdbsupport/filestuff.h"
 #include "gdbsupport/byte-vector.h"
 #include "gdbarch.h"
+#include "inferior.h"
 
 static gdb::unique_xmalloc_ptr<char>
 scan_expression (const char **cmd, const char *def)
@@ -224,15 +224,15 @@ dump_value_to_file (const char *cmd, const char *mode, const char *file_format)
 
   /* Have everything.  Open/write the data.  */
   if (file_format == NULL || strcmp (file_format, "binary") == 0)
-    dump_binary_file (filename.get (), mode, value_contents (val),
-		      TYPE_LENGTH (value_type (val)));
+    dump_binary_file (filename.get (), mode, val->contents ().data (),
+		      val->type ()->length ());
   else
     {
       CORE_ADDR vaddr;
 
-      if (VALUE_LVAL (val))
+      if (val->lval ())
 	{
-	  vaddr = value_address (val);
+	  vaddr = val->address ();
 	}
       else
 	{
@@ -241,8 +241,8 @@ dump_value_to_file (const char *cmd, const char *mode, const char *file_format)
 	}
 
       dump_bfd_file (filename.get (), mode, file_format, vaddr,
-		     value_contents (val), 
-		     TYPE_LENGTH (value_type (val)));
+		     val->contents ().data (), 
+		     val->type ()->length ());
     }
 }
 
@@ -398,8 +398,8 @@ restore_one_section (bfd *ibfd, asection *isec,
       || (load_end > 0 && sec_start >= load_end))
     {
       /* No, no useable data in this section.  */
-      printf_filtered (_("skipping section %s...\n"), 
-		       bfd_section_name (isec));
+      gdb_printf (_("skipping section %s...\n"), 
+		  bfd_section_name (isec));
       return;
     }
 
@@ -419,21 +419,21 @@ restore_one_section (bfd *ibfd, asection *isec,
     error (_("Failed to read bfd file %s: '%s'."), bfd_get_filename (ibfd), 
 	   bfd_errmsg (bfd_get_error ()));
 
-  printf_filtered ("Restoring section %s (0x%lx to 0x%lx)",
-		   bfd_section_name (isec), 
-		   (unsigned long) sec_start, 
-		   (unsigned long) sec_end);
+  gdb_printf ("Restoring section %s (0x%lx to 0x%lx)",
+	      bfd_section_name (isec), 
+	      (unsigned long) sec_start, 
+	      (unsigned long) sec_end);
 
   if (load_offset != 0 || load_start != 0 || load_end != 0)
-    printf_filtered (" into memory (%s to %s)\n",
-		     paddress (target_gdbarch (),
-			       (unsigned long) sec_start
-			       + sec_offset + load_offset),
-		     paddress (target_gdbarch (),
-			       (unsigned long) sec_start + sec_offset
-				+ load_offset + sec_load_count));
+    gdb_printf (" into memory (%s to %s)\n",
+		paddress (current_inferior ()->arch (),
+			  (unsigned long) sec_start
+			  + sec_offset + load_offset),
+		paddress (current_inferior ()->arch (),
+			  (unsigned long) sec_start + sec_offset
+			  + load_offset + sec_load_count));
   else
-    puts_filtered ("\n");
+    gdb_puts ("\n");
 
   /* Write the data.  */
   ret = target_write_memory (sec_start + sec_offset + load_offset,
@@ -474,7 +474,7 @@ restore_binary_file (const char *filename, CORE_ADDR load_offset,
   if (load_start > 0)
     len -= load_start;
 
-  printf_filtered 
+  gdb_printf 
     ("Restoring binary file %s into memory (0x%lx to 0x%lx)\n", 
      filename, 
      (unsigned long) (load_start + load_offset),
@@ -542,10 +542,10 @@ restore_command (const char *args, int from_tty)
     }
 
   if (info_verbose)
-    printf_filtered ("Restore file %s offset 0x%lx start 0x%lx end 0x%lx\n",
-		     filename.get (), (unsigned long) load_offset,
-		     (unsigned long) load_start,
-		     (unsigned long) load_end);
+    gdb_printf ("Restore file %s offset 0x%lx start 0x%lx end 0x%lx\n",
+		filename.get (), (unsigned long) load_offset,
+		(unsigned long) load_start,
+		(unsigned long) load_end);
 
   if (binary_flag)
     {

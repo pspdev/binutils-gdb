@@ -729,7 +729,7 @@ EXTERN_DEVICE\
 (void) device_error
 (device *me,
  const char *fmt,
- ...) ATTRIBUTE_PRINTF_2;
+ ...) ATTRIBUTE_NORETURN ATTRIBUTE_PRINTF_2;
 
 INLINE_DEVICE\
 (int) device_trace
@@ -780,7 +780,7 @@ typedef void device_event_handler(void *data);
 INLINE_DEVICE\
 (event_entry_tag) device_event_queue_schedule
 (device *me,
- signed64 delta_time,
+ int64_t delta_time,
  device_event_handler *handler,
  void *data);
 
@@ -790,7 +790,7 @@ INLINE_DEVICE\
  event_entry_tag event_to_remove);
 
 INLINE_DEVICE\
-(signed64) device_event_queue_time
+(int64_t) device_event_queue_time
 (device *me);
 
 #endif /* _DEVICE_H_ */

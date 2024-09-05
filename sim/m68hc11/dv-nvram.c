@@ -1,5 +1,5 @@
 /*  dv-nvram.c -- Generic driver for a non volatile ram (battery saved)
-    Copyright (C) 1999-2021 Free Software Foundation, Inc.
+    Copyright (C) 1999-2024 Free Software Foundation, Inc.
     Written by Stephane Carrez (stcarrez@worldnet.fr)
     (From a driver model Contributed by Cygnus Solutions.)
     
@@ -29,6 +29,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include "m68hc11-sim.h"
 
 /* DEVICE
 
@@ -106,7 +107,7 @@ struct nvram
 {
   address_word    base_address; /* Base address of ram.  */
   unsigned        size;         /* Size of ram.  */
-  unsigned8       *data;        /* Pointer to ram memory.  */
+  uint8_t       *data;        /* Pointer to ram memory.  */
   const char      *file_name;   /* Path of ram file.  */
   int             fd;           /* File description of opened ram file.  */
   enum nvram_mode mode;         /* How load/save ram file.  */

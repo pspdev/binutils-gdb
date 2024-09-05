@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 
-# Copyright 2011-2021 Free Software Foundation, Inc.
+# Copyright 2011-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@ array set syscall_number {}
 # Define the syscall instructions, registers and numbers for each target.
 
 if { [istarget "i\[34567\]86-*-linux*"] || [istarget "x86_64-*-linux*"] } {
-    set syscall_insn "\[ \t\](int|syscall|sysenter)\[ \t\]"
+    set syscall_insn "\[ \t\](int|syscall|sysenter)\[ \t\]*"
     set syscall_register "eax"
     array set syscall_number {fork "(56|120)" vfork "(58|190)" \
       clone "(56|120)"}
@@ -41,11 +41,21 @@ if { [istarget "i\[34567\]86-*-linux*"] || [istarget "x86_64-*-linux*"] } {
     return -1
 }
 
-proc_with_prefix check_pc_after_cross_syscall { syscall syscall_insn_next_addr } {
+proc_with_prefix check_pc_after_cross_syscall { displaced syscall syscall_insn_next_addr } {
     set syscall_insn_next_addr_found [get_hexadecimal_valueof "\$pc" "0"]
 
+    # After the 'stepi' we expect thread 1 to still be selected.
+    set curr_thread "unknown"
+    gdb_test_multiple "thread" "" {
+	-re -wrap "Current thread is (\\d+) .*" {
+	    set curr_thread $expect_out(1,string)
+	    pass $gdb_test_name
+	}
+    }
+
     gdb_assert {$syscall_insn_next_addr != 0 \
-      && $syscall_insn_next_addr == $syscall_insn_next_addr_found} \
+      && $syscall_insn_next_addr == $syscall_insn_next_addr_found \
+      && $curr_thread == 1} \
 	"single step over $syscall final pc"
 }
 
@@ -76,8 +86,7 @@ proc setup { syscall } {
 
     clean_restart $testfile
 
-    if { ![runto_main] } then {
-	fail "run to main ($syscall)"
+    if {![runto_main]} {
 	return -1
     }
 
@@ -89,14 +98,14 @@ proc setup { syscall } {
 
     gdb_test "break \*$syscall" "Breakpoint \[0-9\]* at .*"
 
-    gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, (.* in |__libc_|)$syscall \\(\\).*" \
-	"continue to $syscall (1st time)"
+    gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, (.* in )?(__libc_)?$syscall \\(\\).*" \
+	"continue to $syscall, 1st time"
     # Hit the breakpoint on $syscall for the first time.  In this time,
     # we will let PLT resolution done, and the number single steps we will
     # do later will be reduced.
 
-    gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, (.* in |__libc_|)$syscall \\(\\).*" \
-	"continue to $syscall (2nd time)"
+    gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, (.* in )?(__libc_)?$syscall \\(\\).*" \
+	"continue to $syscall, 2nd time"
     # Hit the breakpoint on $syscall for the second time.  In this time,
     # the address of syscall insn and next insn of syscall are recorded.
 
@@ -203,20 +212,18 @@ proc step_over_syscall { syscall } {
 
 	set testfile "step-over-$syscall"
 
-	if [build_executable ${testfile}.exp ${testfile} ${testfile}.c {debug}] {
+	set options [list debug]
+	if { $syscall == "clone" } {
+	    lappend options "pthreads"
+	}
+
+	if [build_executable ${testfile}.exp ${testfile} ${testfile}.c $options] {
 	    untested "failed to compile"
 	    return -1
 	}
 
 	foreach_with_prefix displaced {"off" "on"} {
 	    if {$displaced == "on" && ![support_displaced_stepping]} {
-		continue
-	    }
-
-	    if { $displaced == "on" && $syscall == "clone" } {
-		# GDB doesn't support stepping over clone syscall with
-		# displaced stepping.
-		kfail "gdb/19675" "single step over clone"
 		continue
 	    }
 
@@ -228,8 +235,8 @@ proc step_over_syscall { syscall } {
 		return -1
 	    }
 
-	    gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, (.* in |__libc_|)$syscall \\(\\).*" \
-		"continue to $syscall (3rd time)"
+	    gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, (.* in )?(__libc_)?$syscall \\(\\).*" \
+		"continue to $syscall, 3rd time"
 
 	    # Hit the breakpoint on $syscall for the third time.  In this time, we'll set
 	    # breakpoint on the syscall insn we recorded previously, and single step over it.
@@ -256,12 +263,13 @@ proc step_over_syscall { syscall } {
 	    if {[gdb_test "stepi" "x/i .*=>.*" "single step over $syscall"] != 0} {
 		return -1
 	    }
-	    check_pc_after_cross_syscall $syscall $syscall_insn_next_addr
+	    check_pc_after_cross_syscall $displaced $syscall $syscall_insn_next_addr
 
 	    # Delete breakpoint syscall insns to avoid interference to other syscalls.
 	    delete_breakpoints
 
 	    gdb_test "break marker" "Breakpoint.*at.* file .*${testfile}.c, line.*"
+
 	    gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, marker \\(\\) at.*" \
 		"continue to marker ($syscall)"
 	}
@@ -286,7 +294,7 @@ proc break_cond_on_syscall { syscall follow_fork detach_on_fork } {
 	    return -1
 	}
 
-	gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, (.* in |__libc_|)$syscall \\(\\).*" \
+	gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, (.* in )?(__libc_)?$syscall \\(\\).*" \
 	    "continue to $syscall"
 	# Delete breakpoint syscall insns to avoid interference with other syscalls.
 	delete_breakpoints
@@ -322,12 +330,12 @@ proc break_cond_on_syscall { syscall follow_fork detach_on_fork } {
 		if { $detach_on_fork == "off" } {
 		    gdb_test "inferior 1"
 		    gdb_test "break marker" "Breakpoint.*at.*"
-		    gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, marker \\(\\) at.*" \
+		    gdb_test "continue" "Continuing\\..*Breakpoint $::bkptno_numopt_re, marker \\(\\) at.*" \
 			"continue to marker"
 		}
 	    } else {
 		gdb_test "break marker" "Breakpoint.*at.* file .*${testfile}.c, line.*"
-		gdb_test "continue" "Continuing\\..*Breakpoint \[0-9\]+, marker \\(\\) at.*" \
+		gdb_test "continue" "Continuing\\..*Breakpoint $::bkptno_numopt_re, marker \\(\\) at.*" \
 		    "continue to marker"
 	    }
 	}
@@ -340,8 +348,7 @@ step_over_syscall "clone"
 
 set testfile "step-over-fork"
 clean_restart $testfile
-if { ![runto_main] } then {
-    fail "run to main"
+if {![runto_main]} {
     return -1
 }
 

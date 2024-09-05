@@ -148,4 +148,33 @@ Disassembly of section .text:
  +[a-f0-9]+:	62 .*	vporq  0x80\(%eax\),%ymm2,%ymm3
  +[a-f0-9]+:	62 .*	vpxord 0x80\(%eax\),%ymm2,%ymm3
  +[a-f0-9]+:	62 .*	vpxorq 0x80\(%eax\),%ymm2,%ymm3
+ +[a-f0-9]+:	0f .*	pxor   %mm2,%mm2
+ +[a-f0-9]+:	66 .*	pxor   %xmm2,%xmm2
+ +[a-f0-9]+:	c5 .*	vpxor  %xmm2,%xmm2,%xmm0
+ +[a-f0-9]+:	c5 .*	vpxor  %ymm2,%ymm2,%ymm0
+ +[a-f0-9]+:	0f .*	pxor   %mm2,%mm2
+ +[a-f0-9]+:	66 .*	pxor   %xmm2,%xmm2
+ +[a-f0-9]+:	c5 .*	vpxor  %xmm2,%xmm2,%xmm0
+ +[a-f0-9]+:	c5 .*	vpxor  %ymm2,%ymm2,%ymm0
+ +[a-f0-9]+:	0f .*	pxor   %mm2,%mm2
+ +[a-f0-9]+:	66 .*	pxor   %xmm2,%xmm2
+ +[a-f0-9]+:	c5 .*	vpxor  %xmm2,%xmm2,%xmm0
+ +[a-f0-9]+:	c5 .*	vpxor  %ymm2,%ymm2,%ymm0
+ +[a-f0-9]+:	66 .*	pxor   %xmm2,%xmm2
+ +[a-f0-9]+:	c5 .*	vpxor  %xmm2,%xmm2,%xmm0
+ +[a-f0-9]+:	c5 .*	vpxor  %ymm2,%ymm2,%ymm0
+ +[a-f0-9]+:	66 .*	movd   %xmm1,%edx
+ +[a-f0-9]+:	66 .*	movd   %xmm1,\(%edx\)
+ +[a-f0-9]+:	c5 .*	vmovd  %xmm1,%edx
+ +[a-f0-9]+:	c5 .*	vmovd  %xmm1,\(%edx\)
+ +[a-f0-9]+:	0f ba e0 0f          	bt     \$0xf,%eax
+ +[a-f0-9]+:	66 0f ba e0 10       	bt     \$0x10,%ax
+ +[a-f0-9]+:	0f ba f8 0f          	btc    \$0xf,%eax
+ +[a-f0-9]+:	0f ba f0 0f          	btr    \$0xf,%eax
+ +[a-f0-9]+:	0f ba e8 0f          	bts    \$0xf,%eax
+ +[a-f0-9]+:	0f ba e0 0f          	bt     \$0xf,%eax
+ +[a-f0-9]+:	66 0f ba e0 10       	bt     \$0x10,%ax
+ +[a-f0-9]+:	0f ba f8 0f          	btc    \$0xf,%eax
+ +[a-f0-9]+:	0f ba f0 0f          	btr    \$0xf,%eax
+ +[a-f0-9]+:	0f ba e8 0f          	bts    \$0xf,%eax
 #pass

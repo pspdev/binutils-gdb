@@ -1,6 +1,6 @@
 /* Target-dependent code for OpenBSD.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "auxv.h"
 #include "frame.h"
 #include "symtab.h"
@@ -28,10 +27,9 @@
 CORE_ADDR
 obsd_skip_solib_resolver (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
-  struct bound_minimal_symbol msym;
-
-  msym = lookup_minimal_symbol("_dl_bind", NULL, NULL);
-  if (msym.minsym && BMSYMBOL_VALUE_ADDRESS (msym) == pc)
+  bound_minimal_symbol msym
+    = lookup_minimal_symbol (current_program_space, "_dl_bind");
+  if (msym.minsym && msym.value_address () == pc)
     return frame_unwind_caller_pc (get_current_frame ());
   else
     return find_solib_trampoline_target (get_current_frame (), pc);

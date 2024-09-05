@@ -1,5 +1,5 @@
 /* tc-ia64.c -- Assembler for the HP/Intel IA-64 architecture.
-   Copyright (C) 1998-2021 Free Software Foundation, Inc.
+   Copyright (C) 1998-2024 Free Software Foundation, Inc.
    Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
 
    This file is part of GAS, the GNU Assembler.
@@ -68,8 +68,7 @@
 enum special_section
   {
     /* IA-64 ABI section pseudo-ops.  */
-    SPECIAL_SECTION_BSS = 0,
-    SPECIAL_SECTION_SBSS,
+    SPECIAL_SECTION_SBSS = 0,
     SPECIAL_SECTION_SDATA,
     SPECIAL_SECTION_RODATA,
     SPECIAL_SECTION_COMMENT,
@@ -306,6 +305,7 @@ static struct
     slot[NUM_SLOTS];
 
     segT last_text_seg;
+    subsegT last_text_subseg;
 
     struct dynreg
       {
@@ -644,7 +644,7 @@ static const bfd_vma nop[IA64_NUM_UNITS] =
    habit of setting temporary sentinels.  */
 static char special_section_name[][20] =
   {
-    {".bss"}, {".sbss"}, {".sdata"}, {".rodata"}, {".comment"},
+    {".sbss"}, {".sdata"}, {".rodata"}, {".comment"},
     {".IA_64.unwind"}, {".IA_64.unwind_info"},
     {".init_array"}, {".fini_array"}
   };
@@ -952,7 +952,7 @@ ia64_flush_insns (void)
   saved_seg = now_seg;
   saved_subseg = now_subseg;
 
-  subseg_set (md.last_text_seg, 0);
+  subseg_set (md.last_text_seg, md.last_text_subseg);
 
   while (md.num_slots_in_use > 0)
     emit_one_bundle ();		/* force out queued instructions */
@@ -1138,7 +1138,7 @@ obj_elf_vms_common (int ignore ATTRIBUTE_UNUSED)
   obj_elf_change_section
     (sec_name, SHT_NOBITS,
      SHF_ALLOC | SHF_WRITE | SHF_IA_64_VMS_OVERLAID | SHF_IA_64_VMS_GLOBAL,
-     0, NULL, 1, 0);
+     0, NULL, true);
 
   S_SET_VALUE (symbolP, 0);
   S_SET_SIZE (symbolP, size);
@@ -1759,7 +1759,6 @@ static unw_rec_list *
 output_prologue (void)
 {
   unw_rec_list *ptr = alloc_record (prologue);
-  memset (&ptr->r.record.r.mask, 0, sizeof (ptr->r.record.r.mask));
   return ptr;
 }
 
@@ -1767,7 +1766,6 @@ static unw_rec_list *
 output_prologue_gr (unsigned int saved_mask, unsigned int reg)
 {
   unw_rec_list *ptr = alloc_record (prologue_gr);
-  memset (&ptr->r.record.r.mask, 0, sizeof (ptr->r.record.r.mask));
   ptr->r.record.r.grmask = saved_mask;
   ptr->r.record.r.grsave = reg;
   return ptr;
@@ -3173,7 +3171,7 @@ dot_loc (int x)
   dwarf2_directive_loc (x);
 }
 
-/* .sbss, .bss etc. are macros that expand into ".section SECNAME".  */
+/* .sbss, .srodata etc. are macros that expand into ".section SECNAME".  */
 static void
 dot_special_section (int which)
 {
@@ -4410,7 +4408,7 @@ dot_endp (int dummy ATTRIBUTE_UNUSED)
     {
       symbolS *proc_end;
 
-      subseg_set (md.last_text_seg, 0);
+      subseg_set (md.last_text_seg, md.last_text_subseg);
       proc_end = expr_build_dot ();
 
       start_unwind_section (saved_seg, SPECIAL_SECTION_UNWIND);
@@ -4664,14 +4662,9 @@ dot_rot (int type)
 	}
 
       if (!*drpp)
-	{
-	  *drpp = XOBNEW (&notes, struct dynreg);
-	  memset (*drpp, 0, sizeof (*dr));
-	}
+	*drpp = notes_calloc (1, sizeof (**drpp));
 
-      name = XOBNEWVEC (&notes, char, len + 1);
-      memcpy (name, start, len);
-      name[len] = '\0';
+      name = notes_memdup (start, len, len + 1);
 
       dr = *drpp;
       dr->name = name;
@@ -4683,7 +4676,6 @@ dot_rot (int type)
       if (str_hash_insert (md.dynreg_hash, name, dr, 0) != NULL)
 	{
 	  as_bad (_("Attempt to redefine register set `%s'"), name);
-	  obstack_free (&notes, name);
 	  goto err;
 	}
 
@@ -4773,20 +4765,12 @@ cross_section (int ref, void (*builder) (int), int ua)
   char *start, *end;
   int saved_auto_align;
   unsigned int section_count;
-  char *name;
-  char c;
+  const char *name;
 
-  SKIP_WHITESPACE ();
   start = input_line_pointer;
-  c = get_symbol_name (&name);
-  if (input_line_pointer == start)
-    {
-      as_bad (_("Missing section name"));
-      ignore_rest_of_line ();
-      return;
-    }
-  * input_line_pointer = c;
-  SKIP_WHITESPACE_AFTER_NAME ();
+  name = obj_elf_section_name ();
+  if (name == NULL)
+    return;
   end = input_line_pointer;
   if (*input_line_pointer != ',')
     {
@@ -5016,7 +5000,7 @@ dot_pred_rel (int type)
 	    type = 'c';
 	  else if (strcmp (form, "imply") == 0)
 	    type = 'i';
-	  obstack_free (&notes, form);
+	  notes_free (form);
 	}
       else if (*input_line_pointer == '@')
 	{
@@ -5216,7 +5200,6 @@ const pseudo_typeS md_pseudo_table[] =
     { "radix", dot_radix, 0 },
     { "lcomm", s_lcomm_bytes, 1 },
     { "loc", dot_loc, 0 },
-    { "bss", dot_special_section, SPECIAL_SECTION_BSS },
     { "sbss", dot_special_section, SPECIAL_SECTION_SBSS },
     { "sdata", dot_special_section, SPECIAL_SECTION_SDATA },
     { "rodata", dot_special_section, SPECIAL_SECTION_RODATA },
@@ -6002,6 +5985,7 @@ parse_operand (expressionS *e, int more)
   e->X_op = O_absent;
   SKIP_WHITESPACE ();
   expression (e);
+  resolve_register (e);
   sep = *input_line_pointer;
   if (more && (sep == ',' || sep == more))
     ++input_line_pointer;
@@ -7575,7 +7559,7 @@ ia64_target_format (void)
 }
 
 void
-ia64_end_of_source (void)
+ia64_md_finish (void)
 {
   /* terminate insn group upon reaching end of file:  */
   insn_group_break (1, 0, 0);
@@ -7775,6 +7759,7 @@ ia64_frob_label (struct symbol *sym)
   if (bfd_section_flags (now_seg) & SEC_CODE)
     {
       md.last_text_seg = now_seg;
+      md.last_text_subseg = now_subseg;
       fix = XOBNEW (&notes, struct label_fix);
       fix->sym = sym;
       fix->next = CURR_SLOT.label_fixups;
@@ -9968,11 +9953,8 @@ note_register_values (struct ia64_opcode *idesc)
 	  gr_values[regno].value = CURR_SLOT.opnd[1].X_add_number;
 	  gr_values[regno].path = md.path;
 	  if (md.debug_dv)
-	    {
-	      fprintf (stderr, "  Know gr%d = ", regno);
-	      fprintf_vma (stderr, gr_values[regno].value);
-	      fputs ("\n", stderr);
-	    }
+	    fprintf (stderr, "  Know gr%d = %" PRIx64 "\n",
+		     regno, gr_values[regno].value);
 	}
     }
   /* Look for dep.z imm insns.  */
@@ -9992,11 +9974,8 @@ note_register_values (struct ia64_opcode *idesc)
 	  gr_values[regno].value = value;
 	  gr_values[regno].path = md.path;
 	  if (md.debug_dv)
-	    {
-	      fprintf (stderr, "  Know gr%d = ", regno);
-	      fprintf_vma (stderr, gr_values[regno].value);
-	      fputs ("\n", stderr);
-	    }
+	    fprintf (stderr, "  Know gr%d = %" PRIx64 "\n",
+		     regno, gr_values[regno].value);
 	}
     }
   else
@@ -10210,12 +10189,9 @@ print_dependency (const char *action, int depind)
       if (regdeps[depind].specific && regdeps[depind].index >= 0)
 	fprintf (stderr, " (%d)", regdeps[depind].index);
       if (regdeps[depind].mem_offset.hint)
-	{
-	  fputs (" ", stderr);
-	  fprintf_vma (stderr, regdeps[depind].mem_offset.base);
-	  fputs ("+", stderr);
-	  fprintf_vma (stderr, regdeps[depind].mem_offset.offset);
-	}
+	fprintf (stderr, " %" PRIx64 "+%" PRIx64,
+		 regdeps[depind].mem_offset.base,
+		 regdeps[depind].mem_offset.offset);
       fprintf (stderr, "\n");
     }
 }
@@ -10862,6 +10838,7 @@ md_assemble (char *str)
     insn_group_break (1, 0, 0);
 
   md.last_text_seg = now_seg;
+  md.last_text_subseg = now_subseg;
 
  done:
   input_line_pointer = saved_input_line_pointer;
@@ -11788,9 +11765,7 @@ dot_alias (int section)
     }
 
   /* Make a copy of name string.  */
-  len = strlen (name) + 1;
-  obstack_grow (&notes, name, len);
-  name = obstack_finish (&notes);
+  name = notes_strdup (name);
 
   if (section)
     {
@@ -11813,8 +11788,7 @@ dot_alias (int section)
       if (strcmp (h->name, name))
 	as_bad (_("`%s' is already the alias of %s `%s'"),
 		alias, kind, h->name);
-      obstack_free (&notes, name);
-      obstack_free (&notes, alias);
+      notes_free (alias);
       goto out;
     }
 
@@ -11824,12 +11798,11 @@ dot_alias (int section)
     {
       if (strcmp (a, alias))
 	as_bad (_("%s `%s' already has an alias `%s'"), kind, name, a);
-      obstack_free (&notes, name);
-      obstack_free (&notes, alias);
+      notes_free (alias);
       goto out;
     }
 
-  h = XNEW (struct alias);
+  h = notes_alloc (sizeof (*h));
   h->file = as_where (&h->line);
   h->name = name;
 
@@ -11870,7 +11843,7 @@ do_alias (void **slot, void *arg ATTRIBUTE_UNUSED)
 void
 ia64_adjust_symtab (void)
 {
-  htab_traverse (alias_hash, do_alias, NULL);
+  htab_traverse_noresize (alias_hash, do_alias, NULL);
 }
 
 /* It renames the original section name to its alias.  */
@@ -11895,7 +11868,7 @@ do_secalias (void **slot, void *arg ATTRIBUTE_UNUSED)
 void
 ia64_frob_file (void)
 {
-  htab_traverse (secalias_hash, do_secalias, NULL);
+  htab_traverse_noresize (secalias_hash, do_secalias, NULL);
 }
 
 #ifdef TE_VMS

@@ -1,6 +1,6 @@
 /* C language support definitions for GDB, the GNU debugger.
 
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,7 +25,9 @@ struct ui_file;
 struct language_arch_info;
 struct type_print_options;
 struct parser_state;
+struct compile_instance;
 
+#include "compile/compile.h"
 #include "value.h"
 #include "macroexp.h"
 #include "gdbsupport/enum-flags.h"
@@ -65,16 +67,17 @@ extern int c_parse (struct parser_state *);
 extern int c_parse_escape (const char **, struct obstack *);
 
 /* Defined in c-typeprint.c */
-extern void c_print_type (struct type *, const char *,
-			  struct ui_file *, int, int,
-			  const struct type_print_options *);
 
-/* Print a type but allow the precise language to be specified.  */
+/* Print TYPE to STREAM using syntax appropriate for LANGUAGE, a
+   C-like language.  The other parameters are like
+   type_language_defn::print_type's.  */
 
-extern void c_print_type (struct type *, const char *,
-			  struct ui_file *, int, int,
-			  enum language,
-			  const struct type_print_options *);
+extern void c_print_type (struct type *type,
+			  const char *varstring,
+			  struct ui_file *stream,
+			  int show, int level,
+			  enum language language,
+			  const struct type_print_options *flags);
 
 extern void c_print_typedef (struct type *,
 			     struct symbol *,
@@ -92,19 +95,8 @@ extern void c_value_print (struct value *, struct ui_file *,
 
 extern void c_printchar (int, struct type *, struct ui_file *);
 
-extern void c_printstr (struct ui_file * stream,
-			struct type *elttype,
-			const gdb_byte *string,
-			unsigned int length,
-			const char *user_encoding,
-			int force_ellipses,
-			const struct value_print_options *options);
-
 extern void c_language_arch_info (struct gdbarch *gdbarch,
 				  struct language_arch_info *lai);
-
-extern void c_emit_char (int c, struct type *type,
-			 struct ui_file *stream, int quoter);
 
 /* These are in c-typeprint.c: */
 
@@ -176,5 +168,10 @@ extern std::string cplus_compute_program (compile_instance *inst,
 					  struct gdbarch *gdbarch,
 					  const struct block *expr_block,
 					  CORE_ADDR expr_pc);
+
+/* Return the canonical form of the C symbol NAME.  If NAME is already
+   canonical, return nullptr.  */
+
+extern gdb::unique_xmalloc_ptr<char> c_canonicalize_name (const char *name);
 
 #endif /* !defined (C_LANG_H) */

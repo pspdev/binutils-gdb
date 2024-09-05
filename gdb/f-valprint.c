@@ -1,6 +1,6 @@
 /* Support for printing Fortran values for GDB, the GNU debugger.
 
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
 
    Contributed by Motorola.  Adapted from the C definitions by Farooq Butt
    (fmbutt@engage.sps.mot.com), additionally worked over by Stan Shebs.
@@ -20,7 +20,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "annotate.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "expression.h"
@@ -42,7 +42,7 @@ static void f77_get_dynamic_length_of_aggregate (struct type *);
 LONGEST
 f77_get_lowerbound (struct type *type)
 {
-  if (type->bounds ()->low.kind () == PROP_UNDEFINED)
+  if (!type->bounds ()->low.is_constant ())
     error (_("Lower bound may not be '*' in F77"));
 
   return type->bounds ()->low.const_val ();
@@ -51,7 +51,7 @@ f77_get_lowerbound (struct type *type)
 LONGEST
 f77_get_upperbound (struct type *type)
 {
-  if (type->bounds ()->high.kind () == PROP_UNDEFINED)
+  if (!type->bounds ()->high.is_constant ())
     {
       /* We have an assumed size array on our hands.  Assume that
 	 upper_bound == lower_bound so that we show at least 1 element.
@@ -81,20 +81,29 @@ f77_get_dynamic_length_of_aggregate (struct type *type)
      This function also works for strings which behave very 
      similarly to arrays.  */
 
-  if (TYPE_TARGET_TYPE (type)->code () == TYPE_CODE_ARRAY
-      || TYPE_TARGET_TYPE (type)->code () == TYPE_CODE_STRING)
-    f77_get_dynamic_length_of_aggregate (TYPE_TARGET_TYPE (type));
+  if (type->target_type ()->code () == TYPE_CODE_ARRAY
+      || type->target_type ()->code () == TYPE_CODE_STRING)
+    f77_get_dynamic_length_of_aggregate (type->target_type ());
 
   /* Recursion ends here, start setting up lengths.  */
   lower_bound = f77_get_lowerbound (type);
   upper_bound = f77_get_upperbound (type);
 
   /* Patch in a valid length value.  */
-
-  TYPE_LENGTH (type) =
-    (upper_bound - lower_bound + 1)
-    * TYPE_LENGTH (check_typedef (TYPE_TARGET_TYPE (type)));
+  type->set_length ((upper_bound - lower_bound + 1)
+		    * check_typedef (type->target_type ())->length ());
 }
+
+/* Per-dimension statistics.  */
+
+struct dimension_stats
+{
+  /* The type of the index used to address elements in the dimension.  */
+  struct type *index_type;
+
+  /* Total number of elements in the dimension, counted as we go.  */
+  int nelts;
+};
 
 /* A class used by FORTRAN_PRINT_ARRAY as a specialisation of the array
    walking template.  This specialisation prints Fortran arrays.  */
@@ -117,7 +126,10 @@ public:
       m_val (val),
       m_stream (stream),
       m_recurse (recurse),
-      m_options (options)
+      m_options (options),
+      m_dimension (0),
+      m_nrepeats (0),
+      m_stats (0)
   { /* Nothing.  */ }
 
   /* Called while iterating over the array bounds.  When SHOULD_CONTINUE is
@@ -129,15 +141,25 @@ public:
   {
     bool cont = should_continue && (m_elts < m_options->print_max);
     if (!cont && should_continue)
-      fputs_filtered ("...", m_stream);
+      gdb_puts ("...", m_stream);
     return cont;
   }
 
   /* Called when we start iterating over a dimension.  If it's not the
      inner most dimension then print an opening '(' character.  */
-  void start_dimension (bool inner_p)
+  void start_dimension (struct type *index_type, LONGEST nelts, bool inner_p)
   {
-    fputs_filtered ("(", m_stream);
+    size_t dim_indx = m_dimension++;
+
+    m_elt_type_prev = nullptr;
+    if (m_stats.size () < m_dimension)
+      {
+	m_stats.resize (m_dimension);
+	m_stats[dim_indx].index_type = index_type;
+	m_stats[dim_indx].nelts = nelts;
+      }
+
+    gdb_puts ("(", m_stream);
   }
 
   /* Called when we finish processing a batch of items within a dimension
@@ -146,25 +168,225 @@ public:
      separators between elements, and dimensions of the array.  */
   void finish_dimension (bool inner_p, bool last_p)
   {
-    fputs_filtered (")", m_stream);
+    gdb_puts (")", m_stream);
     if (!last_p)
-      fputs_filtered (" ", m_stream);
+      gdb_puts (" ", m_stream);
+
+    m_dimension--;
+  }
+
+  /* Called when processing dimensions of the array other than the
+     innermost one.  WALK_1 is the walker to normally call, ELT_TYPE is
+     the type of the element being extracted, and ELT_OFF is the offset
+     of the element from the start of array being walked, INDEX_TYPE
+     and INDEX is the type and the value respectively of the element's
+     index in the dimension currently being walked and LAST_P is true
+     only when this is the last element that will be processed in this
+     dimension.  */
+  void process_dimension (gdb::function_view<void (struct type *,
+						   int, bool)> walk_1,
+			  struct type *elt_type, LONGEST elt_off,
+			  LONGEST index, bool last_p)
+  {
+    size_t dim_indx = m_dimension - 1;
+    struct type *elt_type_prev = m_elt_type_prev;
+    LONGEST elt_off_prev = m_elt_off_prev;
+    bool repeated = (m_options->repeat_count_threshold < UINT_MAX
+		     && elt_type_prev != nullptr
+		     && (m_elts + ((m_nrepeats + 1)
+				   * m_stats[dim_indx + 1].nelts)
+			 <= m_options->print_max)
+		     && dimension_contents_eq (m_val, elt_type,
+					       elt_off_prev, elt_off));
+
+    if (repeated)
+      m_nrepeats++;
+    if (!repeated || last_p)
+      {
+	LONGEST nrepeats = m_nrepeats;
+
+	m_nrepeats = 0;
+	if (nrepeats >= m_options->repeat_count_threshold)
+	  {
+	    annotate_elt_rep (nrepeats + 1);
+	    gdb_printf (m_stream, "%p[<repeats %s times>%p]",
+			metadata_style.style ().ptr (),
+			plongest (nrepeats + 1),
+			nullptr);
+	    annotate_elt_rep_end ();
+	    if (!repeated)
+	      gdb_puts (" ", m_stream);
+	    m_elts += nrepeats * m_stats[dim_indx + 1].nelts;
+	  }
+	else
+	  for (LONGEST i = nrepeats; i > 0; i--)
+	    {
+	      maybe_print_array_index (m_stats[dim_indx].index_type,
+				       index - nrepeats + repeated,
+				       m_stream, m_options);
+	      walk_1 (elt_type_prev, elt_off_prev, repeated && i == 1);
+	    }
+
+	if (!repeated)
+	  {
+	    /* We need to specially handle the case of hitting `print_max'
+	       exactly as recursing would cause lone `(...)' to be printed.
+	       And we need to print `...' by hand if the skipped element
+	       would be the last one processed, because the subsequent call
+	       to `continue_walking' from our caller won't do that.  */
+	    if (m_elts < m_options->print_max)
+	      {
+		maybe_print_array_index (m_stats[dim_indx].index_type, index,
+					 m_stream, m_options);
+		walk_1 (elt_type, elt_off, last_p);
+		nrepeats++;
+	      }
+	    else if (last_p)
+	      gdb_puts ("...", m_stream);
+	  }
+      }
+
+    m_elt_type_prev = elt_type;
+    m_elt_off_prev = elt_off;
   }
 
   /* Called to process an element of ELT_TYPE at offset ELT_OFF from the
-     start of the parent object.  */
-  void process_element (struct type *elt_type, LONGEST elt_off, bool last_p)
+     start of the parent object, where INDEX is the value of the element's
+     index in the dimension currently being walked and LAST_P is true only
+     when this is the last element to be processed in this dimension.  */
+  void process_element (struct type *elt_type, LONGEST elt_off,
+			LONGEST index, bool last_p)
   {
-    /* Extract the element value from the parent value.  */
-    struct value *e_val
-      = value_from_component (m_val, elt_type, elt_off);
-    common_val_print (e_val, m_stream, m_recurse, m_options, current_language);
-    if (!last_p)
-      fputs_filtered (", ", m_stream);
+    size_t dim_indx = m_dimension - 1;
+    struct type *elt_type_prev = m_elt_type_prev;
+    LONGEST elt_off_prev = m_elt_off_prev;
+    bool repeated = false;
+
+    if (m_options->repeat_count_threshold < UINT_MAX
+	&& elt_type_prev != nullptr)
+      {
+	/* When printing large arrays this spot is called frequently, so clean
+	   up temporary values asap to prevent allocating a large amount of
+	   them.  */
+	scoped_value_mark free_values;
+	struct value *e_val = value_from_component (m_val, elt_type, elt_off);
+	struct value *e_prev = value_from_component (m_val, elt_type,
+						     elt_off_prev);
+	repeated = ((e_prev->entirely_available ()
+		     && e_val->entirely_available ()
+		     && e_prev->contents_eq (e_val))
+		    || (e_prev->entirely_unavailable ()
+			&& e_val->entirely_unavailable ()));
+      }
+
+    if (repeated)
+      m_nrepeats++;
+    if (!repeated || last_p || m_elts + 1 == m_options->print_max)
+      {
+	LONGEST nrepeats = m_nrepeats;
+	bool printed = false;
+
+	if (nrepeats != 0)
+	  {
+	    m_nrepeats = 0;
+	    if (nrepeats >= m_options->repeat_count_threshold)
+	      {
+		annotate_elt_rep (nrepeats + 1);
+		gdb_printf (m_stream, "%p[<repeats %s times>%p]",
+			    metadata_style.style ().ptr (),
+			    plongest (nrepeats + 1),
+			    nullptr);
+		annotate_elt_rep_end ();
+	      }
+	    else
+	      {
+		/* Extract the element value from the parent value.  */
+		struct value *e_val
+		  = value_from_component (m_val, elt_type, elt_off_prev);
+
+		for (LONGEST i = nrepeats; i > 0; i--)
+		  {
+		    maybe_print_array_index (m_stats[dim_indx].index_type,
+					     index - i + 1,
+					     m_stream, m_options);
+		    common_val_print (e_val, m_stream, m_recurse, m_options,
+				      current_language);
+		    if (i > 1)
+		      gdb_puts (", ", m_stream);
+		  }
+	      }
+	    printed = true;
+	  }
+
+	if (!repeated)
+	  {
+	    /* Extract the element value from the parent value.  */
+	    struct value *e_val
+	      = value_from_component (m_val, elt_type, elt_off);
+
+	    if (printed)
+	      gdb_puts (", ", m_stream);
+	    maybe_print_array_index (m_stats[dim_indx].index_type, index,
+				     m_stream, m_options);
+	    common_val_print (e_val, m_stream, m_recurse, m_options,
+			      current_language);
+	  }
+	if (!last_p)
+	  gdb_puts (", ", m_stream);
+      }
+
+    m_elt_type_prev = elt_type;
+    m_elt_off_prev = elt_off;
     ++m_elts;
   }
 
 private:
+  /* Called to compare two VAL elements of ELT_TYPE at offsets OFFSET1
+     and OFFSET2 each.  Handle subarrays recursively, because they may
+     have been sliced and we do not want to compare any memory contents
+     present between the slices requested.  */
+  bool
+  dimension_contents_eq (struct value *val, struct type *type,
+			 LONGEST offset1, LONGEST offset2)
+  {
+    if (type->code () == TYPE_CODE_ARRAY
+	&& type->target_type ()->code () != TYPE_CODE_CHAR)
+      {
+	/* Extract the range, and get lower and upper bounds.  */
+	struct type *range_type = check_typedef (type)->index_type ();
+	LONGEST lowerbound, upperbound;
+	if (!get_discrete_bounds (range_type, &lowerbound, &upperbound))
+	  error ("failed to get range bounds");
+
+	/* CALC is used to calculate the offsets for each element.  */
+	fortran_array_offset_calculator calc (type);
+
+	struct type *subarray_type = check_typedef (type->target_type ());
+	for (LONGEST i = lowerbound; i < upperbound + 1; i++)
+	  {
+	    /* Use the index and the stride to work out a new offset.  */
+	    LONGEST index_offset = calc.index_offset (i);
+
+	    if (!dimension_contents_eq (val, subarray_type,
+					offset1 + index_offset,
+					offset2 + index_offset))
+	      return false;
+	  }
+	return true;
+      }
+    else
+      {
+	struct value *e_val1 = value_from_component (val, type, offset1);
+	struct value *e_val2 = value_from_component (val, type, offset2);
+
+	return ((e_val1->entirely_available ()
+		 && e_val2->entirely_available ()
+		 && e_val1->contents_eq (e_val2))
+		|| (e_val1->entirely_unavailable ()
+		    && e_val2->entirely_unavailable ()));
+      }
+  }
+
   /* The number of elements printed so far.  */
   int m_elts;
 
@@ -180,6 +402,20 @@ private:
   /* The print control options.  Gives us the maximum number of elements to
      print, and is passed through to each element that we print.  */
   const struct value_print_options *m_options = nullptr;
+
+  /* The number of the current dimension being handled.  */
+  LONGEST m_dimension;
+
+  /* The number of element repetitions in the current series.  */
+  LONGEST m_nrepeats;
+
+  /* The type and offset from M_VAL of the element handled in the previous
+     iteration over the current dimension.  */
+  struct type *m_elt_type_prev;
+  LONGEST m_elt_off_prev;
+
+  /* Per-dimension stats.  */
+  std::vector<struct dimension_stats> m_stats;
 };
 
 /* This function gets called to print a Fortran array.  */
@@ -217,33 +453,33 @@ f_language::value_print_inner (struct value *val, struct ui_file *stream,
 			       int recurse,
 			       const struct value_print_options *options) const
 {
-  struct type *type = check_typedef (value_type (val));
+  struct type *type = check_typedef (val->type ());
   struct gdbarch *gdbarch = type->arch ();
   int printed_field = 0; /* Number of fields printed.  */
   struct type *elttype;
   CORE_ADDR addr;
   int index;
-  const gdb_byte *valaddr = value_contents_for_printing (val);
-  const CORE_ADDR address = value_address (val);
+  const gdb_byte *valaddr = val->contents_for_printing ().data ();
+  const CORE_ADDR address = val->address ();
 
   switch (type->code ())
     {
     case TYPE_CODE_STRING:
       f77_get_dynamic_length_of_aggregate (type);
       printstr (stream, builtin_type (gdbarch)->builtin_char, valaddr,
-		TYPE_LENGTH (type), NULL, 0, options);
+		type->length (), NULL, 0, options);
       break;
 
     case TYPE_CODE_ARRAY:
-      if (TYPE_TARGET_TYPE (type)->code () != TYPE_CODE_CHAR)
+      if (type->target_type ()->code () != TYPE_CODE_CHAR)
 	fortran_print_array (type, address, stream, recurse, val, options);
       else
 	{
-	  struct type *ch_type = TYPE_TARGET_TYPE (type);
+	  struct type *ch_type = type->target_type ();
 
 	  f77_get_dynamic_length_of_aggregate (type);
 	  printstr (stream, ch_type, valaddr,
-		    TYPE_LENGTH (type) / TYPE_LENGTH (ch_type), NULL, 0,
+		    type->length () / ch_type->length (), NULL, 0,
 		    options);
 	}
       break;
@@ -259,7 +495,7 @@ f_language::value_print_inner (struct value *val, struct ui_file *stream,
 	  int want_space = 0;
 
 	  addr = unpack_pointer (type, valaddr);
-	  elttype = check_typedef (TYPE_TARGET_TYPE (type));
+	  elttype = check_typedef (type->target_type ());
 
 	  if (elttype->code () == TYPE_CODE_FUNC)
 	    {
@@ -273,20 +509,20 @@ f_language::value_print_inner (struct value *val, struct ui_file *stream,
 						 stream, demangle);
 	  else if (options->addressprint && options->format != 's')
 	    {
-	      fputs_filtered (paddress (gdbarch, addr), stream);
+	      gdb_puts (paddress (gdbarch, addr), stream);
 	      want_space = 1;
 	    }
 
 	  /* For a pointer to char or unsigned char, also print the string
 	     pointed to, unless pointer is null.  */
-	  if (TYPE_LENGTH (elttype) == 1
+	  if (elttype->length () == 1
 	      && elttype->code () == TYPE_CODE_INT
 	      && (options->format == 0 || options->format == 's')
 	      && addr != 0)
 	    {
 	      if (want_space)
-		fputs_filtered (" ", stream);
-	      val_print_string (TYPE_TARGET_TYPE (type), NULL, addr, -1,
+		gdb_puts (" ", stream);
+	      val_print_string (type->target_type (), NULL, addr, -1,
 				stream, options);
 	    }
 	  return;
@@ -295,29 +531,43 @@ f_language::value_print_inner (struct value *val, struct ui_file *stream,
 
     case TYPE_CODE_STRUCT:
     case TYPE_CODE_UNION:
+    case TYPE_CODE_NAMELIST:
       /* Starting from the Fortran 90 standard, Fortran supports derived
 	 types.  */
-      fprintf_filtered (stream, "( ");
+      gdb_printf (stream, "( ");
       for (index = 0; index < type->num_fields (); index++)
 	{
-	  struct value *field = value_field (val, index);
-
-	  struct type *field_type = check_typedef (type->field (index).type ());
-
+	  struct type *field_type
+	    = check_typedef (type->field (index).type ());
 
 	  if (field_type->code () != TYPE_CODE_FUNC)
 	    {
-	      const char *field_name;
+	      const char *field_name = type->field (index).name ();
+	      struct value *field;
+
+	      if (type->code () == TYPE_CODE_NAMELIST)
+		{
+		  /* While printing namelist items, fetch the appropriate
+		     value field before printing its value.  */
+		  struct block_symbol sym
+		    = lookup_symbol (field_name, get_selected_block (nullptr),
+				     SEARCH_VFT, nullptr);
+		  if (sym.symbol == nullptr)
+		    error (_("failed to find symbol for name list component %s"),
+			   field_name);
+		  field = value_of_variable (sym.symbol, sym.block);
+		}
+	      else
+		field = value_field (val, index);
 
 	      if (printed_field > 0)
-		fputs_filtered (", ", stream);
+		gdb_puts (", ", stream);
 
-	      field_name = TYPE_FIELD_NAME (type, index);
 	      if (field_name != NULL)
 		{
 		  fputs_styled (field_name, variable_name_style.style (),
 				stream);
-		  fputs_filtered (" = ", stream);
+		  gdb_puts (" = ", stream);
 		}
 
 	      common_val_print (field, stream, recurse + 1,
@@ -326,7 +576,7 @@ f_language::value_print_inner (struct value *val, struct ui_file *stream,
 	      ++printed_field;
 	    }
 	 }
-      fprintf_filtered (stream, " )");
+      gdb_printf (stream, " )");
       break;     
 
     case TYPE_CODE_BOOL:
@@ -344,9 +594,9 @@ f_language::value_print_inner (struct value *val, struct ui_file *stream,
 	     represented.  Different compilers use different non zero
 	     values to represent logical true.  */
 	  if (longval == 0)
-	    fputs_filtered (f_decorations.false_name, stream);
+	    gdb_puts (f_decorations.false_name, stream);
 	  else
-	    fputs_filtered (f_decorations.true_name, stream);
+	    gdb_puts (f_decorations.true_name, stream);
 	}
       break;
 
@@ -371,40 +621,38 @@ static void
 info_common_command_for_block (const struct block *block, const char *comname,
 			       int *any_printed)
 {
-  struct block_iterator iter;
-  struct symbol *sym;
   struct value_print_options opts;
 
   get_user_print_options (&opts);
 
-  ALL_BLOCK_SYMBOLS (block, iter, sym)
-    if (SYMBOL_DOMAIN (sym) == COMMON_BLOCK_DOMAIN)
+  for (struct symbol *sym : block_iterator_range (block))
+    if (sym->domain () == COMMON_BLOCK_DOMAIN)
       {
-	const struct common_block *common = SYMBOL_VALUE_COMMON_BLOCK (sym);
+	const struct common_block *common = sym->value_common_block ();
 	size_t index;
 
-	gdb_assert (SYMBOL_CLASS (sym) == LOC_COMMON_BLOCK);
+	gdb_assert (sym->aclass () == LOC_COMMON_BLOCK);
 
 	if (comname && (!sym->linkage_name ()
 			|| strcmp (comname, sym->linkage_name ()) != 0))
 	  continue;
 
 	if (*any_printed)
-	  putchar_filtered ('\n');
+	  gdb_putc ('\n');
 	else
 	  *any_printed = 1;
 	if (sym->print_name ())
-	  printf_filtered (_("Contents of F77 COMMON block '%s':\n"),
-			   sym->print_name ());
+	  gdb_printf (_("Contents of F77 COMMON block '%s':\n"),
+		      sym->print_name ());
 	else
-	  printf_filtered (_("Contents of blank COMMON block:\n"));
+	  gdb_printf (_("Contents of blank COMMON block:\n"));
 	
 	for (index = 0; index < common->n_entries; index++)
 	  {
 	    struct value *val = NULL;
 
-	    printf_filtered ("%s = ",
-			     common->contents[index]->print_name ());
+	    gdb_printf ("%s = ",
+			common->contents[index]->print_name ());
 
 	    try
 	      {
@@ -419,7 +667,7 @@ info_common_command_for_block (const struct block *block, const char *comname,
 				except.what ());
 	      }
 
-	    putchar_filtered ('\n');
+	    gdb_putc ('\n');
 	  }
       }
 }
@@ -431,7 +679,7 @@ info_common_command_for_block (const struct block *block, const char *comname,
 static void
 info_common_command (const char *comname, int from_tty)
 {
-  struct frame_info *fi;
+  frame_info_ptr fi;
   const struct block *block;
   int values_printed = 0;
 
@@ -448,7 +696,7 @@ info_common_command (const char *comname, int from_tty)
   block = get_frame_block (fi, 0);
   if (block == NULL)
     {
-      printf_filtered (_("No symbol table info available.\n"));
+      gdb_printf (_("No symbol table info available.\n"));
       return;
     }
 
@@ -457,17 +705,17 @@ info_common_command (const char *comname, int from_tty)
       info_common_command_for_block (block, comname, &values_printed);
       /* After handling the function's top-level block, stop.  Don't
 	 continue to its superblock, the block of per-file symbols.  */
-      if (BLOCK_FUNCTION (block))
+      if (block->function ())
 	break;
-      block = BLOCK_SUPERBLOCK (block);
+      block = block->superblock ();
     }
 
   if (!values_printed)
     {
       if (comname)
-	printf_filtered (_("No common block '%s'.\n"), comname);
+	gdb_printf (_("No common block '%s'.\n"), comname);
       else
-	printf_filtered (_("No common blocks.\n"));
+	gdb_printf (_("No common blocks.\n"));
     }
 }
 

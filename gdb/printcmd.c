@@ -1,6 +1,6 @@
 /* Print values for GNU debugger GDB.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,25 +17,27 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "event-top.h"
+#include "extract-store-integer.h"
 #include "frame.h"
 #include "symtab.h"
 #include "gdbtypes.h"
+#include "top.h"
 #include "value.h"
 #include "language.h"
 #include "c-lang.h"
 #include "expression.h"
 #include "gdbcore.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "target.h"
 #include "breakpoint.h"
 #include "demangle.h"
 #include "gdb-demangle.h"
 #include "valprint.h"
 #include "annotate.h"
-#include "symfile.h"		/* for overlay functions */
-#include "objfiles.h"		/* ditto */
-#include "completer.h"		/* for completion functions */
+#include "symfile.h"
+#include "objfiles.h"
+#include "completer.h"
 #include "ui-out.h"
 #include "block.h"
 #include "disasm.h"
@@ -52,9 +54,10 @@
 #include "gdbsupport/format.h"
 #include "source.h"
 #include "gdbsupport/byte-vector.h"
-#include "gdbsupport/gdb_optional.h"
-#include "safe-ctype.h"
+#include <optional>
+#include "gdbsupport/gdb-safe-ctype.h"
 #include "gdbsupport/rsp-low.h"
+#include "inferior.h"
 
 /* Chain containing all defined memory-tag subcommands.  */
 
@@ -102,10 +105,10 @@ static void
 show_max_symbolic_offset (struct ui_file *file, int from_tty,
 			  struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file,
-		    _("The largest offset that will be "
-		      "printed in <symbol+1234> form is %s.\n"),
-		    value);
+  gdb_printf (file,
+	      _("The largest offset that will be "
+		"printed in <symbol+1234> form is %s.\n"),
+	      value);
 }
 
 /* Append the source filename and linenumber of the symbol when
@@ -115,9 +118,9 @@ static void
 show_print_symbol_filename (struct ui_file *file, int from_tty,
 			    struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Printing of source filename and "
-			    "line number with <symbol> is %s.\n"),
-		    value);
+  gdb_printf (file, _("Printing of source filename and "
+		      "line number with <symbol> is %s.\n"),
+	      value);
 }
 
 /* Number of auto-display expression currently being displayed.
@@ -294,11 +297,11 @@ print_formatted (struct value *val, int size,
 		 const struct value_print_options *options,
 		 struct ui_file *stream)
 {
-  struct type *type = check_typedef (value_type (val));
-  int len = TYPE_LENGTH (type);
+  struct type *type = check_typedef (val->type ());
+  int len = type->length ();
 
-  if (VALUE_LVAL (val) == lval_memory)
-    next_address = value_address (val) + len;
+  if (val->lval () == lval_memory)
+    next_address = val->address () + len;
 
   if (size)
     {
@@ -306,21 +309,21 @@ print_formatted (struct value *val, int size,
 	{
 	case 's':
 	  {
-	    struct type *elttype = value_type (val);
+	    struct type *elttype = val->type ();
 
-	    next_address = (value_address (val)
+	    next_address = (val->address ()
 			    + val_print_string (elttype, NULL,
-						value_address (val), -1,
+						val->address (), -1,
 						stream, options) * len);
 	  }
 	  return;
 
 	case 'i':
 	  /* We often wrap here if there are long symbolic names.  */
-	  wrap_here ("    ");
-	  next_address = (value_address (val)
+	  stream->wrap_here (4);
+	  next_address = (val->address ()
 			  + gdb_print_insn (type->arch (),
-					    value_address (val), stream,
+					    val->address (), stream,
 					    &branch_delay_insns));
 	  return;
 	}
@@ -349,11 +352,13 @@ float_type_from_length (struct type *type)
   struct gdbarch *gdbarch = type->arch ();
   const struct builtin_type *builtin = builtin_type (gdbarch);
 
-  if (TYPE_LENGTH (type) == TYPE_LENGTH (builtin->builtin_float))
+  if (type->length () == builtin->builtin_half->length ())
+    type = builtin->builtin_half;
+  else if (type->length () == builtin->builtin_float->length ())
     type = builtin->builtin_float;
-  else if (TYPE_LENGTH (type) == TYPE_LENGTH (builtin->builtin_double))
+  else if (type->length () == builtin->builtin_double->length ())
     type = builtin->builtin_double;
-  else if (TYPE_LENGTH (type) == TYPE_LENGTH (builtin->builtin_long_double))
+  else if (type->length () == builtin->builtin_long_double->length ())
     type = builtin->builtin_long_double;
 
   return type;
@@ -369,7 +374,7 @@ print_scalar_formatted (const gdb_byte *valaddr, struct type *type,
 			int size, struct ui_file *stream)
 {
   struct gdbarch *gdbarch = type->arch ();
-  unsigned int len = TYPE_LENGTH (type);
+  unsigned int len = type->length ();
   enum bfd_endian byte_order = type_byte_order (type);
 
   /* String printing should go through val_print_scalar_formatted.  */
@@ -377,7 +382,7 @@ print_scalar_formatted (const gdb_byte *valaddr, struct type *type,
 
   /* If the value is a pointer, and pointers and addresses are not the
      same, then at this point, the value's length (in target bytes) is
-     gdbarch_addr_bit/TARGET_CHAR_BIT, not TYPE_LENGTH (type).  */
+     gdbarch_addr_bit/TARGET_CHAR_BIT, not type->length ().  */
   if (type->code () == TYPE_CODE_PTR)
     len = gdbarch_addr_bit (gdbarch) / TARGET_CHAR_BIT;
 
@@ -387,8 +392,8 @@ print_scalar_formatted (const gdb_byte *valaddr, struct type *type,
   if (options->format != 'c'
       && (options->format != 'd' || type->is_unsigned ()))
     {
-      if (len < TYPE_LENGTH (type) && byte_order == BFD_ENDIAN_BIG)
-	valaddr += TYPE_LENGTH (type) - len;
+      if (len < type->length () && byte_order == BFD_ENDIAN_BIG)
+	valaddr += type->length () - len;
     }
 
   /* Allow LEN == 0, and in this case, don't assume that VALADDR is
@@ -426,19 +431,14 @@ print_scalar_formatted (const gdb_byte *valaddr, struct type *type,
       len = newlen;
     }
 
-  /* Historically gdb has printed floats by first casting them to a
-     long, and then printing the long.  PR cli/16242 suggests changing
-     this to using C-style hex float format.
-
-     Biased range types and sub-word scalar types must also be handled
+  /* Biased range types and sub-word scalar types must be handled
      here; the value is correctly computed by unpack_long.  */
   gdb::byte_vector converted_bytes;
   /* Some cases below will unpack the value again.  In the biased
      range case, we want to avoid this, so we store the unpacked value
      here for possible use later.  */
-  gdb::optional<LONGEST> val_long;
-  if (((type->code () == TYPE_CODE_FLT
-	|| is_fixed_point_type (type))
+  std::optional<LONGEST> val_long;
+  if ((is_fixed_point_type (type)
        && (options->format == 'o'
 	   || options->format == 'x'
 	   || options->format == 't'
@@ -449,8 +449,8 @@ print_scalar_formatted (const gdb_byte *valaddr, struct type *type,
       || type->bit_size_differs_p ())
     {
       val_long.emplace (unpack_long (type, valaddr));
-      converted_bytes.resize (TYPE_LENGTH (type));
-      store_signed_integer (converted_bytes.data (), TYPE_LENGTH (type),
+      converted_bytes.resize (type->length ());
+      store_signed_integer (converted_bytes.data (), type->length (),
 			    byte_order, *val_long);
       valaddr = converted_bytes.data ();
     }
@@ -484,13 +484,13 @@ print_scalar_formatted (const gdb_byte *valaddr, struct type *type,
 			       byte_order);
 	  break;
 	}
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case 'f':
       print_floating (valaddr, type, stream);
       break;
 
     case 't':
-      print_binary_chars (stream, valaddr, len, byte_order, size > 0);
+      print_binary_chars (stream, valaddr, len, byte_order, size > 0, options);
       break;
     case 'x':
       print_hex_chars (stream, valaddr, len, byte_order, size > 0);
@@ -567,28 +567,28 @@ print_address_symbolic (struct gdbarch *gdbarch, CORE_ADDR addr,
 			      &offset, &filename, &line, &unmapped))
     return 0;
 
-  fputs_filtered (leadin, stream);
+  gdb_puts (leadin, stream);
   if (unmapped)
-    fputs_filtered ("<*", stream);
+    gdb_puts ("<*", stream);
   else
-    fputs_filtered ("<", stream);
+    gdb_puts ("<", stream);
   fputs_styled (name.c_str (), function_name_style.style (), stream);
   if (offset != 0)
-    fprintf_filtered (stream, "%+d", offset);
+    gdb_printf (stream, "%+d", offset);
 
   /* Append source filename and line number if desired.  Give specific
      line # of this addr, if we have it; else line # of the nearest symbol.  */
   if (print_symbol_filename && !filename.empty ())
     {
-      fputs_filtered (line == -1 ? " in " : " at ", stream);
+      gdb_puts (line == -1 ? " in " : " at ", stream);
       fputs_styled (filename.c_str (), file_name_style.style (), stream);
       if (line != -1)
-	fprintf_filtered (stream, ":%d", line);
+	gdb_printf (stream, ":%d", line);
     }
   if (unmapped)
-    fputs_filtered ("*>", stream);
+    gdb_puts ("*>", stream);
   else
-    fputs_filtered (">", stream);
+    gdb_puts (">", stream);
 
   return 1;
 }
@@ -606,7 +606,6 @@ build_address_symbolic (struct gdbarch *gdbarch,
 			int *line,       /* OUT */
 			int *unmapped)   /* OUT */
 {
-  struct bound_minimal_symbol msymbol;
   struct symbol *symbol;
   CORE_ADDR name_location = 0;
   struct obj_section *section = NULL;
@@ -638,7 +637,8 @@ build_address_symbolic (struct gdbarch *gdbarch,
      save some memory, but for many debug format--ELF/DWARF or
      anything/stabs--it would be inconvenient to eliminate those minimal
      symbols anyway).  */
-  msymbol = lookup_minimal_symbol_by_pc_section (addr, section);
+  bound_minimal_symbol msymbol
+    = lookup_minimal_symbol_by_pc_section (addr, section);
   symbol = find_pc_sect_function (addr, section);
 
   if (symbol)
@@ -650,7 +650,7 @@ build_address_symbolic (struct gdbarch *gdbarch,
 	 pointer is <function+3>.  This matches the ISA behavior.  */
       addr = gdbarch_addr_bits_remove (gdbarch, addr);
 
-      name_location = BLOCK_ENTRY_PC (SYMBOL_BLOCK_VALUE (symbol));
+      name_location = symbol->value_block ()->entry_pc ();
       if (do_demangle || asm_demangle)
 	name_temp = symbol->print_name ();
       else
@@ -658,11 +658,11 @@ build_address_symbolic (struct gdbarch *gdbarch,
     }
 
   if (msymbol.minsym != NULL
-      && MSYMBOL_HAS_SIZE (msymbol.minsym)
-      && MSYMBOL_SIZE (msymbol.minsym) == 0
-      && MSYMBOL_TYPE (msymbol.minsym) != mst_text
-      && MSYMBOL_TYPE (msymbol.minsym) != mst_text_gnu_ifunc
-      && MSYMBOL_TYPE (msymbol.minsym) != mst_file_text)
+      && msymbol.minsym->has_size ()
+      && msymbol.minsym->size () == 0
+      && msymbol.minsym->type () != mst_text
+      && msymbol.minsym->type () != mst_text_gnu_ifunc
+      && msymbol.minsym->type () != mst_file_text)
     msymbol.minsym = NULL;
 
   if (msymbol.minsym != NULL)
@@ -678,7 +678,7 @@ build_address_symbolic (struct gdbarch *gdbarch,
 	      under consideration.  */
       if (symbol == NULL ||
 	   (!prefer_sym_over_minsym
-	    && BMSYMBOL_VALUE_ADDRESS (msymbol) == addr
+	    && msymbol.value_address () == addr
 	    && name_location != addr))
 	{
 	  /* If this is a function (i.e. a code address), strip out any
@@ -686,14 +686,14 @@ build_address_symbolic (struct gdbarch *gdbarch,
 	     first instruction of a Thumb function as <function>; the
 	     second instruction will be <function+2>, even though the
 	     pointer is <function+3>.  This matches the ISA behavior.  */
-	  if (MSYMBOL_TYPE (msymbol.minsym) == mst_text
-	      || MSYMBOL_TYPE (msymbol.minsym) == mst_text_gnu_ifunc
-	      || MSYMBOL_TYPE (msymbol.minsym) == mst_file_text
-	      || MSYMBOL_TYPE (msymbol.minsym) == mst_solib_trampoline)
+	  if (msymbol.minsym->type () == mst_text
+	      || msymbol.minsym->type () == mst_text_gnu_ifunc
+	      || msymbol.minsym->type () == mst_file_text
+	      || msymbol.minsym->type () == mst_solib_trampoline)
 	    addr = gdbarch_addr_bits_remove (gdbarch, addr);
 
 	  symbol = 0;
-	  name_location = BMSYMBOL_VALUE_ADDRESS (msymbol);
+	  name_location = msymbol.value_address ();
 	  if (do_demangle || asm_demangle)
 	    name_temp = msymbol.minsym->print_name ();
 	  else
@@ -754,7 +754,7 @@ pc_prefix (CORE_ADDR addr)
 {
   if (has_stack_frames ())
     {
-      struct frame_info *frame;
+      frame_info_ptr frame;
       CORE_ADDR pc;
 
       frame = get_selected_frame (NULL);
@@ -824,11 +824,11 @@ find_instruction_backward (struct gdbarch *gdbarch, CORE_ADDR addr,
 	  /* We reach here when line info is not available.  In this case,
 	     we print a message and just exit the loop.  The return value
 	     is calculated after the loop.  */
-	  printf_filtered (_("No line number information available "
-			     "for address "));
-	  wrap_here ("  ");
+	  gdb_printf (_("No line number information available "
+			"for address "));
+	  gdb_stdout->wrap_here (2);
 	  print_address (gdbarch, loop_start - 1, gdb_stdout);
-	  printf_filtered ("\n");
+	  gdb_printf ("\n");
 	  break;
 	}
 
@@ -910,8 +910,8 @@ read_memory_backward (struct gdbarch *gdbarch,
 	  if (errcode != 0)
 	    {
 	      /* The read was unsuccessful, so exit the loop.  */
-	      printf_filtered (_("Cannot access memory at address %s\n"),
-			       paddress (gdbarch, memaddr));
+	      gdb_printf (_("Cannot access memory at address %s\n"),
+			  paddress (gdbarch, memaddr));
 	      break;
 	    }
 	}
@@ -962,17 +962,18 @@ find_string_backward (struct gdbarch *gdbarch,
 					 chars_to_read * char_size);
       chars_read /= char_size;
       read_error = (chars_read == chars_to_read) ? 0 : 1;
+      unsigned int print_max_chars = get_print_max_chars (options);
       /* Searching for '\0' from the end of buffer in backward direction.  */
       for (i = 0; i < chars_read && count > 0 ; ++i, ++chars_counted)
 	{
 	  int offset = (chars_to_read - i - 1) * char_size;
 
 	  if (integer_is_zero (&buffer[offset], char_size)
-	      || chars_counted == options->print_max)
+	      || chars_counted == print_max_chars)
 	    {
-	      /* Found '\0' or reached print_max.  As OFFSET is the offset to
-		 '\0', we add CHAR_SIZE to return the start address of
-		 a string.  */
+	      /* Found '\0' or reached `print_max_chars'.  As OFFSET
+		 is the offset to '\0', we add CHAR_SIZE to return
+		 the start address of a string.  */
 	      --count;
 	      string_start_addr = addr + offset + char_size;
 	      chars_counted = 0;
@@ -1033,8 +1034,7 @@ do_examine (struct format_data fmt, struct gdbarch *gdbarch, CORE_ADDR addr)
 	size = 'h';
       else
 	/* Bad value for gdbarch_ptr_bit.  */
-	internal_error (__FILE__, __LINE__,
-			_("failed internal consistency check"));
+	internal_error (_("failed internal consistency check"));
     }
 
   if (size == 'b')
@@ -1093,19 +1093,19 @@ do_examine (struct format_data fmt, struct gdbarch *gdbarch, CORE_ADDR addr)
       else if (format == 's')
 	{
 	  next_address = find_string_backward (gdbarch, addr, count,
-					       TYPE_LENGTH (val_type),
+					       val_type->length (),
 					       &opts, &count);
 	}
       else
 	{
-	  next_address = addr - count * TYPE_LENGTH (val_type);
+	  next_address = addr - count * val_type->length ();
 	}
 
       /* The following call to print_formatted updates next_address in every
 	 iteration.  In backward case, we store the start address here
 	 and update next_address with it before exiting the function.  */
       addr_rewound = (format == 's'
-		      ? next_address - TYPE_LENGTH (val_type)
+		      ? next_address - val_type->length ()
 		      : next_address);
       need_to_update_next_address = 1;
     }
@@ -1135,7 +1135,7 @@ do_examine (struct format_data fmt, struct gdbarch *gdbarch, CORE_ADDR addr)
 	    = value_from_ulongest (builtin_type (gdbarch)->builtin_data_ptr,
 				   tag_laddr);
 
-	  if (gdbarch_tagged_address_p (target_gdbarch (), v_addr))
+	  if (target_is_address_tagged (gdbarch, value_as_address (v_addr)))
 	    {
 	      /* Fetch the allocation tag.  */
 	      struct value *tag
@@ -1145,24 +1145,24 @@ do_examine (struct format_data fmt, struct gdbarch *gdbarch, CORE_ADDR addr)
 
 	      if (!atag.empty ())
 		{
-		  printf_filtered (_("<Allocation Tag %s for range [%s,%s)>\n"),
-				   atag.c_str (),
-				   paddress (gdbarch, tag_laddr),
-				   paddress (gdbarch, tag_haddr));
+		  gdb_printf (_("<Allocation Tag %s for range [%s,%s)>\n"),
+			      atag.c_str (),
+			      paddress (gdbarch, tag_laddr),
+			      paddress (gdbarch, tag_haddr));
 		}
 	    }
 	  print_range_tag = false;
 	}
 
       if (format == 'i')
-	fputs_filtered (pc_prefix (next_address), gdb_stdout);
+	gdb_puts (pc_prefix (next_address));
       print_address (next_gdbarch, next_address, gdb_stdout);
-      printf_filtered (":");
+      gdb_printf (":");
       for (i = maxelts;
 	   i > 0 && count > 0;
 	   i--, count--)
 	{
-	  printf_filtered ("\t");
+	  gdb_printf ("\t");
 	  /* Note that print_formatted sets next_address for the next
 	     object.  */
 	  last_examine_address = next_address;
@@ -1190,7 +1190,7 @@ do_examine (struct format_data fmt, struct gdbarch *gdbarch, CORE_ADDR addr)
 	  if (tag_haddr <= next_address)
 	      print_range_tag = true;
 	}
-      printf_filtered ("\n");
+      gdb_printf ("\n");
     }
 
   if (need_to_update_next_address)
@@ -1247,16 +1247,23 @@ print_command_parse_format (const char **expp, const char *cmdname,
 void
 print_value (value *val, const value_print_options &opts)
 {
-  int histindex = record_latest_value (val);
+  /* This setting allows large arrays to be printed by limiting the
+     number of elements that are loaded into GDB's memory; we only
+     need to load as many array elements as we plan to print.  */
+  scoped_array_length_limiting limit_large_arrays (opts.print_max);
 
-  annotate_value_history_begin (histindex, value_type (val));
+  int histindex = val->record_latest ();
 
-  printf_filtered ("$%d = ", histindex);
+  annotate_value_history_begin (histindex, val->type ());
+
+  std::string idx = string_printf ("$%d", histindex);
+  gdb_printf ("%ps = ", styled_string (variable_name_style.style (),
+				       idx.c_str ()));
 
   annotate_value_history_value ();
 
   print_formatted (val, 0, &opts, gdb_stdout);
-  printf_filtered ("\n");
+  gdb_printf ("\n");
 
   annotate_value_history_end ();
 }
@@ -1264,28 +1271,28 @@ print_value (value *val, const value_print_options &opts)
 /* Returns true if memory tags should be validated.  False otherwise.  */
 
 static bool
-should_validate_memtags (struct value *value)
+should_validate_memtags (gdbarch *gdbarch, struct value *value)
 {
-  gdb_assert (value != nullptr && value_type (value) != nullptr);
+  gdb_assert (value != nullptr && value->type () != nullptr);
 
   if (!target_supports_memory_tagging ())
     return false;
 
-  enum type_code code = value_type (value)->code ();
+  enum type_code code = value->type ()->code ();
 
   /* Skip non-address values.  */
   if (code != TYPE_CODE_PTR
-      && !TYPE_IS_REFERENCE (value_type (value)))
+      && !TYPE_IS_REFERENCE (value->type ()))
     return false;
 
   /* OK, we have an address value.  Check we have a complete value we
      can extract.  */
-  if (value_optimized_out (value)
-      || !value_entirely_available (value))
+  if (value->optimized_out ()
+      || !value->entirely_available ())
     return false;
 
   /* We do.  Check whether it includes any tags.  */
-  return gdbarch_tagged_address_p (target_gdbarch (), value);
+  return target_is_address_tagged (gdbarch, value_as_address (value));
 }
 
 /* Helper for parsing arguments for print_command_1.  */
@@ -1306,10 +1313,18 @@ process_print_command_args (const char *args, value_print_options *print_opts,
 
   if (exp != nullptr && *exp)
     {
+      /* This setting allows large arrays to be printed by limiting the
+	 number of elements that are loaded into GDB's memory; we only
+	 need to load as many array elements as we plan to print.  */
+      scoped_array_length_limiting limit_large_arrays (print_opts->print_max);
+
       /* VOIDPRINT is true to indicate that we do want to print a void
 	 value, so invert it for parse_expression.  */
-      expression_up expr = parse_expression (exp, nullptr, !voidprint);
-      return evaluate_expression (expr.get ());
+      parser_flags flags = 0;
+      if (!voidprint)
+	flags = PARSER_VOID_CONTEXT;
+      expression_up expr = parse_expression (exp, nullptr, flags);
+      return expr->evaluate ();
     }
 
   return access_value_history (0);
@@ -1324,33 +1339,32 @@ print_command_1 (const char *args, int voidprint)
 
   struct value *val = process_print_command_args (args, &print_opts, voidprint);
 
-  if (voidprint || (val && value_type (val) &&
-		    value_type (val)->code () != TYPE_CODE_VOID))
+  if (voidprint || (val && val->type () &&
+		    val->type ()->code () != TYPE_CODE_VOID))
     {
       /* If memory tagging validation is on, check if the tag is valid.  */
       if (print_opts.memory_tag_violations)
 	{
 	  try
 	    {
-	      if (should_validate_memtags (val)
-		  && !gdbarch_memtag_matches_p (target_gdbarch (), val))
+	      gdbarch *arch = current_inferior ()->arch ();
+
+	      if (should_validate_memtags (arch, val)
+		  && !gdbarch_memtag_matches_p (arch, val))
 		{
 		  /* Fetch the logical tag.  */
 		  struct value *tag
-		    = gdbarch_get_memtag (target_gdbarch (), val,
-					  memtag_type::logical);
-		  std::string ltag
-		    = gdbarch_memtag_to_string (target_gdbarch (), tag);
+		    = gdbarch_get_memtag (arch, val, memtag_type::logical);
+		  std::string ltag = gdbarch_memtag_to_string (arch, tag);
 
 		  /* Fetch the allocation tag.  */
-		  tag = gdbarch_get_memtag (target_gdbarch (), val,
+		  tag = gdbarch_get_memtag (arch, val,
 					    memtag_type::allocation);
-		  std::string atag
-		    = gdbarch_memtag_to_string (target_gdbarch (), tag);
+		  std::string atag = gdbarch_memtag_to_string (arch, tag);
 
-		  printf_filtered (_("Logical tag (%s) does not match the "
-				     "allocation tag (%s).\n"),
-				   ltag.c_str (), atag.c_str ());
+		  gdb_printf (_("Logical tag (%s) does not match the "
+				"allocation tag (%s).\n"),
+			      ltag.c_str (), atag.c_str ());
 		}
 	    }
 	  catch (gdb_exception_error &ex)
@@ -1358,79 +1372,14 @@ print_command_1 (const char *args, int voidprint)
 	      if (ex.error == TARGET_CLOSE_ERROR)
 		throw;
 
-	      fprintf_filtered (gdb_stderr,
-				_("Could not validate memory tag: %s\n"),
-				ex.message->c_str ());
+	      gdb_printf (gdb_stderr,
+			  _("Could not validate memory tag: %s\n"),
+			  ex.message->c_str ());
 	    }
 	}
 
       print_value (val, print_opts);
     }
-}
-
-/* Called from command completion function to skip over /FMT
-   specifications, allowing the rest of the line to be completed.  Returns
-   true if the /FMT is at the end of the current line and there is nothing
-   left to complete, otherwise false is returned.
-
-   In either case *ARGS can be updated to point after any part of /FMT that
-   is present.
-
-   This function is designed so that trying to complete '/' will offer no
-   completions, the user needs to insert the format specification
-   themselves.  Trying to complete '/FMT' (where FMT is any non-empty set
-   of alpha-numeric characters) will cause readline to insert a single
-   space, setting the user up to enter the expression.  */
-
-static bool
-skip_over_slash_fmt (completion_tracker &tracker, const char **args)
-{
-  const char *text = *args;
-
-  if (text[0] == '/')
-    {
-      bool in_fmt;
-      tracker.set_use_custom_word_point (true);
-
-      if (text[1] == '\0')
-	{
-	  /* The user tried to complete after typing just the '/' character
-	     of the /FMT string.  Step the completer past the '/', but we
-	     don't offer any completions.  */
-	  in_fmt = true;
-	  ++text;
-	}
-      else
-	{
-	  /* The user has typed some characters after the '/', we assume
-	     this is a complete /FMT string, first skip over it.  */
-	  text = skip_to_space (text);
-
-	  if (*text == '\0')
-	    {
-	      /* We're at the end of the input string.  The user has typed
-		 '/FMT' and asked for a completion.  Push an empty
-		 completion string, this will cause readline to insert a
-		 space so the user now has '/FMT '.  */
-	      in_fmt = true;
-	      tracker.add_completion (make_unique_xstrdup (text));
-	    }
-	  else
-	    {
-	      /* The user has already typed things after the /FMT, skip the
-		 whitespace and return false.  Whoever called this function
-		 should then try to complete what comes next.  */
-	      in_fmt = false;
-	      text = skip_spaces (text);
-	    }
-	}
-
-      tracker.advance_custom_word_point_by (text - *args);
-      *args = text;
-      return in_fmt;
-    }
-
-  return false;
 }
 
 /* See valprint.h.  */
@@ -1488,17 +1437,22 @@ output_command (const char *exp, int from_tty)
 
   expression_up expr = parse_expression (exp);
 
-  val = evaluate_expression (expr.get ());
+  val = expr->evaluate ();
 
-  annotate_value_begin (value_type (val));
+  annotate_value_begin (val->type ());
 
   get_formatted_print_options (&opts, format);
   opts.raw = fmt.raw;
+
+  /* This setting allows large arrays to be printed by limiting the
+     number of elements that are loaded into GDB's memory; we only
+     need to load as many array elements as we plan to print.  */
+  scoped_array_length_limiting limit_large_arrays (opts.print_max);
+
   print_formatted (val, fmt.size, &opts, gdb_stdout);
 
   annotate_value_end ();
 
-  wrap_here ("");
   gdb_flush (gdb_stdout);
 }
 
@@ -1507,7 +1461,7 @@ set_command (const char *exp, int from_tty)
 {
   expression_up expr = parse_expression (exp);
 
-  switch (expr->op->opcode ())
+  switch (expr->first_opcode ())
     {
     case UNOP_PREINCREMENT:
     case UNOP_POSTINCREMENT:
@@ -1522,14 +1476,13 @@ set_command (const char *exp, int from_tty)
 	(_("Expression is not an assignment (and might have no effect)"));
     }
 
-  evaluate_expression (expr.get ());
+  expr->evaluate ();
 }
 
 static void
 info_symbol_command (const char *arg, int from_tty)
 {
   struct minimal_symbol *msymbol;
-  struct obj_section *osect;
   CORE_ADDR addr, sect_addr;
   int matches = 0;
   unsigned int offset;
@@ -1539,7 +1492,7 @@ info_symbol_command (const char *arg, int from_tty)
 
   addr = parse_and_eval_address (arg);
   for (objfile *objfile : current_program_space->objfiles ())
-    ALL_OBJFILE_OSECTIONS (objfile, osect)
+    for (obj_section *osect : objfile->sections ())
       {
 	/* Only process each object file once, even if there's a separate
 	   debug file.  */
@@ -1548,7 +1501,7 @@ info_symbol_command (const char *arg, int from_tty)
 
 	sect_addr = overlay_mapped_address (addr, osect);
 
-	if (osect->addr () <= sect_addr && sect_addr < osect->endaddr ()
+	if (osect->contains (sect_addr)
 	    && (msymbol
 		= lookup_minimal_symbol_by_pc_section (sect_addr,
 						       osect).minsym))
@@ -1557,7 +1510,7 @@ info_symbol_command (const char *arg, int from_tty)
 	    const char *loc_string;
 
 	    matches = 1;
-	    offset = sect_addr - MSYMBOL_VALUE_ADDRESS (objfile, msymbol);
+	    offset = sect_addr - msymbol->value_address (objfile);
 	    mapped = section_is_mapped (osect) ? _("mapped") : _("unmapped");
 	    sec_name = osect->the_bfd_section->name;
 	    msym_name = msymbol->print_name ();
@@ -1579,41 +1532,41 @@ info_symbol_command (const char *arg, int from_tty)
 	    if (current_program_space->multi_objfile_p ())
 	      if (pc_in_unmapped_range (addr, osect))
 		if (section_is_overlay (osect))
-		  printf_filtered (_("%s in load address range of "
-				     "%s overlay section %s of %s\n"),
-				   loc_string, mapped, sec_name, obj_name);
+		  gdb_printf (_("%s in load address range of "
+				"%s overlay section %s of %s\n"),
+			      loc_string, mapped, sec_name, obj_name);
 		else
-		  printf_filtered (_("%s in load address range of "
-				     "section %s of %s\n"),
-				   loc_string, sec_name, obj_name);
+		  gdb_printf (_("%s in load address range of "
+				"section %s of %s\n"),
+			      loc_string, sec_name, obj_name);
 	      else
 		if (section_is_overlay (osect))
-		  printf_filtered (_("%s in %s overlay section %s of %s\n"),
-				   loc_string, mapped, sec_name, obj_name);
+		  gdb_printf (_("%s in %s overlay section %s of %s\n"),
+			      loc_string, mapped, sec_name, obj_name);
 		else
-		  printf_filtered (_("%s in section %s of %s\n"),
-				   loc_string, sec_name, obj_name);
+		  gdb_printf (_("%s in section %s of %s\n"),
+			      loc_string, sec_name, obj_name);
 	    else
 	      if (pc_in_unmapped_range (addr, osect))
 		if (section_is_overlay (osect))
-		  printf_filtered (_("%s in load address range of %s overlay "
-				     "section %s\n"),
-				   loc_string, mapped, sec_name);
+		  gdb_printf (_("%s in load address range of %s overlay "
+				"section %s\n"),
+			      loc_string, mapped, sec_name);
 		else
-		  printf_filtered
+		  gdb_printf
 		    (_("%s in load address range of section %s\n"),
 		     loc_string, sec_name);
 	      else
 		if (section_is_overlay (osect))
-		  printf_filtered (_("%s in %s overlay section %s\n"),
-				   loc_string, mapped, sec_name);
+		  gdb_printf (_("%s in %s overlay section %s\n"),
+			      loc_string, mapped, sec_name);
 		else
-		  printf_filtered (_("%s in section %s\n"),
-				   loc_string, sec_name);
+		  gdb_printf (_("%s in section %s\n"),
+			      loc_string, sec_name);
 	  }
       }
   if (matches == 0)
-    printf_filtered (_("No symbol matches %s.\n"), arg);
+    gdb_printf (_("No symbol matches %s.\n"), arg);
 }
 
 static void
@@ -1622,7 +1575,6 @@ info_address_command (const char *exp, int from_tty)
   struct gdbarch *gdbarch;
   int regno;
   struct symbol *sym;
-  struct bound_minimal_symbol msymbol;
   long val;
   struct obj_section *section;
   CORE_ADDR load_addr, context_pc = 0;
@@ -1631,101 +1583,101 @@ info_address_command (const char *exp, int from_tty)
   if (exp == 0)
     error (_("Argument required."));
 
-  sym = lookup_symbol (exp, get_selected_block (&context_pc), VAR_DOMAIN,
+  sym = lookup_symbol (exp, get_selected_block (&context_pc), SEARCH_VFT,
 		       &is_a_field_of_this).symbol;
   if (sym == NULL)
     {
       if (is_a_field_of_this.type != NULL)
 	{
-	  printf_filtered ("Symbol \"");
-	  fprintf_symbol_filtered (gdb_stdout, exp,
-				   current_language->la_language, DMGL_ANSI);
-	  printf_filtered ("\" is a field of the local class variable ");
+	  gdb_printf ("Symbol \"");
+	  fprintf_symbol (gdb_stdout, exp,
+			  current_language->la_language, DMGL_ANSI);
+	  gdb_printf ("\" is a field of the local class variable ");
 	  if (current_language->la_language == language_objc)
-	    printf_filtered ("`self'\n");	/* ObjC equivalent of "this" */
+	    gdb_printf ("`self'\n");	/* ObjC equivalent of "this" */
 	  else
-	    printf_filtered ("`this'\n");
+	    gdb_printf ("`this'\n");
 	  return;
 	}
 
-      msymbol = lookup_bound_minimal_symbol (exp);
+      bound_minimal_symbol msymbol
+	= lookup_minimal_symbol (current_program_space, exp);
 
       if (msymbol.minsym != NULL)
 	{
 	  struct objfile *objfile = msymbol.objfile;
 
 	  gdbarch = objfile->arch ();
-	  load_addr = BMSYMBOL_VALUE_ADDRESS (msymbol);
+	  load_addr = msymbol.value_address ();
 
-	  printf_filtered ("Symbol \"");
-	  fprintf_symbol_filtered (gdb_stdout, exp,
-				   current_language->la_language, DMGL_ANSI);
-	  printf_filtered ("\" is at ");
+	  gdb_printf ("Symbol \"");
+	  fprintf_symbol (gdb_stdout, exp,
+			  current_language->la_language, DMGL_ANSI);
+	  gdb_printf ("\" is at ");
 	  fputs_styled (paddress (gdbarch, load_addr), address_style.style (),
 			gdb_stdout);
-	  printf_filtered (" in a file compiled without debugging");
+	  gdb_printf (" in a file compiled without debugging");
 	  section = msymbol.minsym->obj_section (objfile);
 	  if (section_is_overlay (section))
 	    {
 	      load_addr = overlay_unmapped_address (load_addr, section);
-	      printf_filtered (",\n -- loaded at ");
+	      gdb_printf (",\n -- loaded at ");
 	      fputs_styled (paddress (gdbarch, load_addr),
 			    address_style.style (),
 			    gdb_stdout);
-	      printf_filtered (" in overlay section %s",
-			       section->the_bfd_section->name);
+	      gdb_printf (" in overlay section %s",
+			  section->the_bfd_section->name);
 	    }
-	  printf_filtered (".\n");
+	  gdb_printf (".\n");
 	}
       else
 	error (_("No symbol \"%s\" in current context."), exp);
       return;
     }
 
-  printf_filtered ("Symbol \"");
-  fprintf_symbol_filtered (gdb_stdout, sym->print_name (),
-			   current_language->la_language, DMGL_ANSI);
-  printf_filtered ("\" is ");
-  val = SYMBOL_VALUE (sym);
-  if (SYMBOL_OBJFILE_OWNED (sym))
-    section = sym->obj_section (symbol_objfile (sym));
+  gdb_printf ("Symbol \"");
+  gdb_puts (sym->print_name ());
+  gdb_printf ("\" is ");
+  val = sym->value_longest ();
+  if (sym->is_objfile_owned ())
+    section = sym->obj_section (sym->objfile ());
   else
     section = NULL;
-  gdbarch = symbol_arch (sym);
+  gdbarch = sym->arch ();
 
-  if (SYMBOL_COMPUTED_OPS (sym) != NULL)
+  if (const symbol_computed_ops *computed_ops = sym->computed_ops ();
+      computed_ops != nullptr)
     {
-      SYMBOL_COMPUTED_OPS (sym)->describe_location (sym, context_pc,
-						    gdb_stdout);
-      printf_filtered (".\n");
+      computed_ops->describe_location (sym, context_pc, gdb_stdout);
+      gdb_printf (".\n");
       return;
     }
 
-  switch (SYMBOL_CLASS (sym))
+  switch (sym->aclass ())
     {
     case LOC_CONST:
     case LOC_CONST_BYTES:
-      printf_filtered ("constant");
+      gdb_printf ("constant");
       break;
 
     case LOC_LABEL:
-      printf_filtered ("a label at address ");
-      load_addr = SYMBOL_VALUE_ADDRESS (sym);
+      gdb_printf ("a label at address ");
+      load_addr = sym->value_address ();
       fputs_styled (paddress (gdbarch, load_addr), address_style.style (),
 		    gdb_stdout);
       if (section_is_overlay (section))
 	{
 	  load_addr = overlay_unmapped_address (load_addr, section);
-	  printf_filtered (",\n -- loaded at ");
+	  gdb_printf (",\n -- loaded at ");
 	  fputs_styled (paddress (gdbarch, load_addr), address_style.style (),
 			gdb_stdout);
-	  printf_filtered (" in overlay section %s",
-			   section->the_bfd_section->name);
+	  gdb_printf (" in overlay section %s",
+		      section->the_bfd_section->name);
 	}
       break;
 
     case LOC_COMPUTED:
-      gdb_assert_not_reached (_("LOC_COMPUTED variable missing a method"));
+      gdb_assert_not_reached ("LOC_COMPUTED variable missing a method");
 
     case LOC_REGISTER:
       /* GDBARCH is the architecture associated with the objfile the symbol
@@ -1734,78 +1686,78 @@ info_address_command (const char *exp, int from_tty)
 	 architecture at this point.  We assume the objfile architecture
 	 will contain all the standard registers that occur in debug info
 	 in that objfile.  */
-      regno = SYMBOL_REGISTER_OPS (sym)->register_number (sym, gdbarch);
+      regno = sym->register_ops ()->register_number (sym, gdbarch);
 
-      if (SYMBOL_IS_ARGUMENT (sym))
-	printf_filtered (_("an argument in register %s"),
-			 gdbarch_register_name (gdbarch, regno));
+      if (sym->is_argument ())
+	gdb_printf (_("an argument in register %s"),
+		    gdbarch_register_name (gdbarch, regno));
       else
-	printf_filtered (_("a variable in register %s"),
-			 gdbarch_register_name (gdbarch, regno));
+	gdb_printf (_("a variable in register %s"),
+		    gdbarch_register_name (gdbarch, regno));
       break;
 
     case LOC_STATIC:
-      printf_filtered (_("static storage at address "));
-      load_addr = SYMBOL_VALUE_ADDRESS (sym);
+      gdb_printf (_("static storage at address "));
+      load_addr = sym->value_address ();
       fputs_styled (paddress (gdbarch, load_addr), address_style.style (),
 		    gdb_stdout);
       if (section_is_overlay (section))
 	{
 	  load_addr = overlay_unmapped_address (load_addr, section);
-	  printf_filtered (_(",\n -- loaded at "));
+	  gdb_printf (_(",\n -- loaded at "));
 	  fputs_styled (paddress (gdbarch, load_addr), address_style.style (),
 			gdb_stdout);
-	  printf_filtered (_(" in overlay section %s"),
-			   section->the_bfd_section->name);
+	  gdb_printf (_(" in overlay section %s"),
+		      section->the_bfd_section->name);
 	}
       break;
 
     case LOC_REGPARM_ADDR:
       /* Note comment at LOC_REGISTER.  */
-      regno = SYMBOL_REGISTER_OPS (sym)->register_number (sym, gdbarch);
-      printf_filtered (_("address of an argument in register %s"),
-		       gdbarch_register_name (gdbarch, regno));
+      regno = sym->register_ops ()->register_number (sym, gdbarch);
+      gdb_printf (_("address of an argument in register %s"),
+		  gdbarch_register_name (gdbarch, regno));
       break;
 
     case LOC_ARG:
-      printf_filtered (_("an argument at offset %ld"), val);
+      gdb_printf (_("an argument at offset %ld"), val);
       break;
 
     case LOC_LOCAL:
-      printf_filtered (_("a local variable at frame offset %ld"), val);
+      gdb_printf (_("a local variable at frame offset %ld"), val);
       break;
 
     case LOC_REF_ARG:
-      printf_filtered (_("a reference argument at offset %ld"), val);
+      gdb_printf (_("a reference argument at offset %ld"), val);
       break;
 
     case LOC_TYPEDEF:
-      printf_filtered (_("a typedef"));
+      gdb_printf (_("a typedef"));
       break;
 
     case LOC_BLOCK:
-      printf_filtered (_("a function at address "));
-      load_addr = BLOCK_ENTRY_PC (SYMBOL_BLOCK_VALUE (sym));
+      gdb_printf (_("a function at address "));
+      load_addr = sym->value_block ()->entry_pc ();
       fputs_styled (paddress (gdbarch, load_addr), address_style.style (),
 		    gdb_stdout);
       if (section_is_overlay (section))
 	{
 	  load_addr = overlay_unmapped_address (load_addr, section);
-	  printf_filtered (_(",\n -- loaded at "));
+	  gdb_printf (_(",\n -- loaded at "));
 	  fputs_styled (paddress (gdbarch, load_addr), address_style.style (),
 			gdb_stdout);
-	  printf_filtered (_(" in overlay section %s"),
-			   section->the_bfd_section->name);
+	  gdb_printf (_(" in overlay section %s"),
+		      section->the_bfd_section->name);
 	}
       break;
 
     case LOC_UNRESOLVED:
       {
-	struct bound_minimal_symbol msym;
-
-	msym = lookup_bound_minimal_symbol (sym->linkage_name ());
+	bound_minimal_symbol msym
+	  = lookup_minimal_symbol (current_program_space,
+				   sym->linkage_name ());
 	if (msym.minsym == NULL)
-	  printf_filtered ("unresolved");
+	  gdb_printf ("unresolved");
 	else
 	  {
 	    section = msym.obj_section ();
@@ -1813,27 +1765,27 @@ info_address_command (const char *exp, int from_tty)
 	    if (section
 		&& (section->the_bfd_section->flags & SEC_THREAD_LOCAL) != 0)
 	      {
-		load_addr = MSYMBOL_VALUE_RAW_ADDRESS (msym.minsym);
-		printf_filtered (_("a thread-local variable at offset %s "
-				   "in the thread-local storage for `%s'"),
-				 paddress (gdbarch, load_addr),
-				 objfile_name (section->objfile));
+		load_addr = CORE_ADDR (msym.minsym->unrelocated_address ());
+		gdb_printf (_("a thread-local variable at offset %s "
+			      "in the thread-local storage for `%s'"),
+			    paddress (gdbarch, load_addr),
+			    objfile_name (section->objfile));
 	      }
 	    else
 	      {
-		load_addr = BMSYMBOL_VALUE_ADDRESS (msym);
-		printf_filtered (_("static storage at address "));
+		load_addr = msym.value_address ();
+		gdb_printf (_("static storage at address "));
 		fputs_styled (paddress (gdbarch, load_addr),
 			      address_style.style (), gdb_stdout);
 		if (section_is_overlay (section))
 		  {
 		    load_addr = overlay_unmapped_address (load_addr, section);
-		    printf_filtered (_(",\n -- loaded at "));
+		    gdb_printf (_(",\n -- loaded at "));
 		    fputs_styled (paddress (gdbarch, load_addr),
 				  address_style.style (),
 				  gdb_stdout);
-		    printf_filtered (_(" in overlay section %s"),
-				     section->the_bfd_section->name);
+		    gdb_printf (_(" in overlay section %s"),
+				section->the_bfd_section->name);
 		  }
 	      }
 	  }
@@ -1841,14 +1793,14 @@ info_address_command (const char *exp, int from_tty)
       break;
 
     case LOC_OPTIMIZED_OUT:
-      printf_filtered (_("optimized out"));
+      gdb_printf (_("optimized out"));
       break;
 
     default:
-      printf_filtered (_("of unknown (botched) type"));
+      gdb_printf (_("of unknown (botched) type"));
       break;
     }
-  printf_filtered (".\n");
+  gdb_printf (".\n");
 }
 
 
@@ -1889,14 +1841,14 @@ x_command (const char *exp, int from_tty)
 	 command's definition.  */
       if (from_tty)
 	set_repeat_arguments ("");
-      val = evaluate_expression (expr.get ());
-      if (TYPE_IS_REFERENCE (value_type (val)))
+      val = expr->evaluate ();
+      if (TYPE_IS_REFERENCE (val->type ()))
 	val = coerce_ref (val);
       /* In rvalue contexts, such as this, functions are coerced into
 	 pointers to functions.  This makes "x/i main" work.  */
-      if (value_type (val)->code () == TYPE_CODE_FUNC
-	   && VALUE_LVAL (val) == lval_memory)
-	next_address = value_address (val);
+      if (val->type ()->code () == TYPE_CODE_FUNC
+	  && val->lval () == lval_memory)
+	next_address = val->address ();
       else
 	next_address = value_as_address (val);
 
@@ -1925,7 +1877,7 @@ x_command (const char *exp, int from_tty)
       /* Make last address examined available to the user as $_.  Use
 	 the correct pointer type.  */
       struct type *pointer_type
-	= lookup_pointer_type (value_type (last_examine_value.get ()));
+	= lookup_pointer_type (last_examine_value->type ());
       set_internalvar (lookup_internalvar ("_"),
 		       value_from_pointer (pointer_type,
 					   last_examine_address));
@@ -1934,7 +1886,7 @@ x_command (const char *exp, int from_tty)
 	 as $__.  If the last value has not been fetched from memory
 	 then don't fetch it now; instead mark it by voiding the $__
 	 variable.  */
-      if (value_lazy (last_examine_value.get ()))
+      if (last_examine_value->lazy ())
 	clear_internalvar (lookup_internalvar ("__"));
       else
 	set_internalvar (lookup_internalvar ("__"), last_examine_value.get ());
@@ -2059,7 +2011,7 @@ map_display_numbers (const char *args,
 				      return item->number == num;
 				    });
 	  if (iter == all_displays.end ())
-	    printf_unfiltered (_("No display number %d.\n"), num);
+	    gdb_printf (_("No display number %d.\n"), num);
 	  else
 	    function (iter->get ());
 	}
@@ -2117,7 +2069,7 @@ do_one_display (struct display *d)
 	  d->exp = parse_expression (d->exp_string.c_str (), &tracker);
 	  d->block = tracker.block ();
 	}
-      catch (const gdb_exception &ex)
+      catch (const gdb_exception_error &ex)
 	{
 	  /* Can't re-parse the expression.  Disable this display item.  */
 	  d->enabled_p = false;
@@ -2130,8 +2082,8 @@ do_one_display (struct display *d)
   if (d->block)
     {
       if (d->pspace == current_program_space)
-	within_current_scope = contained_in (get_selected_block (0), d->block,
-					     true);
+	within_current_scope = d->block->contains (get_selected_block (0),
+						   true);
       else
 	within_current_scope = 0;
     }
@@ -2144,31 +2096,31 @@ do_one_display (struct display *d)
     = make_scoped_restore (&current_display_number, d->number);
 
   annotate_display_begin ();
-  printf_filtered ("%d", d->number);
+  gdb_printf ("%d", d->number);
   annotate_display_number_end ();
-  printf_filtered (": ");
+  gdb_printf (": ");
   if (d->format.size)
     {
 
       annotate_display_format ();
 
-      printf_filtered ("x/");
+      gdb_printf ("x/");
       if (d->format.count != 1)
-	printf_filtered ("%d", d->format.count);
-      printf_filtered ("%c", d->format.format);
+	gdb_printf ("%d", d->format.count);
+      gdb_printf ("%c", d->format.format);
       if (d->format.format != 'i' && d->format.format != 's')
-	printf_filtered ("%c", d->format.size);
-      printf_filtered (" ");
+	gdb_printf ("%c", d->format.size);
+      gdb_printf (" ");
 
       annotate_display_expression ();
 
-      puts_filtered (d->exp_string.c_str ());
+      gdb_puts (d->exp_string.c_str ());
       annotate_display_expression_end ();
 
       if (d->format.count != 1 || d->format.format == 'i')
-	printf_filtered ("\n");
+	gdb_printf ("\n");
       else
-	printf_filtered ("  ");
+	gdb_printf ("  ");
 
       annotate_display_value ();
 
@@ -2177,7 +2129,7 @@ do_one_display (struct display *d)
 	  struct value *val;
 	  CORE_ADDR addr;
 
-	  val = evaluate_expression (d->exp.get ());
+	  val = d->exp->evaluate ();
 	  addr = value_as_address (val);
 	  if (d->format.format == 'i')
 	    addr = gdbarch_addr_bits_remove (d->exp->gdbarch, addr);
@@ -2185,9 +2137,9 @@ do_one_display (struct display *d)
 	}
       catch (const gdb_exception_error &ex)
 	{
-	  fprintf_filtered (gdb_stdout, _("%p[<error: %s>%p]\n"),
-			    metadata_style.style ().ptr (), ex.what (),
-			    nullptr);
+	  gdb_printf (_("%p[<error: %s>%p]\n"),
+		      metadata_style.style ().ptr (), ex.what (),
+		      nullptr);
 	}
     }
   else
@@ -2197,14 +2149,14 @@ do_one_display (struct display *d)
       annotate_display_format ();
 
       if (d->format.format)
-	printf_filtered ("/%c ", d->format.format);
+	gdb_printf ("/%c ", d->format.format);
 
       annotate_display_expression ();
 
-      puts_filtered (d->exp_string.c_str ());
+      gdb_puts (d->exp_string.c_str ());
       annotate_display_expression_end ();
 
-      printf_filtered (" = ");
+      gdb_printf (" = ");
 
       annotate_display_expression ();
 
@@ -2215,7 +2167,7 @@ do_one_display (struct display *d)
 	{
 	  struct value *val;
 
-	  val = evaluate_expression (d->exp.get ());
+	  val = d->exp->evaluate ();
 	  print_formatted (val, d->format.size, &opts, gdb_stdout);
 	}
       catch (const gdb_exception_error &ex)
@@ -2224,7 +2176,7 @@ do_one_display (struct display *d)
 			  _("<error: %s>"), ex.what ());
 	}
 
-      printf_filtered ("\n");
+      gdb_printf ("\n");
     }
 
   annotate_display_end ();
@@ -2254,7 +2206,7 @@ disable_display (int num)
 	d->enabled_p = false;
 	return;
       }
-  printf_unfiltered (_("No display number %d.\n"), num);
+  gdb_printf (_("No display number %d.\n"), num);
 }
 
 void
@@ -2263,10 +2215,10 @@ disable_current_display (void)
   if (current_display_number >= 0)
     {
       disable_display (current_display_number);
-      fprintf_unfiltered (gdb_stderr,
-			  _("Disabling display %d to "
-			    "avoid infinite recursion.\n"),
-			  current_display_number);
+      gdb_printf (gdb_stderr,
+		  _("Disabling display %d to "
+		    "avoid infinite recursion.\n"),
+		  current_display_number);
     }
   current_display_number = -1;
 }
@@ -2275,23 +2227,23 @@ static void
 info_display_command (const char *ignore, int from_tty)
 {
   if (all_displays.empty ())
-    printf_unfiltered (_("There are no auto-display expressions now.\n"));
+    gdb_printf (_("There are no auto-display expressions now.\n"));
   else
-    printf_filtered (_("Auto-display expressions now in effect:\n\
+    gdb_printf (_("Auto-display expressions now in effect:\n\
 Num Enb Expression\n"));
 
   for (auto &d : all_displays)
     {
-      printf_filtered ("%d:   %c  ", d->number, "ny"[(int) d->enabled_p]);
+      gdb_printf ("%d:   %c  ", d->number, "ny"[(int) d->enabled_p]);
       if (d->format.size)
-	printf_filtered ("/%d%c%c ", d->format.count, d->format.size,
-			 d->format.format);
+	gdb_printf ("/%d%c%c ", d->format.count, d->format.size,
+		    d->format.format);
       else if (d->format.format)
-	printf_filtered ("/%c ", d->format.format);
-      puts_filtered (d->exp_string.c_str ());
-      if (d->block && !contained_in (get_selected_block (0), d->block, true))
-	printf_filtered (_(" (cannot be evaluated in the current context)"));
-      printf_filtered ("\n");
+	gdb_printf ("/%c ", d->format.format);
+      gdb_puts (d->exp_string.c_str ());
+      if (d->block && !d->block->contains (get_selected_block (0), true))
+	gdb_printf (_(" (cannot be evaluated in the current context)"));
+      gdb_printf ("\n");
     }
 }
 
@@ -2342,16 +2294,11 @@ disable_display_command (const char *args, int from_tty)
 static void
 clear_dangling_display_expressions (struct objfile *objfile)
 {
-  struct program_space *pspace;
-
-  /* With no symbol file we cannot have a block or expression from it.  */
-  if (objfile == NULL)
-    return;
-  pspace = objfile->pspace;
+  program_space *pspace = objfile->pspace ();
   if (objfile->separate_debug_objfile_backlink)
     {
       objfile = objfile->separate_debug_objfile_backlink;
-      gdb_assert (objfile->pspace == pspace);
+      gdb_assert (objfile->pspace () == pspace);
     }
 
   for (auto &d : all_displays)
@@ -2362,13 +2309,13 @@ clear_dangling_display_expressions (struct objfile *objfile)
       struct objfile *bl_objf = nullptr;
       if (d->block != nullptr)
 	{
-	  bl_objf = block_objfile (d->block);
+	  bl_objf = d->block->objfile ();
 	  if (bl_objf->separate_debug_objfile_backlink != nullptr)
 	    bl_objf = bl_objf->separate_debug_objfile_backlink;
 	}
 
       if (bl_objf == objfile
-	  || (d->exp != NULL && exp_uses_objfile (d->exp.get (), objfile)))
+	  || (d->exp != nullptr && d->exp->uses_objfile (objfile)))
 	{
 	  d->exp.reset ();
 	  d->block = NULL;
@@ -2381,21 +2328,19 @@ clear_dangling_display_expressions (struct objfile *objfile)
    struct symbol.  NAME is the name to print; if NULL then VAR's print
    name will be used.  STREAM is the ui_file on which to print the
    value.  INDENT specifies the number of indent levels to print
-   before printing the variable name.
-
-   This function invalidates FRAME.  */
+   before printing the variable name.  */
 
 void
 print_variable_and_value (const char *name, struct symbol *var,
-			  struct frame_info *frame,
+			  const frame_info_ptr &frame,
 			  struct ui_file *stream, int indent)
 {
 
   if (!name)
     name = var->print_name ();
 
-  fprintf_filtered (stream, "%*s%ps = ", 2 * indent, "",
-		    styled_string (variable_name_style.style (), name));
+  gdb_printf (stream, "%*s%ps = ", 2 * indent, "",
+	      styled_string (variable_name_style.style (), name));
 
   try
     {
@@ -2408,12 +2353,8 @@ print_variable_and_value (const char *name, struct symbol *var,
 	 a block to it.  */
       val = read_var_value (var, NULL, frame);
       get_user_print_options (&opts);
-      opts.deref_ref = 1;
+      opts.deref_ref = true;
       common_val_print_checked (val, stream, indent, &opts, current_language);
-
-      /* common_val_print invalidates FRAME when a pretty printer calls inferior
-	 function.  */
-      frame = NULL;
     }
   catch (const gdb_exception_error &except)
     {
@@ -2422,7 +2363,7 @@ print_variable_and_value (const char *name, struct symbol *var,
 		      except.what ());
     }
 
-  fprintf_filtered (stream, "\n");
+  gdb_printf (stream, "\n");
 }
 
 /* Subroutine of ui_printf to simplify it.
@@ -2434,23 +2375,22 @@ static void
 printf_c_string (struct ui_file *stream, const char *format,
 		 struct value *value)
 {
-  const gdb_byte *str;
+  gdb::byte_vector str;
 
-  if (value_type (value)->code () != TYPE_CODE_PTR
-      && VALUE_LVAL (value) == lval_internalvar
-      && c_is_string_type_p (value_type (value)))
+  if (((value->type ()->code () != TYPE_CODE_PTR && value->lval () == lval_internalvar)
+       || value->type ()->code () == TYPE_CODE_ARRAY)
+      && c_is_string_type_p (value->type ()))
     {
-      size_t len = TYPE_LENGTH (value_type (value));
+      size_t len = value->type ()->length ();
 
       /* Copy the internal var value to TEM_STR and append a terminating null
 	 character.  This protects against corrupted C-style strings that lack
 	 the terminating null char.  It also allows Ada-style strings (not
 	 null terminated) to be printed without problems.  */
-      gdb_byte *tem_str = (gdb_byte *) alloca (len + 1);
+      str.resize (len + 1);
 
-      memcpy (tem_str, value_contents (value), len);
-      tem_str [len] = 0;
-      str = tem_str;
+      memcpy (str.data (), value->contents ().data (), len);
+      str [len] = 0;
     }
   else
     {
@@ -2460,36 +2400,42 @@ printf_c_string (struct ui_file *stream, const char *format,
 	{
 	  DIAGNOSTIC_PUSH
 	  DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-	  fprintf_filtered (stream, format, "(null)");
+	    gdb_printf (stream, format, "(null)");
 	  DIAGNOSTIC_POP
 	  return;
 	}
 
-      /* This is a %s argument.  Find the length of the string.  */
+      /* This is a %s argument.  Build the string in STR which is
+	 currently empty.  */
+      gdb_assert (str.size () == 0);
       size_t len;
-
       for (len = 0;; len++)
 	{
 	  gdb_byte c;
 
 	  QUIT;
+
 	  read_memory (tem + len, &c, 1);
+	  if (!exceeds_max_value_size (len + 1))
+	    str.push_back (c);
 	  if (c == 0)
 	    break;
 	}
 
-      /* Copy the string contents into a string inside GDB.  */
-      gdb_byte *tem_str = (gdb_byte *) alloca (len + 1);
+      if (exceeds_max_value_size (len + 1))
+	error (_("printed string requires %s bytes, which is more than "
+		 "max-value-size"), plongest (len + 1));
 
-      if (len != 0)
-	read_memory (tem, tem_str, len);
-      tem_str[len] = 0;
-      str = tem_str;
+      /* We will have passed through the above loop at least once, and will
+	 only exit the loop when we have pushed a zero byte onto the end of
+	 STR.  */
+      gdb_assert (str.size () > 0);
+      gdb_assert (str.back () == 0);
     }
 
   DIAGNOSTIC_PUSH
   DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-  fprintf_filtered (stream, format, (char *) str);
+    gdb_printf (stream, format, (char *) str.data ());
   DIAGNOSTIC_POP
 }
 
@@ -2504,16 +2450,17 @@ printf_wide_c_string (struct ui_file *stream, const char *format,
 {
   const gdb_byte *str;
   size_t len;
-  struct gdbarch *gdbarch = value_type (value)->arch ();
+  struct gdbarch *gdbarch = value->type ()->arch ();
   struct type *wctype = lookup_typename (current_language,
 					 "wchar_t", NULL, 0);
-  int wcwidth = TYPE_LENGTH (wctype);
+  int wcwidth = wctype->length ();
+  std::optional<gdb::byte_vector> tem_str;
 
-  if (VALUE_LVAL (value) == lval_internalvar
-      && c_is_string_type_p (value_type (value)))
+  if (value->lval () == lval_internalvar
+      && c_is_string_type_p (value->type ()))
     {
-      str = value_contents (value);
-      len = TYPE_LENGTH (value_type (value));
+      str = value->contents ().data ();
+      len = value->type ()->length ();
     }
   else
     {
@@ -2523,30 +2470,50 @@ printf_wide_c_string (struct ui_file *stream, const char *format,
 	{
 	  DIAGNOSTIC_PUSH
 	  DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-	  fprintf_filtered (stream, format, "(null)");
+	    gdb_printf (stream, format, "(null)");
 	  DIAGNOSTIC_POP
 	  return;
 	}
 
       /* This is a %s argument.  Find the length of the string.  */
       enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-      gdb_byte *buf = (gdb_byte *) alloca (wcwidth);
+      tem_str.emplace ();
 
       for (len = 0;; len += wcwidth)
 	{
 	  QUIT;
-	  read_memory (tem + len, buf, wcwidth);
-	  if (extract_unsigned_integer (buf, wcwidth, byte_order) == 0)
+	  gdb_byte *dst;
+	  if (!exceeds_max_value_size (len + wcwidth))
+	    {
+	      tem_str->resize (tem_str->size () + wcwidth);
+	      dst = tem_str->data () + len;
+	    }
+	  else
+	    {
+	      /* We still need to check for the null-character, so we need
+		 somewhere to place the data read from the inferior.  We
+		 can't keep growing TEM_STR, it's gotten too big, so
+		 instead just read the new character into the start of
+		 TEMS_STR.  This will corrupt the previously read contents,
+		 but we're not going to print this string anyway, we just
+		 want to know how big it would have been so we can tell the
+		 user in the error message (see below).
+
+		 And we know there will be space in this buffer so long as
+		 WCWIDTH is smaller than our LONGEST type, the
+		 max-value-size can't be smaller than a LONGEST.  */
+	      dst = tem_str->data ();
+	    }
+	  read_memory (tem + len, dst, wcwidth);
+	  if (extract_unsigned_integer (dst, wcwidth, byte_order) == 0)
 	    break;
 	}
 
-      /* Copy the string contents into a string inside GDB.  */
-      gdb_byte *tem_str = (gdb_byte *) alloca (len + wcwidth);
+      if (exceeds_max_value_size (len + wcwidth))
+	error (_("printed string requires %s bytes, which is more than "
+		 "max-value-size"), plongest (len + wcwidth));
 
-      if (len != 0)
-	read_memory (tem, tem_str, len);
-      memset (&tem_str[len], 0, wcwidth);
-      str = tem_str;
+      str = tem_str->data ();
     }
 
   auto_obstack output;
@@ -2559,7 +2526,7 @@ printf_wide_c_string (struct ui_file *stream, const char *format,
 
   DIAGNOSTIC_PUSH
   DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-  fprintf_filtered (stream, format, obstack_base (&output));
+    gdb_printf (stream, format, obstack_base (&output));
   DIAGNOSTIC_POP
 }
 
@@ -2571,7 +2538,7 @@ printf_floating (struct ui_file *stream, const char *format,
 		 struct value *value, enum argclass argclass)
 {
   /* Parameter data.  */
-  struct type *param_type = value_type (value);
+  struct type *param_type = value->type ();
   struct gdbarch *gdbarch = param_type->arch ();
 
   /* Determine target type corresponding to the format string.  */
@@ -2620,16 +2587,17 @@ printf_floating (struct ui_file *stream, const char *format,
   if (fmt_type->code () == TYPE_CODE_FLT)
     {
       param_type = float_type_from_length (param_type);
-      if (param_type != value_type (value))
-	value = value_from_contents (param_type, value_contents (value));
+      if (param_type != value->type ())
+	value = value_from_contents (param_type,
+				     value->contents ().data ());
     }
 
   value = value_cast (fmt_type, value);
 
   /* Convert the value to a string and print it.  */
   std::string str
-    = target_float_to_string (value_contents (value), fmt_type, format);
-  fputs_filtered (str.c_str (), stream);
+    = target_float_to_string (value->contents ().data (), fmt_type, format);
+  gdb_puts (str.c_str (), stream);
 }
 
 /* Subroutine of ui_printf to simplify it.
@@ -2644,62 +2612,58 @@ printf_pointer (struct ui_file *stream, const char *format,
      modifier for %p is a width; extract that, and then
      handle %p as glibc would: %#x or a literal "(nil)".  */
 
-  const char *p;
-  char *fmt, *fmt_p;
 #ifdef PRINTF_HAS_LONG_LONG
   long long val = value_as_long (value);
 #else
   long val = value_as_long (value);
 #endif
 
-  fmt = (char *) alloca (strlen (format) + 5);
+  /* Build the new output format in FMT.  */
+  std::string fmt;
 
   /* Copy up to the leading %.  */
-  p = format;
-  fmt_p = fmt;
+  const char *p = format;
   while (*p)
     {
       int is_percent = (*p == '%');
 
-      *fmt_p++ = *p++;
+      fmt.push_back (*p++);
       if (is_percent)
 	{
 	  if (*p == '%')
-	    *fmt_p++ = *p++;
+	    fmt.push_back (*p++);
 	  else
 	    break;
 	}
     }
 
   if (val != 0)
-    *fmt_p++ = '#';
+    fmt.push_back ('#');
 
   /* Copy any width or flags.  Only the "-" flag is valid for pointers
      -- see the format_pieces constructor.  */
   while (*p == '-' || (*p >= '0' && *p < '9'))
-    *fmt_p++ = *p++;
+    fmt.push_back (*p++);
 
   gdb_assert (*p == 'p' && *(p + 1) == '\0');
   if (val != 0)
     {
 #ifdef PRINTF_HAS_LONG_LONG
-      *fmt_p++ = 'l';
+      fmt.push_back ('l');
 #endif
-      *fmt_p++ = 'l';
-      *fmt_p++ = 'x';
-      *fmt_p++ = '\0';
+      fmt.push_back ('l');
+      fmt.push_back ('x');
       DIAGNOSTIC_PUSH
       DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-      fprintf_filtered (stream, fmt, val);
+	gdb_printf (stream, fmt.c_str (), val);
       DIAGNOSTIC_POP
     }
   else
     {
-      *fmt_p++ = 's';
-      *fmt_p++ = '\0';
+      fmt.push_back ('s');
       DIAGNOSTIC_PUSH
       DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-      fprintf_filtered (stream, fmt, "(nil)");
+	gdb_printf (stream, fmt.c_str (), "(nil)");
       DIAGNOSTIC_POP
     }
 }
@@ -2721,7 +2685,7 @@ ui_printf (const char *arg, struct ui_file *stream)
   if (*s++ != '"')
     error (_("Bad format string, missing '\"'."));
 
-  format_pieces fpieces (&s);
+  format_pieces fpieces (&s, false, true);
 
   if (*s++ != '"')
     error (_("Bad format string, non-terminated '\"'."));
@@ -2778,32 +2742,32 @@ ui_printf (const char *arg, struct ui_file *stream)
 	    break;
 	  case wide_char_arg:
 	    {
-	      struct gdbarch *gdbarch = value_type (val_args[i])->arch ();
+	      struct gdbarch *gdbarch = val_args[i]->type ()->arch ();
 	      struct type *wctype = lookup_typename (current_language,
 						     "wchar_t", NULL, 0);
 	      struct type *valtype;
 	      const gdb_byte *bytes;
 
-	      valtype = value_type (val_args[i]);
-	      if (TYPE_LENGTH (valtype) != TYPE_LENGTH (wctype)
+	      valtype = val_args[i]->type ();
+	      if (valtype->length () != wctype->length ()
 		  || valtype->code () != TYPE_CODE_INT)
 		error (_("expected wchar_t argument for %%lc"));
 
-	      bytes = value_contents (val_args[i]);
+	      bytes = val_args[i]->contents ().data ();
 
 	      auto_obstack output;
 
 	      convert_between_encodings (target_wide_charset (gdbarch),
 					 host_charset (),
-					 bytes, TYPE_LENGTH (valtype),
-					 TYPE_LENGTH (valtype),
+					 bytes, valtype->length (),
+					 valtype->length (),
 					 &output, translit_char);
 	      obstack_grow_str0 (&output, "");
 
 	      DIAGNOSTIC_PUSH
 	      DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-	      fprintf_filtered (stream, current_substring,
-				obstack_base (&output));
+		gdb_printf (stream, current_substring,
+			    obstack_base (&output));
 	      DIAGNOSTIC_POP
 	    }
 	    break;
@@ -2814,7 +2778,7 @@ ui_printf (const char *arg, struct ui_file *stream)
 
 	      DIAGNOSTIC_PUSH
 	      DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-	      fprintf_filtered (stream, current_substring, val);
+		gdb_printf (stream, current_substring, val);
 	      DIAGNOSTIC_POP
 	      break;
 	    }
@@ -2827,7 +2791,7 @@ ui_printf (const char *arg, struct ui_file *stream)
 
 	      DIAGNOSTIC_PUSH
 	      DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-	      fprintf_filtered (stream, current_substring, val);
+		gdb_printf (stream, current_substring, val);
 	      DIAGNOSTIC_POP
 	      break;
 	    }
@@ -2837,7 +2801,7 @@ ui_printf (const char *arg, struct ui_file *stream)
 
 	      DIAGNOSTIC_PUSH
 	      DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-	      fprintf_filtered (stream, current_substring, val);
+		gdb_printf (stream, current_substring, val);
 	      DIAGNOSTIC_POP
 	      break;
 	    }
@@ -2847,7 +2811,7 @@ ui_printf (const char *arg, struct ui_file *stream)
 
 	      DIAGNOSTIC_PUSH
 	      DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-	      fprintf_filtered (stream, current_substring, val);
+		gdb_printf (stream, current_substring, val);
 	      DIAGNOSTIC_POP
 	      break;
 	    }
@@ -2863,23 +2827,50 @@ ui_printf (const char *arg, struct ui_file *stream)
 	  case ptr_arg:
 	    printf_pointer (stream, current_substring, val_args[i]);
 	    break;
+	  case value_arg:
+	    {
+	      value_print_options print_opts;
+	      get_user_print_options (&print_opts);
+
+	      if (current_substring[2] == '[')
+		{
+		  std::string args (&current_substring[3],
+				    strlen (&current_substring[3]) - 1);
+
+		  const char *args_ptr = args.c_str ();
+
+		  /* Override global settings with explicit options, if
+		     any.  */
+		  auto group
+		    = make_value_print_options_def_group (&print_opts);
+		  gdb::option::process_options
+		    (&args_ptr, gdb::option::PROCESS_OPTIONS_UNKNOWN_IS_ERROR,
+		     group);
+
+		  if (*args_ptr != '\0')
+		    error (_("unexpected content in print options: %s"),
+			     args_ptr);
+		}
+
+	      print_formatted (val_args[i], 0, &print_opts, stream);
+	    }
+	    break;
 	  case literal_piece:
 	    /* Print a portion of the format string that has no
 	       directives.  Note that this will not include any
 	       ordinary %-specs, but it might include "%%".  That is
-	       why we use printf_filtered and not puts_filtered here.
+	       why we use gdb_printf and not gdb_puts here.
 	       Also, we pass a dummy argument because some platforms
 	       have modified GCC to include -Wformat-security by
 	       default, which will warn here if there is no
 	       argument.  */
 	    DIAGNOSTIC_PUSH
 	    DIAGNOSTIC_IGNORE_FORMAT_NONLITERAL
-	    fprintf_filtered (stream, current_substring, 0);
+	      gdb_printf (stream, current_substring, 0);
 	    DIAGNOSTIC_POP
 	    break;
 	  default:
-	    internal_error (__FILE__, __LINE__,
-			    _("failed internal consistency check"));
+	    internal_error (_("failed internal consistency check"));
 	  }
 	/* Maybe advance to the next argument.  */
 	if (piece.argclass != literal_piece)
@@ -2894,8 +2885,8 @@ static void
 printf_command (const char *arg, int from_tty)
 {
   ui_printf (arg, gdb_stdout);
-  reset_terminal_style (gdb_stdout);
-  wrap_here ("");
+  gdb_stdout->reset_style ();
+  gdb_stdout->wrap_here (0);
   gdb_stdout->flush ();
 }
 
@@ -2919,7 +2910,7 @@ static void
 show_addr_not_tagged (CORE_ADDR address)
 {
   error (_("Address %s not in a region mapped with a memory tagging flag."),
-	 paddress (target_gdbarch (), address));
+	 paddress (current_inferior ()->arch (), address));
 }
 
 /* Convenience function for error checking in memory-tag commands.  */
@@ -2952,23 +2943,24 @@ memory_tag_print_tag_command (const char *args, enum memtag_type tag_type)
   value_print_options print_opts;
 
   struct value *val = process_print_command_args (args, &print_opts, true);
+  gdbarch *arch = current_inferior ()->arch ();
 
   /* If the address is not in a region memory mapped with a memory tagging
      flag, it is no use trying to access/manipulate its allocation tag.
 
      It is OK to manipulate the logical tag though.  */
+  CORE_ADDR addr = value_as_address (val);
   if (tag_type == memtag_type::allocation
-      && !gdbarch_tagged_address_p (target_gdbarch (), val))
-    show_addr_not_tagged (value_as_address (val));
+      && !target_is_address_tagged (arch, addr))
+    show_addr_not_tagged (addr);
 
-  struct value *tag_value
-    = gdbarch_get_memtag (target_gdbarch (), val, tag_type);
-  std::string tag = gdbarch_memtag_to_string (target_gdbarch (), tag_value);
+  value *tag_value = gdbarch_get_memtag (arch, val, tag_type);
+  std::string tag = gdbarch_memtag_to_string (arch, tag_value);
 
   if (tag.empty ())
-    printf_filtered (_("%s tag unavailable.\n"),
-		     tag_type
-		       == memtag_type::logical? "Logical" : "Allocation");
+    gdb_printf (_("%s tag unavailable.\n"),
+		tag_type
+		== memtag_type::logical? "Logical" : "Allocation");
 
   struct value *v_tag = process_print_command_args (tag.c_str (),
 						    &print_opts,
@@ -3041,6 +3033,7 @@ memory_tag_with_logical_tag_command (const char *args, int from_tty)
   gdb::byte_vector tags;
   struct value *val;
   value_print_options print_opts;
+  gdbarch *arch = current_inferior ()->arch ();
 
   /* Parse the input.  */
   parse_with_logical_tag_input (args, &val, tags, &print_opts);
@@ -3058,13 +3051,12 @@ memory_tag_with_logical_tag_command (const char *args, int from_tty)
      length.  */
 
   /* Cast to (void *).  */
-  val = value_cast (builtin_type (target_gdbarch ())->builtin_data_ptr,
+  val = value_cast (builtin_type (current_inferior ()->arch ())->builtin_data_ptr,
 		    val);
 
   /* Length doesn't matter for a logical tag.  Pass 0.  */
-  if (!gdbarch_set_memtags (target_gdbarch (), val, 0, tags,
-			    memtag_type::logical))
-    printf_filtered (_("Could not update the logical tag data.\n"));
+  if (!gdbarch_set_memtags (arch, val, 0, tags,  memtag_type::logical))
+    gdb_printf (_("Could not update the logical tag data.\n"));
   else
     {
       /* Always print it in hex format.  */
@@ -3113,11 +3105,6 @@ parse_set_allocation_tag_input (const char *args, struct value **val,
     error (_("Error parsing tags argument. Tags should be 2 digits per byte."));
 
   tags = hex2bin (tags_string.c_str ());
-
-  /* If the address is not in a region memory mapped with a memory tagging
-     flag, it is no use trying to access/manipulate its allocation tag.  */
-  if (!gdbarch_tagged_address_p (target_gdbarch (), *val))
-    show_addr_not_tagged (value_as_address (*val));
 }
 
 /* Implement the "memory-tag set-allocation-tag" command.
@@ -3139,11 +3126,17 @@ memory_tag_set_allocation_tag_command (const char *args, int from_tty)
   /* Parse the input.  */
   parse_set_allocation_tag_input (args, &val, &length, tags);
 
-  if (!gdbarch_set_memtags (target_gdbarch (), val, length, tags,
+  /* If the address is not in a region memory-mapped with a memory tagging
+     flag, it is no use trying to manipulate its allocation tag.  */
+  CORE_ADDR addr = value_as_address (val);
+  if (!target_is_address_tagged (current_inferior ()-> arch(), addr))
+    show_addr_not_tagged (addr);
+
+  if (!gdbarch_set_memtags (current_inferior ()->arch (), val, length, tags,
 			    memtag_type::allocation))
-    printf_filtered (_("Could not update the allocation tag(s).\n"));
+    gdb_printf (_("Could not update the allocation tag(s).\n"));
   else
-    printf_filtered (_("Allocation tag(s) updated successfully.\n"));
+    gdb_printf (_("Allocation tag(s) updated successfully.\n"));
 }
 
 /* Implement the "memory-tag check" command.  */
@@ -3155,48 +3148,46 @@ memory_tag_check_command (const char *args, int from_tty)
     show_memory_tagging_unsupported ();
 
   if (args == nullptr)
-    error (_("Argument required (address or pointer)"));
+    error_no_arg (_("address or pointer"));
 
   /* Parse the expression into a value.  If the value is an address or
      pointer, then check its logical tag against the allocation tag.  */
   value_print_options print_opts;
 
   struct value *val = process_print_command_args (args, &print_opts, true);
-
-  /* If the address is not in a region memory mapped with a memory tagging
-     flag, it is no use trying to access/manipulate its allocation tag.  */
-  if (!gdbarch_tagged_address_p (target_gdbarch (), val))
-    show_addr_not_tagged (value_as_address (val));
+  gdbarch *arch = current_inferior ()->arch ();
 
   CORE_ADDR addr = value_as_address (val);
 
+  /* If the address is not in a region memory mapped with a memory tagging
+     flag, it is no use trying to access/manipulate its allocation tag.  */
+  if (!target_is_address_tagged (arch, addr))
+    show_addr_not_tagged (addr);
+
   /* Check if the tag is valid.  */
-  if (!gdbarch_memtag_matches_p (target_gdbarch (), val))
+  if (!gdbarch_memtag_matches_p (arch, val))
     {
-      struct value *tag
-	= gdbarch_get_memtag (target_gdbarch (), val, memtag_type::logical);
-      std::string ltag
-	= gdbarch_memtag_to_string (target_gdbarch (), tag);
+      value *tag = gdbarch_get_memtag (arch, val, memtag_type::logical);
+      std::string ltag = gdbarch_memtag_to_string (arch, tag);
 
-      tag = gdbarch_get_memtag (target_gdbarch (), val,
-				memtag_type::allocation);
-      std::string atag
-	= gdbarch_memtag_to_string (target_gdbarch (), tag);
+      tag = gdbarch_get_memtag (arch, val, memtag_type::allocation);
+      std::string atag = gdbarch_memtag_to_string (arch, tag);
 
-      printf_filtered (_("Logical tag (%s) does not match"
-			 " the allocation tag (%s) for address %s.\n"),
-		       ltag.c_str (), atag.c_str (),
-		       paddress (target_gdbarch (), addr));
+      gdb_printf (_("Logical tag (%s) does not match"
+		    " the allocation tag (%s) for address %s.\n"),
+		  ltag.c_str (), atag.c_str (),
+		  paddress (current_inferior ()->arch (), addr));
     }
   else
     {
       struct value *tag
-	= gdbarch_get_memtag (target_gdbarch (), val, memtag_type::logical);
+	= gdbarch_get_memtag (current_inferior ()->arch (), val,
+			      memtag_type::logical);
       std::string ltag
-	= gdbarch_memtag_to_string (target_gdbarch (), tag);
+	= gdbarch_memtag_to_string (current_inferior ()->arch (), tag);
 
-      printf_filtered (_("Memory tags for address %s match (%s).\n"),
-		       paddress (target_gdbarch (), addr), ltag.c_str ());
+      gdb_printf (_("Memory tags for address %s match (%s).\n"),
+		  paddress (current_inferior ()->arch (), addr), ltag.c_str ());
     }
 }
 
@@ -3304,18 +3295,6 @@ Use \"set variable\" for variables with names identical to set subcommands.\n\
 With a subcommand, this command modifies parts of the gdb environment.\n\
 You can see these environment settings with the \"show\" command."),
 		  &setlist, 1, &cmdlist);
-  if (dbx_commands)
-    add_com ("assign", class_vars, set_command, _("\
-Evaluate expression EXP and assign result to variable VAR.\n\
-Usage: assign VAR = EXP\n\
-This uses assignment syntax appropriate for the current language\n\
-(VAR = EXP or VAR := EXP for example).\n\
-VAR may be a debugger \"convenience\" variable (names starting\n\
-with $), a register (a few standard names starting with $), or an actual\n\
-variable in the program being debugged.  EXP is any valid expression.\n\
-Use \"set variable\" for variables with names identical to set subcommands.\n\
-\nWith a subcommand, this command modifies parts of the gdb environment.\n\
-You can see these environment settings with the \"show\" command."));
 
   /* "call" is the same as "set", but handy for dbx users to call fns.  */
   c = add_com ("call", class_vars, call_command, _("\

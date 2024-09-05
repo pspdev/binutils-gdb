@@ -10,6 +10,9 @@
 /peigen.c
 /pepigen.c
 /pex64igen.c
+/pe-aarch64igen.c
+/pe-loongarch64igen.c
+/pe-riscv64igen.c
 /stmp-bfd-h
 /targmatch.h
 
@@ -23,12 +26,11 @@
 /doc/cache.texi
 /doc/chew
 /doc/coffcode.texi
-/doc/core.texi
+/doc/corefile.texi
 /doc/elf.texi
 /doc/elfcode.texi
 /doc/format.texi
 /doc/hash.texi
-/doc/init.texi
 /doc/libbfd.texi
 /doc/linker.texi
 /doc/mmo.texi

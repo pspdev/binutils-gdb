@@ -1,4 +1,4 @@
-# Copyright 2003-2021 Free Software Foundation, Inc.
+# Copyright 2003-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,11 +21,7 @@
 # This file uses e500-abi.c for input.
 #
 
-
-if ![istarget "powerpc-*eabispe"] then {
-    verbose "Skipping e500 abi tests."
-    return
-}
+require {istarget "powerpc-*eabispe"}
 
 set testfile "e500-abi"
 set binfile ${objdir}/${subdir}/${testfile}
@@ -45,8 +41,7 @@ gdb_load ${binfile}
 # Run to `main' where we begin our tests.
 #
 
-if ![runto_main] then {
-    fail "can't run to main"
+if {![runto_main]} {
     return 0
 }
 

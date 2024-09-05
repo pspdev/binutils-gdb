@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#include "../lib/unbuffer_output.c"
+#include "unbuffer_output.c"
 
 int find_max1(int, ...);
 int find_max2(int, int, ...);
@@ -44,6 +44,16 @@ long double _Complex ldc1 = 1.0L + 1.0Li;
 long double _Complex ldc2 = 2.0L + 2.0Li;
 long double _Complex ldc3 = 3.0L + 3.0Li;
 long double _Complex ldc4 = 4.0L + 4.0Li;
+
+struct sldc
+{
+  long double _Complex ldc;
+};
+
+struct sldc sldc1 = { 1.0L + 1.0Li };
+struct sldc sldc2 = { 2.0L + 2.0Li };
+struct sldc sldc3 = { 3.0L + 3.0Li };
+struct sldc sldc4 = { 4.0L + 4.0Li };
 
 #endif
 
@@ -200,5 +210,23 @@ find_max_long_double_real (int num_vals, ...)
   return max;
 }
 
+
+long double _Complex
+find_max_struct_long_double_real (int num_vals, ...)
+{
+  long double _Complex max = 0.0L + 0.0iL;
+  struct sldc x;
+  va_list argp;
+  int i;
+
+  va_start(argp, num_vals);
+  for (i = 0; i < num_vals; i++)
+    {
+      x = va_arg (argp, struct sldc);
+      if (creall (max) < creal (x.ldc)) max = x.ldc;
+    }
+
+  return max;
+}
 
 #endif /* TEST_COMPLEX */

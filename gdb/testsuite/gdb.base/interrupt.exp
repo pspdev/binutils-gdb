@@ -1,4 +1,4 @@
-# Copyright 1994-2021 Free Software Foundation, Inc.
+# Copyright 1994-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,19 +13,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if [target_info exists gdb,nointerrupts] {
-    verbose "Skipping interrupt.exp because of nointerrupts."
-    continue
-}
+require {!target_info exists gdb,nointerrupts}
 
-if [target_info exists gdb,noinferiorio] {
-    verbose "Skipping interrupt.exp because of noinferiorio."
-    return
-}
+require {!target_info exists gdb,noinferiorio}
 
 standard_testfile
 
-set options { debug }
+set options {}
+lappend options debug
+lappend_include_file options $srcdir/lib/unbuffer_output.c
+
 if { ! [target_info exists gdb,nosignals] } {
     lappend options "additional_flags=-DSIGNALS"
 }
@@ -38,16 +35,15 @@ if {[build_executable $testfile.exp $testfile $srcfile $options] == -1} {
 gdb_start
 
 
-if ![file exists $binfile] then {
-    perror "$binfile does not exist."
+if {![file exists $binfile]} {
     return 0
 } else {
     gdb_reinitialize_dir $srcdir/$subdir
     gdb_load $binfile
     # Hope this is unix :-)
     gdb_test "shell stty intr '^C'" ".*" \
-	"set interrupt character in interrupt.exp"
-    if [runto_main] then {
+	"set interrupt character"
+    if {[runto_main]} {
 	global inferior_spawn_id gdb_spawn_id
 
 	set msg "process is alive"
@@ -226,4 +222,3 @@ if ![file exists $binfile] then {
 	gdb_assert { $saw_end_of_file && $saw_inferior_exit } $msg
     }
 }
-return 0

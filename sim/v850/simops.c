@@ -3,7 +3,7 @@
 
 #include "sim-main.h"
 #include "sim-signal.h"
-#include "v850_sim.h"
+#include "v850-sim.h"
 #include "simops.h"
 
 #include <sys/types.h>
@@ -12,13 +12,9 @@
 #include <utime.h>
 #endif
 #include <time.h>
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
-#endif
 #include <stdlib.h>
 #include <string.h>
-
-#include "targ-vals.h"
 
 #include "libiberty.h"
 
@@ -28,6 +24,8 @@
 #include <sys/times.h>
 #include <sys/time.h>
 #endif
+
+#include "target-newlib-syscall.h"
 
 /* This is an array of the bit positions of registers r20 .. r31 in
    that order in a prepare/dispose instruction.  */
@@ -39,7 +37,7 @@ int type2_regs[16] = { 3, 2, 1, 0, 27, 26, 25, 24, 31, 30, 29, 28, 23, 22, 20, 2
    that order in a push/pop instruction.  */
 int type3_regs[15] = { 2, 1, 0, 27, 26, 25, 24, 31, 30, 29, 28, 23, 22, 20, 21};
 
-#ifdef DEBUG
+#if WITH_TRACE_ANY_P
 #ifndef SIZE_INSTRUCTION
 #define SIZE_INSTRUCTION 18
 #endif
@@ -48,10 +46,13 @@ int type3_regs[15] = { 2, 1, 0, 27, 26, 25, 24, 31, 30, 29, 28, 23, 22, 20, 21};
 #define SIZE_VALUES 11
 #endif
 
+/* TODO: This file largely assumes a single CPU.  */
+#define CPU STATE_CPU (sd, 0)
 
-unsigned32   trace_values[3];
+
+uint32_t   trace_values[3];
 int          trace_num_values;
-unsigned32   trace_pc;
+uint32_t   trace_pc;
 const char * trace_name;
 int          trace_module;
 
@@ -190,7 +191,7 @@ trace_input (char *name, enum op_types type, int size)
 }
 
 void
-trace_result (int has_result, unsigned32 result)
+trace_result (int has_result, uint32_t result)
 {
   char buf[1000];
   char *chp;
@@ -339,10 +340,10 @@ Multiply64 (int sign, unsigned long op0)
 	  
       sign = (op0 ^ op1) & 0x80000000;
 	  
-      if (((signed long) op0) < 0)
+      if (op0 & 0x80000000)
 	op0 = - op0;
 	  
-      if (((signed long) op1) < 0)
+      if (op1 & 0x80000000)
 	op1 = - op1;
     }
       
@@ -398,7 +399,7 @@ fetch_str (SIM_DESC sd, address_word addr)
     nr++;
 
   buf = NZALLOC (char, nr + 1);
-  sim_read (simulator, addr, (unsigned char *) buf, nr);
+  sim_read (simulator, addr, buf, nr);
 
   return buf;
 }
@@ -415,7 +416,7 @@ fetch_argv (SIM_DESC sd, address_word addr)
 
   while (1)
     {
-      unsigned32 a = sim_core_read_4 (STATE_CPU (sd, 0),
+      uint32_t a = sim_core_read_4 (STATE_CPU (sd, 0),
 				      PC, read_map, addr + nr * 4);
       if (a == 0) break;
       buf[nr] = fetch_str (sd, a);
@@ -1626,17 +1627,14 @@ OP_10007E0 (void)
 	{
 
 #ifdef HAVE_FORK
-#ifdef TARGET_SYS_fork
-	case TARGET_SYS_fork:
+	case TARGET_NEWLIB_V850_SYS_fork:
 	  RETVAL = fork ();
 	  RETERR = errno;
 	  break;
 #endif
-#endif
 
 #ifdef HAVE_EXECVE
-#ifdef TARGET_SYS_execv
-	case TARGET_SYS_execve:
+	case TARGET_NEWLIB_V850_SYS_execve:
 	  {
 	    char *path = fetch_str (simulator, PARM1);
 	    char **argv = fetch_argv (simulator, PARM2);
@@ -1649,11 +1647,9 @@ OP_10007E0 (void)
 	    break;
 	  }
 #endif
-#endif
 
 #if HAVE_EXECV
-#ifdef TARGET_SYS_execv
-	case TARGET_SYS_execv:
+	case TARGET_NEWLIB_V850_SYS_execv:
 	  {
 	    char *path = fetch_str (simulator, PARM1);
 	    char **argv = fetch_argv (simulator, PARM2);
@@ -1664,11 +1660,9 @@ OP_10007E0 (void)
 	    break;
 	  }
 #endif
-#endif
 
 #if 0
-#ifdef TARGET_SYS_pipe
-	case TARGET_SYS_pipe:
+	case TARGET_NEWLIB_V850_SYS_pipe:
 	  {
 	    reg_t buf;
 	    int host_fd[2];
@@ -1676,17 +1670,15 @@ OP_10007E0 (void)
 	    buf = PARM1;
 	    RETVAL = pipe (host_fd);
 	    SW (buf, host_fd[0]);
-	    buf += sizeof (uint16);
+	    buf += sizeof (uint16_t);
 	    SW (buf, host_fd[1]);
 	    RETERR = errno;
 	  }
 	  break;
 #endif
-#endif
 
 #if 0
-#ifdef TARGET_SYS_wait
-	case TARGET_SYS_wait:
+	case TARGET_NEWLIB_V850_SYS_wait:
 	  {
 	    int status;
 
@@ -1696,26 +1688,22 @@ OP_10007E0 (void)
 	  }
 	  break;
 #endif
-#endif
 
-#ifdef TARGET_SYS_read
-	case TARGET_SYS_read:
+	case TARGET_NEWLIB_V850_SYS_read:
 	  {
 	    char *buf = zalloc (PARM3);
 	    RETVAL = sim_io_read (simulator, PARM1, buf, PARM3);
-	    sim_write (simulator, PARM2, (unsigned char *) buf, PARM3);
+	    sim_write (simulator, PARM2, buf, PARM3);
 	    free (buf);
 	    if ((int) RETVAL < 0)
 	      RETERR = sim_io_get_errno (simulator);
 	    break;
 	  }
-#endif
 
-#ifdef TARGET_SYS_write
-	case TARGET_SYS_write:
+	case TARGET_NEWLIB_V850_SYS_write:
 	  {
 	    char *buf = zalloc (PARM3);
-	    sim_read (simulator, PARM2, (unsigned char *) buf, PARM3);
+	    sim_read (simulator, PARM2, buf, PARM3);
 	    if (PARM1 == 1)
 	      RETVAL = sim_io_write_stdout (simulator, buf, PARM3);
 	    else
@@ -1725,26 +1713,20 @@ OP_10007E0 (void)
 	      RETERR = sim_io_get_errno (simulator);
 	    break;
 	  }
-#endif
 
-#ifdef TARGET_SYS_lseek
-	case TARGET_SYS_lseek:
+	case TARGET_NEWLIB_V850_SYS_lseek:
 	  RETVAL = sim_io_lseek (simulator, PARM1, PARM2, PARM3);
 	  if ((int) RETVAL < 0)
 	    RETERR = sim_io_get_errno (simulator);
 	  break;
-#endif
 
-#ifdef TARGET_SYS_close
-	case TARGET_SYS_close:
+	case TARGET_NEWLIB_V850_SYS_close:
 	  RETVAL = sim_io_close (simulator, PARM1);
 	  if ((int) RETVAL < 0)
 	    RETERR = sim_io_get_errno (simulator);
 	  break;
-#endif
 
-#ifdef TARGET_SYS_open
-	case TARGET_SYS_open:
+	case TARGET_NEWLIB_V850_SYS_open:
 	  {
 	    char *buf = fetch_str (simulator, PARM1);
 	    RETVAL = sim_io_open (simulator, buf, PARM2);
@@ -1753,10 +1735,8 @@ OP_10007E0 (void)
 	      RETERR = sim_io_get_errno (simulator);
 	    break;
 	  }
-#endif
 
-#ifdef TARGET_SYS_exit
-	case TARGET_SYS_exit:
+	case TARGET_NEWLIB_V850_SYS_exit:
 	  if ((PARM1 & 0xffff0000) == 0xdead0000 && (PARM1 & 0xffff) != 0)
 	    /* get signal encoded by kill */
 	    sim_engine_halt (simulator, STATE_CPU (simulator, 0), NULL, PC,
@@ -1770,10 +1750,8 @@ OP_10007E0 (void)
 	    sim_engine_halt (simulator, STATE_CPU (simulator, 0), NULL, PC,
 			     sim_exited, PARM1);
 	  break;
-#endif
 
-#ifdef TARGET_SYS_stat
-	case TARGET_SYS_stat:	/* added at hmsi */
+	case TARGET_NEWLIB_V850_SYS_stat:	/* added at hmsi */
 	  /* stat system call */
 	  {
 	    struct stat host_stat;
@@ -1802,10 +1780,8 @@ OP_10007E0 (void)
 	      RETERR = sim_io_get_errno (simulator);
 	  }
 	  break;
-#endif
 
-#ifdef TARGET_SYS_fstat
-	case TARGET_SYS_fstat:
+	case TARGET_NEWLIB_V850_SYS_fstat:
 	  /* fstat system call */
 	  {
 	    struct stat host_stat;
@@ -1832,10 +1808,8 @@ OP_10007E0 (void)
 	      RETERR = sim_io_get_errno (simulator);
 	  }
 	  break;
-#endif
 
-#ifdef TARGET_SYS_rename
-	case TARGET_SYS_rename:
+	case TARGET_NEWLIB_V850_SYS_rename:
 	  {
 	    char *oldpath = fetch_str (simulator, PARM1);
 	    char *newpath = fetch_str (simulator, PARM2);
@@ -1846,10 +1820,8 @@ OP_10007E0 (void)
 	      RETERR = sim_io_get_errno (simulator);
 	  }
 	  break;
-#endif
 
-#ifdef TARGET_SYS_unlink
-	case TARGET_SYS_unlink:
+	case TARGET_NEWLIB_V850_SYS_unlink:
 	  {
 	    char *path = fetch_str (simulator, PARM1);
 	    RETVAL = sim_io_unlink (simulator, path);
@@ -1858,10 +1830,8 @@ OP_10007E0 (void)
 	      RETERR = sim_io_get_errno (simulator);
 	  }
 	  break;
-#endif
 
-#ifdef TARGET_SYS_chown
-	case TARGET_SYS_chown:
+	case TARGET_NEWLIB_V850_SYS_chown:
 	  {
 	    char *path = fetch_str (simulator, PARM1);
 	    RETVAL = chown (path, PARM2, PARM3);
@@ -1869,11 +1839,9 @@ OP_10007E0 (void)
 	    RETERR = errno;
 	  }
 	  break;
-#endif
 
 #if HAVE_CHMOD
-#ifdef TARGET_SYS_chmod
-	case TARGET_SYS_chmod:
+	case TARGET_NEWLIB_V850_SYS_chmod:
 	  {
 	    char *path = fetch_str (simulator, PARM1);
 	    RETVAL = chmod (path, PARM2);
@@ -1882,11 +1850,9 @@ OP_10007E0 (void)
 	  }
 	  break;
 #endif
-#endif
 
-#ifdef TARGET_SYS_time
 #if HAVE_TIME
-	case TARGET_SYS_time:
+	case TARGET_NEWLIB_V850_SYS_time:
 	  {
 	    time_t now;
 	    RETVAL = time (&now);
@@ -1895,11 +1861,9 @@ OP_10007E0 (void)
 	  }
 	  break;
 #endif
-#endif
 
 #if !defined(__GO32__) && !defined(_WIN32)
-#ifdef TARGET_SYS_times
-	case TARGET_SYS_times:
+	case TARGET_NEWLIB_V850_SYS_times:
 	  {
 	    struct tms tms;
 	    RETVAL = times (&tms);
@@ -1911,11 +1875,9 @@ OP_10007E0 (void)
 	    break;
 	  }
 #endif
-#endif
 
-#ifdef TARGET_SYS_gettimeofday
 #if !defined(__GO32__) && !defined(_WIN32)
-	case TARGET_SYS_gettimeofday:
+	case TARGET_NEWLIB_V850_SYS_gettimeofday:
 	  {
 	    struct timeval t;
 	    struct timezone tz;
@@ -1928,11 +1890,9 @@ OP_10007E0 (void)
 	    break;
 	  }
 #endif
-#endif
 
-#ifdef TARGET_SYS_utime
 #if HAVE_UTIME
-	case TARGET_SYS_utime:
+	case TARGET_NEWLIB_V850_SYS_utime:
 	  {
 	    /* Cast the second argument to void *, to avoid type mismatch
 	       if a prototype is present.  */
@@ -1940,7 +1900,6 @@ OP_10007E0 (void)
 	    /* RETVAL = utime (path, (void *) MEMPTR (PARM2)); */
 	  }
 	  break;
-#endif
 #endif
 
 	default:
@@ -2059,8 +2018,8 @@ divun
   unsigned int       N,
   unsigned long int  als,
   unsigned long int  sfi,
-  unsigned32 /*unsigned long int*/ *  quotient_ptr,
-  unsigned32 /*unsigned long int*/ *  remainder_ptr,
+  uint32_t /*unsigned long int*/ *  quotient_ptr,
+  uint32_t /*unsigned long int*/ *  remainder_ptr,
   int *          overflow_ptr
 )
 {
@@ -2133,8 +2092,8 @@ divn
   unsigned int       N,
   unsigned long int  als,
   unsigned long int  sfi,
-  signed32 /*signed long int*/ *  quotient_ptr,
-  signed32 /*signed long int*/ *  remainder_ptr,
+  int32_t /*signed long int*/ *  quotient_ptr,
+  int32_t /*signed long int*/ *  remainder_ptr,
   int *          overflow_ptr
 )
 {
@@ -2147,7 +2106,6 @@ divn
   unsigned int    DBZ = als == 0 ? 1 : 0;
   unsigned int    Q   = ~(SS ^ SD) & 1;
   unsigned int    C;
-  unsigned int    S;
   unsigned int    i;
   unsigned long   alt = Q ? ~als : als;
 
@@ -2159,7 +2117,7 @@ divn
 	 | (((alt >> 31) ^ (ald >> 31)) & (~alo >> 31)));
   Q   = C ^ SS;
   R1  = (alo == 0) ? 0 : (R1 & (Q ^ (SS ^ SD)));
-  S   = alo >> 31;
+  /* S   = alo >> 31; */
   sfi = (sfi << (32-N+1)) | Q;
   ald = (alo << 1) | (sfi >> 31);
   if ((alo >> 31) ^ (ald >> 31))
@@ -2177,7 +2135,7 @@ divn
 	     | (((alt >> 31) ^ (ald >> 31)) & (~alo >> 31)));
       Q   = C ^ SS;
       R1  = (alo == 0) ? 0 : (R1 & (Q ^ (SS ^ SD)));
-      S   = alo >> 31;
+      /* S   = alo >> 31; */
       sfi = (sfi << 1) | Q;
       ald = (alo << 1) | (sfi >> 31);
       if ((alo >> 31) ^ (ald >> 31))
@@ -2230,8 +2188,8 @@ divn
 int
 OP_1C207E0 (void)
 {
-  unsigned32 /*unsigned long int*/  quotient;
-  unsigned32 /*unsigned long int*/  remainder;
+  uint32_t /*unsigned long int*/  quotient;
+  uint32_t /*unsigned long int*/  remainder;
   unsigned long int  divide_by;
   unsigned long int  divide_this;
   int            overflow = 0;
@@ -2265,8 +2223,8 @@ OP_1C207E0 (void)
 int
 OP_1C007E0 (void)
 {
-  signed32 /*signed long int*/  quotient;
-  signed32 /*signed long int*/  remainder;
+  int32_t /*signed long int*/  quotient;
+  int32_t /*signed long int*/  remainder;
   signed long int  divide_by;
   signed long int  divide_this;
   int          overflow = 0;
@@ -2276,8 +2234,8 @@ OP_1C007E0 (void)
 
   imm5 = 32 - ((OP[3] & 0x3c0000) >> 17);
 
-  divide_by   = (signed32) State.regs[ OP[0] ];
-  divide_this = (signed32) (State.regs[ OP[1] ] << imm5);
+  divide_by   = (int32_t) State.regs[ OP[0] ];
+  divide_this = (int32_t) (State.regs[ OP[1] ] << imm5);
 
   divn (imm5, divide_by, divide_this, & quotient, & remainder, & overflow);
   
@@ -2300,8 +2258,8 @@ OP_1C007E0 (void)
 int
 OP_18207E0 (void)
 {
-  unsigned32 /*unsigned long int*/  quotient;
-  unsigned32 /*unsigned long int*/  remainder;
+  uint32_t /*unsigned long int*/  quotient;
+  uint32_t /*unsigned long int*/  remainder;
   unsigned long int  divide_by;
   unsigned long int  divide_this;
   int            overflow = 0;
@@ -2335,8 +2293,8 @@ OP_18207E0 (void)
 int
 OP_18007E0 (void)
 {
-  signed32 /*signed long int*/  quotient;
-  signed32 /*signed long int*/  remainder;
+  int32_t /*signed long int*/  quotient;
+  int32_t /*signed long int*/  remainder;
   signed long int  divide_by;
   signed long int  divide_this;
   int          overflow = 0;
@@ -2347,7 +2305,7 @@ OP_18007E0 (void)
   imm5 = 32 - ((OP[3] & 0x3c0000) >> 17);
 
   divide_by   = EXTEND16 (State.regs[ OP[0] ]);
-  divide_this = (signed32) (State.regs[ OP[1] ] << imm5);
+  divide_this = (int32_t) (State.regs[ OP[1] ] << imm5);
 
   divn (imm5, divide_by, divide_this, & quotient, & remainder, & overflow);
   
@@ -2418,7 +2376,7 @@ OP_2C007E0 (void)
   
   /* Compute the result.  */
   
-  divide_by   = (signed32) State.regs[ OP[0] ];
+  divide_by   = (int32_t) State.regs[ OP[0] ];
   divide_this = State.regs[ OP[1] ];
   
   if (divide_by == 0)
@@ -2434,7 +2392,7 @@ OP_2C007E0 (void)
     }
   else
     {
-      divide_this = (signed32) divide_this;
+      divide_this = (int32_t) divide_this;
       State.regs[ OP[1]       ] = quotient  = divide_this / divide_by;
       State.regs[ OP[2] >> 11 ] = remainder = divide_this % divide_by;
  
@@ -2497,7 +2455,6 @@ OP_28007E0 (void)
   signed long int remainder;
   signed long int divide_by;
   signed long int divide_this;
-  int         overflow = 0;
   
   trace_input ("divh", OP_REG_REG_REG, 0);
   
@@ -2519,7 +2476,7 @@ OP_28007E0 (void)
     }
   else
     {
-      divide_this = (signed32) divide_this;
+      divide_this = (int32_t) divide_this;
       State.regs[ OP[1]       ] = quotient  = divide_this / divide_by;
       State.regs[ OP[2] >> 11 ] = remainder = divide_this % divide_by;
   
@@ -3075,7 +3032,7 @@ v850_float_compare (SIM_DESC sd, int cmp, sim_fpu wop1, sim_fpu wop2, int double
     }
   else
     {
-      int gt = 0,lt = 0,eq = 0, status;
+      int lt = 0, eq = 0, status;
 
       status = sim_fpu_cmp (&wop1, &wop2);
 
@@ -3090,19 +3047,19 @@ v850_float_compare (SIM_DESC sd, int cmp, sim_fpu wop1, sim_fpu wop2, int double
 	  lt = 1;
 	  break;
 	case SIM_FPU_IS_PINF:
-	  gt = 1;
+	  /* gt = 1; */
 	  break;
 	case SIM_FPU_IS_NNUMBER:
 	  lt = 1;
 	  break;
 	case SIM_FPU_IS_PNUMBER:
-	  gt = 1;
+	  /* gt = 1; */
 	  break;
 	case SIM_FPU_IS_NDENORM:
 	  lt = 1;
 	  break;
 	case SIM_FPU_IS_PDENORM:
-	  gt = 1;
+	  /* gt = 1; */
 	  break;
 	case SIM_FPU_IS_NZERO:
 	case SIM_FPU_IS_PZERO:
@@ -3177,8 +3134,8 @@ v850_div (SIM_DESC sd, unsigned int op0, unsigned int op1, unsigned int *op2p, u
   bfd_boolean     overflow = FALSE;
   
   /* Compute the result.  */
-  divide_by   = op0;
-  divide_this = op1;
+  divide_by   = (int32_t)op0;
+  divide_this = (int32_t)op1;
 
   if (divide_by == 0 || (divide_by == -1 && divide_this == (1 << 31)))
     {
@@ -3309,7 +3266,14 @@ v850_bins (SIM_DESC sd, unsigned int source, unsigned int lsb, unsigned int msb,
   pos = lsb;
   width = (msb - lsb) + 1;
 
-  mask = ~ (-(1 << width));
+  /* A width of 32 exhibits undefined behavior on the shift.  The easiest
+     way to make this code safe is to just avoid that case and set the mask
+     to the right value.  */
+  if (width >= 32)
+    mask = 0xffffffff;
+  else
+    mask = ~ (-(1 << width));
+
   source &= mask;
   mask <<= pos;
   result = (* dest) & ~ mask;
@@ -3420,12 +3384,12 @@ v850_satsub (SIM_DESC sd, unsigned int op0, unsigned int op1, unsigned int *op2p
   *op2p = result;
 }
 
-unsigned32
+uint32_t
 load_data_mem (SIM_DESC  sd,
-	       SIM_ADDR  addr,
+	       address_word  addr,
 	       int       len)
 {
-  uint32 data;
+  uint32_t data;
 
   switch (len)
     {
@@ -3449,9 +3413,9 @@ load_data_mem (SIM_DESC  sd,
 
 void
 store_data_mem (SIM_DESC    sd,
-		SIM_ADDR    addr,
+		address_word    addr,
 		int         len,
-		unsigned32  data)
+		uint32_t  data)
 {
   switch (len)
     {

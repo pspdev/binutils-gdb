@@ -1,5 +1,5 @@
 /* Target operations for the remote server for GDB.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
 
@@ -18,7 +18,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "server.h"
 #include "tracepoint.h"
 #include "gdbsupport/byte-vector.h"
 #include "hostio.h"
@@ -29,103 +28,69 @@
 
 process_stratum_target *the_target;
 
-int
+/* See target.h.  */
+
+bool
 set_desired_thread ()
 {
   client_state &cs = get_client_state ();
   thread_info *found = find_thread_ptid (cs.general_thread);
 
-  current_thread = found;
+  if (found == nullptr)
+    {
+      process_info *proc = find_process_pid (cs.general_thread.pid ());
+      if (proc == nullptr)
+	{
+	  threads_debug_printf
+	    ("did not find thread nor process for general_thread %s",
+	     cs.general_thread.to_string ().c_str ());
+	}
+      else
+	{
+	  threads_debug_printf
+	    ("did not find thread for general_thread %s, but found process",
+	     cs.general_thread.to_string ().c_str ());
+	}
+      switch_to_process (proc);
+    }
+  else
+    switch_to_thread (found);
+
   return (current_thread != NULL);
 }
 
-/* The thread that was current before prepare_to_access_memory was
-   called.  done_accessing_memory uses this to restore the previous
-   selected thread.  */
-static ptid_t prev_general_thread;
-
 /* See target.h.  */
 
-int
-prepare_to_access_memory (void)
+bool
+set_desired_process ()
 {
   client_state &cs = get_client_state ();
 
-  /* The first thread found.  */
-  struct thread_info *first = NULL;
-  /* The first stopped thread found.  */
-  struct thread_info *stopped = NULL;
-  /* The current general thread, if found.  */
-  struct thread_info *current = NULL;
-
-  /* Save the general thread value, since prepare_to_access_memory could change
-     it.  */
-  prev_general_thread = cs.general_thread;
-
-  int res = the_target->prepare_to_access_memory ();
-  if (res != 0)
-    return res;
-
-  for_each_thread (prev_general_thread.pid (), [&] (thread_info *thread)
+  process_info *proc = find_process_pid (cs.general_thread.pid ());
+  if (proc == nullptr)
     {
-      if (mythread_alive (thread->id))
-	{
-	  if (stopped == NULL && the_target->supports_thread_stopped ()
-	      && target_thread_stopped (thread))
-	    stopped = thread;
-
-	  if (first == NULL)
-	    first = thread;
-
-	  if (current == NULL && prev_general_thread == thread->id)
-	    current = thread;
-	}
-    });
-
-  /* The thread we end up choosing.  */
-  struct thread_info *thread;
-
-  /* Prefer a stopped thread.  If none is found, try the current
-     thread.  Otherwise, take the first thread in the process.  If
-     none is found, undo the effects of
-     target->prepare_to_access_memory() and return error.  */
-  if (stopped != NULL)
-    thread = stopped;
-  else if (current != NULL)
-    thread = current;
-  else if (first != NULL)
-    thread = first;
-  else
-    {
-      done_accessing_memory ();
-      return 1;
+      threads_debug_printf
+	("did not find process for general_thread %s",
+	 cs.general_thread.to_string ().c_str ());
     }
+  switch_to_process (proc);
 
-  current_thread = thread;
-  cs.general_thread = ptid_of (thread);
-
-  return 0;
+  return proc != nullptr;
 }
 
 /* See target.h.  */
-
-void
-done_accessing_memory (void)
-{
-  client_state &cs = get_client_state ();
-
-  the_target->done_accessing_memory ();
-
-  /* Restore the previous selected thread.  */
-  cs.general_thread = prev_general_thread;
-  switch_to_thread (the_target, cs.general_thread);
-}
 
 int
 read_inferior_memory (CORE_ADDR memaddr, unsigned char *myaddr, int len)
 {
-  int res;
-  res = the_target->read_memory (memaddr, myaddr, len);
+  /* At the time of writing, GDB only sends write packets with LEN==0,
+     not read packets (see comment in target_write_memory), but it
+     doesn't hurt to prevent problems if it ever does, or we're
+     connected to some client other than GDB that does.  */
+  if (len == 0)
+    return 0;
+
+  int res = the_target->read_memory (memaddr, myaddr, len);
   check_mem_read (memaddr, myaddr, len);
   return res;
 }
@@ -152,6 +117,13 @@ int
 target_write_memory (CORE_ADDR memaddr, const unsigned char *myaddr,
 		     ssize_t len)
 {
+  /* GDB may send X packets with LEN==0, for probing packet support.
+     If we let such a request go through, then buffer.data() below may
+     return NULL, which may confuse target implementations.  Handle it
+     here to avoid lower levels having to care about this case.  */
+  if (len == 0)
+    return 0;
+
   /* Make a copy of the data because check_mem_write may need to
      update it.  */
   gdb::byte_vector buffer (myaddr, myaddr + len);
@@ -172,8 +144,8 @@ mywait (ptid_t ptid, struct target_waitstatus *ourstatus,
 
   /* We don't expose _LOADED events to gdbserver core.  See the
      `dlls_changed' global.  */
-  if (ourstatus->kind == TARGET_WAITKIND_LOADED)
-    ourstatus->kind = TARGET_WAITKIND_STOPPED;
+  if (ourstatus->kind () == TARGET_WAITKIND_LOADED)
+    ourstatus->set_stopped (GDB_SIGNAL_0);
 
   /* If GDB is connected through TCP/serial, then GDBserver will most
      probably be running on its own terminal/console, so it's nice to
@@ -183,13 +155,13 @@ mywait (ptid_t ptid, struct target_waitstatus *ourstatus,
      regular GDB output, in that same terminal.  */
   if (!remote_connection_is_stdio ())
     {
-      if (ourstatus->kind == TARGET_WAITKIND_EXITED)
+      if (ourstatus->kind () == TARGET_WAITKIND_EXITED)
 	fprintf (stderr,
-		 "\nChild exited with status %d\n", ourstatus->value.integer);
-      else if (ourstatus->kind == TARGET_WAITKIND_SIGNALLED)
+		 "\nChild exited with status %d\n", ourstatus->exit_status ());
+      else if (ourstatus->kind () == TARGET_WAITKIND_SIGNALLED)
 	fprintf (stderr, "\nChild terminated with signal = 0x%x (%s)\n",
-		 gdb_signal_to_host (ourstatus->value.sig),
-		 gdb_signal_to_name (ourstatus->value.sig));
+		 gdb_signal_to_host (ourstatus->sig ()),
+		 gdb_signal_to_name (ourstatus->sig ()));
     }
 
   if (connected_wait)
@@ -276,26 +248,23 @@ set_target_ops (process_stratum_target *target)
 
 /* Convert pid to printable format.  */
 
-const char *
+std::string
 target_pid_to_str (ptid_t ptid)
 {
-  static char buf[80];
-
   if (ptid == minus_one_ptid)
-    xsnprintf (buf, sizeof (buf), "<all threads>");
+    return string_printf("<all threads>");
   else if (ptid == null_ptid)
-    xsnprintf (buf, sizeof (buf), "<null thread>");
+    return string_printf("<null thread>");
   else if (ptid.tid () != 0)
-    xsnprintf (buf, sizeof (buf), "Thread %d.0x%lx",
-	       ptid.pid (), ptid.tid ());
+    return string_printf("Thread %d.0x%s",
+			 ptid.pid (),
+			 phex_nz (ptid.tid (), sizeof (ULONGEST)));
   else if (ptid.lwp () != 0)
-    xsnprintf (buf, sizeof (buf), "LWP %d.%ld",
-	       ptid.pid (), ptid.lwp ());
+    return string_printf("LWP %d.%ld",
+			 ptid.pid (), ptid.lwp ());
   else
-    xsnprintf (buf, sizeof (buf), "Process %d",
-	       ptid.pid ());
-
-  return buf;
+    return string_printf("Process %d",
+			 ptid.pid ());
 }
 
 int
@@ -363,18 +332,6 @@ process_stratum_target::post_create_inferior ()
   /* Nop.  */
 }
 
-int
-process_stratum_target::prepare_to_access_memory ()
-{
-  return 0;
-}
-
-void
-process_stratum_target::done_accessing_memory ()
-{
-  /* Nop.  */
-}
-
 void
 process_stratum_target::look_up_symbols ()
 {
@@ -388,8 +345,8 @@ process_stratum_target::supports_read_auxv ()
 }
 
 int
-process_stratum_target::read_auxv (CORE_ADDR offset, unsigned char *myaddr,
-				   unsigned int len)
+process_stratum_target::read_auxv (int pid, CORE_ADDR offset,
+				   unsigned char *myaddr, unsigned int len)
 {
   gdb_assert_not_reached ("target op read_auxv not supported");
 }
@@ -574,6 +531,12 @@ process_stratum_target::supports_vfork_events ()
   return false;
 }
 
+gdb_thread_options
+process_stratum_target::supported_thread_options ()
+{
+  return 0;
+}
+
 bool
 process_stratum_target::supports_exec_events ()
 {
@@ -648,6 +611,12 @@ bool
 process_stratum_target::thread_stopped (thread_info *thread)
 {
   gdb_assert_not_reached ("target op thread_stopped not supported");
+}
+
+bool
+process_stratum_target::any_resumed ()
+{
+  return true;
 }
 
 bool
@@ -738,8 +707,15 @@ process_stratum_target::supports_agent ()
   return false;
 }
 
+bool
+process_stratum_target::supports_btrace ()
+{
+  return false;
+}
+
 btrace_target_info *
-process_stratum_target::enable_btrace (ptid_t ptid, const btrace_config *conf)
+process_stratum_target::enable_btrace (thread_info *tp,
+				       const btrace_config *conf)
 {
   error (_("Target does not support branch tracing."));
 }
@@ -752,15 +728,15 @@ process_stratum_target::disable_btrace (btrace_target_info *tinfo)
 
 int
 process_stratum_target::read_btrace (btrace_target_info *tinfo,
-			     buffer *buffer,
-			     enum btrace_read_type type)
+				     std::string *buffer,
+				     enum btrace_read_type type)
 {
   error (_("Target does not support branch tracing."));
 }
 
 int
 process_stratum_target::read_btrace_conf (const btrace_target_info *tinfo,
-					  buffer *buffer)
+					  std::string *buffer)
 {
   error (_("Target does not support branch tracing."));
 }
@@ -836,6 +812,19 @@ process_stratum_target::thread_handle (ptid_t ptid, gdb_byte **handle,
 				       int *handle_len)
 {
   return false;
+}
+
+thread_info *
+process_stratum_target::thread_pending_parent (thread_info *thread)
+{
+  return nullptr;
+}
+
+thread_info *
+process_stratum_target::thread_pending_child (thread_info *thread,
+					      target_waitkind *kind)
+{
+  return nullptr;
 }
 
 bool

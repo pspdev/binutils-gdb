@@ -1,6 +1,6 @@
 /* Simulator for TI MSP430 and MSP430x processors.
 
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
    Contributed by Red Hat, Inc.
 
    This file is part of simulators.
@@ -31,19 +31,21 @@ struct msp430_cpu_state
   int cio_buffer;
 
   hwmult_type  hwmult_type;
-  unsigned16   hwmult_op1;
-  unsigned16   hwmult_op2;
-  unsigned32   hwmult_result;
-  signed32     hwmult_signed_result;
-  unsigned32   hwmult_accumulator;
-  signed32     hwmult_signed_accumulator;
+  uint16_t   hwmult_op1;
+  uint16_t   hwmult_op2;
+  uint32_t   hwmult_result;
+  int32_t     hwmult_signed_result;
+  uint32_t   hwmult_accumulator;
+  int32_t     hwmult_signed_accumulator;
 
   hw32mult_type  hw32mult_type;
-  unsigned32     hw32mult_op1;
-  unsigned32     hw32mult_op2;
-  unsigned64     hw32mult_result;
+  uint32_t     hw32mult_op1;
+  uint32_t     hw32mult_op2;
+  uint64_t     hw32mult_result;
 };
 
-#define HWMULT(SD, FIELD) MSP430_CPU (SD)->state.FIELD
+#define HWMULT(sd, field) MSP430_SIM_CPU (STATE_CPU (sd, 0))->field
+
+#define MSP430_SIM_CPU(cpu) ((struct msp430_cpu_state *) CPU_ARCH_DATA (cpu))
 
 #endif

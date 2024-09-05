@@ -1,4 +1,4 @@
-# Copyright 2009-2021 Free Software Foundation, Inc.
+# Copyright 2009-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -85,7 +85,7 @@ gdb_test_multiple "info inferior 2 3" "info inferior 2 3" {
 	exp_continue
     }
     -re "$gdb_prompt $" {
-	if { !$see1 && $see2 && $see3 } then {
+	if {!$see1 && $see2 && $see3} {
 	    pass "info inferior 2 3"
 	} else {
 	    fail "info inferior 2 3"
@@ -111,7 +111,7 @@ gdb_test_multiple "info inferior 1-2" "info inferior 1-2" {
 	exp_continue
     }
     -re "$gdb_prompt $" {
-	if { $see1 && $see2 && !$see3 } then {
+	if {$see1 && $see2 && !$see3} {
 	    pass "info inferior 1-2"
 	} else {
 	    fail "info inferior 1-2"
@@ -139,14 +139,14 @@ gdb_test "list commonfun" "from hello.*" "list commonfun in hello"
 
 gdb_test "print hglob" "1"
 
-gdb_test "print glob" "92" "print glob (${exec1})"
+gdb_test "print glob" "92" "print glob, ${exec1}"
 
 
 gdb_test "inferior 3" ".*" "switch to inferior 3 to print globals"
 
 gdb_test "print gglob" "2"
 
-gdb_test "print glob" "45" "print glob (${exec3})"
+gdb_test "print glob" "45" "print glob, ${exec3}"
 
 gdb_test "list commonfun" "from goodbye.*" "list commonfun in goodbye"
 
@@ -154,7 +154,7 @@ gdb_test "list commonfun" "from goodbye.*" "list commonfun in goodbye"
 # Let's run the hello program.
 gdb_test "inferior 1" ".*" "switch to inferior 1 to run it"
 
-if { ![runto_main] } then {
+if {![runto_main]} {
     return -1
 }
 
@@ -183,7 +183,7 @@ gdb_test_multiple "info inferiors" "check remove-inferiors" {
 	exp_continue
     }
     -re "$gdb_prompt $" {
-	if { $see1 && !$see2 && !$see3 } then {
+	if {$see1 && !$see2 && !$see3} {
 	    pass "check remove-inferiors"
 	} else {
 	    fail "check remove-inferiors"

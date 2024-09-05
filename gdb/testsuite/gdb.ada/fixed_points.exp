@@ -1,4 +1,4 @@
-# Copyright 2004-2021 Free Software Foundation, Inc.
+# Copyright 2004-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,17 +15,17 @@
 
 load_lib "ada.exp"
 
-if { [skip_ada_tests] } { return -1 }
+require allow_ada_tests
 
 standard_ada_testfile fixed_points
 
 foreach_with_prefix scenario {all minimal} {
     set flags [list debug additional_flags=-fgnat-encodings=$scenario]
-    if {[gdb_compile_ada "${srcfile}" "${binfile}" executable $flags] != ""} {
+    if {[gdb_compile_ada "${srcfile}" "${binfile}-${scenario}" executable $flags] != ""} {
 	return -1
     }
 
-    clean_restart ${testfile}
+    clean_restart ${testfile}-${scenario}
 
     set bp_location [gdb_get_line_number "Set breakpoint here" ${testdir}/fixed_points.adb]
     runto "fixed_points.adb:$bp_location"
@@ -90,5 +90,11 @@ foreach_with_prefix scenario {all minimal} {
     # This only started working in GCC 11.
     if {$scenario == "minimal" && [test_compiler_info {gcc-11-*}]} {
 	gdb_test "print fp5_var" " = 3e-19"
+    }
+
+    # This failed before GCC 10.
+    if {$scenario == "all" && [test_compiler_info {gcc-10-*}]} {
+	gdb_test "p Float(Another_Fixed) = Float(Another_Delta * 5)" "true" \
+	    "value of another_fixed"
     }
 }

@@ -1,4 +1,4 @@
-#   Copyright (C) 1994-2021 Free Software Foundation, Inc.
+#   Copyright (C) 1994-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -127,10 +127,9 @@ proc objcopy_test {testname srcfile type asflags ldflags} {
 }
 
 setup_xfail "hppa*-*-*"
-setup_xfail "sh-*-coff*"
 setup_xfail "tic54x-*-*"
 clear_xfail "hppa*64*-*-hpux*" "hppa*-*-linux*" "hppa*-*-lites*"
-clear_xfail "hppa*-*-*n*bsd*" "hppa*-*-rtems*" "hppa*-*-*elf*"
+clear_xfail "hppa*-*-*n*bsd*" "hppa*-*-*elf*"
 objcopy_test "simple copy" bintest.s object "" ""
 
 # Test verilog data width
@@ -155,13 +154,13 @@ proc objcopy_test_verilog {testname} {
     }
 
     set got [binutils_run $OBJCOPY "-O verilog --verilog-data-width 0 $binfile $verilog-0.hex"]
-    if ![regexp "verilog data width must be at least 1 byte" $got] then {
+    if ![regexp "error: verilog data width must be 1, 2, 4, 8 or 16" $got] then {
 	fail "objcopy ($testname 0) {$got}"
     } else {
 	pass "objcopy ($testname 0)"
     }
 
-    foreach width {1 2 4 8} {
+    foreach width {1 2} {
 	set got [binutils_run $OBJCOPY "-O verilog --verilog-data-width $width $binfile $verilog-$width.hex"]
 	if ![string equal "" $got] then {
 	    fail "objcopy ($testname $width)"
@@ -172,6 +171,40 @@ proc objcopy_test_verilog {testname} {
 	} else {
 	    fail "objcopy ($testname $width)"
 	}
+    }
+
+    # 16-bit little-endian targets fail the following tests because the
+    # verilog backend does not convert from 16-bits to 32-bits before it
+    # converts from internal format to little endian format.
+    if { [istarget tic54*-*-*] || [istarget pdp11-*-*] } {
+	untested "verilog width-4 and width-8 tests"
+	return
+    }
+    
+    foreach width {4 8} {
+	set got [binutils_run $OBJCOPY "-O verilog --verilog-data-width $width $binfile $verilog-$width.hex"]
+	if ![string equal "" $got] then {
+	    fail "objcopy ($testname $width)"
+	}
+        send_log "regexp_diff $verilog-$width.hex $srcdir/$subdir/verilog-$width.hex\n"
+	if {! [regexp_diff "$verilog-$width.hex" "$srcdir/$subdir/verilog-$width.hex"]} {
+	    pass "objcopy ($testname $width)"
+	} else {
+	    fail "objcopy ($testname $width)"
+	}
+    }
+
+    # Test generating endian correct output.    
+    set testname "objcopy (verilog output endian-ness == input endian-ness)"
+    set got [binutils_run $OBJCOPY "-O verilog --verilog-data-width 4 $binfile $verilog-I4.hex"]
+    if ![string equal "" $got] then {
+	fail $testname
+    }
+    send_log "regexp_diff $verilog-I4.hex $srcdir/$subdir/verilog-I4.hex\n"
+    if {! [regexp_diff "$verilog-I4.hex" "$srcdir/$subdir/verilog-I4.hex"]} {
+	pass $testname 
+    } else {
+	fail $testname 
     }
 }
 
@@ -618,8 +651,7 @@ proc strip_test_with_saving_a_symbol { } {
 
     set exec_output [binutils_run $NM "$NMFLAGS $objfile"]
     set exec_output [prune_warnings $exec_output]
-    if {![regexp {^([0-9a-fA-F]+)?[ ]+[TD] main} $exec_output] \
-         && ![regexp {^([0-9a-fA-F]+)?[ ]+T _main} $exec_output]} {
+    if {![regexp {^([0-9a-fA-F]+)?[ ]+[TtDd] _?main} $exec_output]} {
 	fail $test
 	return
     }
@@ -631,11 +663,8 @@ strip_test_with_saving_a_symbol
 
 # Build a final executable.
 
-if { [istarget *-*-cygwin] || [istarget *-*-mingw*] } {
-    set test_prog "testprog.exe"
-} else {
-    set test_prog "testprog"
-}
+set exe [exeext]
+set test_prog "testprog${exe}"
 
 proc copy_setup { } {
     global srcdir
@@ -644,7 +673,12 @@ proc copy_setup { } {
     global test_prog
     global host_triplet
 
-    set res [build_wrapper testglue.o]
+    if {[target_info exists needs_status_wrapper] && \
+	    [target_info needs_status_wrapper] != "0"} {
+	set res [build_wrapper testglue.o]
+    } else {
+	set res ""
+    }
     set flags { debug }
 
     if { [istarget *-*-uclinux*] && ![istarget tic6x-*-*] && ![istarget arm*-*-uclinuxfdpiceabi] } {
@@ -659,6 +693,7 @@ proc copy_setup { } {
     }
 
     if { [istarget *-*-linux*]
+	 || [istarget kvx-*-*]
 	 || [istarget *-*-gnu*] } {
 	foreach i $gcc_gas_flag {
 	    set flags "additional_flags=$i $flags"
@@ -866,8 +901,7 @@ proc strip_executable_with_saving_a_symbol { prog flags test1 test2 } {
 	regsub "^\[0-9a-fA-F\]+\[ \]+T Main\[\n\r\]+" $exec_output "" exec_output
     }
 
-    if {![regexp {^([0-9a-fA-F]+)?[ ]+[TD] main} $exec_output] \
-         && ![regexp {^([0-9a-fA-F]+)?[ ]+[TD] _main} $exec_output]} {
+    if {![regexp {^([0-9a-fA-F]+)?[ ]+[TtDd] _?main} $exec_output]} {
 	fail $test1
 	return
     }
@@ -970,6 +1004,64 @@ proc keep_debug_symbols_and_check_links { prog flags test } {
     }
 }
 
+# For ELF relocatables, test that --only-keep-debug
+# marks non-debug output sections as NOBITS.
+
+proc keep_debug_symbols_for_elf_relocatable { prog flags test } {
+    global srcdir
+    global subdir
+    global READELF
+
+    if { [target_compile $srcdir/$subdir/testprog.c tmpdir/testprog.o object debug] != "" } {
+	untested $test
+	return
+    }
+
+    if [is_remote host] {
+	set relocatable [remote_download host tmpdir/testprog.o]
+    } else {
+	set relocatable tmpdir/testprog.o
+    }
+
+    set non_debug_sections {}
+    set got [binutils_run $READELF "-S --wide ${relocatable}"]
+    while { [regexp \
+	    {[^a-zA-Z]+([a-zA-Z0-9_\.]+)[ \t]+([A-Z]+)[ \t]+[0-9a-f]+ [0-9a-f]+ [0-9a-f]+ [0-9]+[ \t]+([A-Z]*)[ \t]+[0-9]+(.*)} \
+	    $got all name type flag rest] } {
+	if { $type != "NOTE" && [regexp {[AG]} $flag] } {
+	    # PR 30699: Some debug sections can be in a group, so
+	    # exclude sections whose name includes "debug_"
+	    if { ! [regexp {debug_} $name] } {
+		lappend non_debug_sections $name
+	    }
+	}
+	set got $rest
+    }
+
+    set exec_output [binutils_run $prog "$flags ${relocatable}"]
+    if ![string equal "" $exec_output] {
+	fail $test
+	return
+    }
+
+    set fails 0
+    set got [binutils_run $READELF "-S --wide ${relocatable}"]
+    while { [regexp \
+	    {[^a-zA-Z]+([a-zA-Z0-9_\.]+)[ \t]+([A-Z]+)[ \t]+[0-9a-f]+ [0-9a-f]+ [0-9a-f]+ [0-9]+[ \t]+[A-Z]*[ \t]+[0-9]+(.*)} \
+	    $got all name type rest] } {
+	if { [lsearch -exact $non_debug_sections $name] >= 0 && $type != "NOBITS" } {
+	    set fails 1
+	    send_log "Expected SHT_NOBITS type for .$name\n"
+	}
+	set got $rest
+    }
+    if { $fails == 1 } {
+	fail $test
+	return
+    }
+
+    pass $test
+}
 
 set test1 "simple objcopy of executable"
 set test1r "run objcopy of executable"
@@ -981,6 +1073,7 @@ set test4 "keep only debug data"
 set test5 "simple objcopy of debug data"
 if [is_elf_format] {
     set test6 "NOBITS sections retain sh_link field"
+    set test7 "--only-keep-debug for ELF relocatables"
 }
 
 switch [copy_setup] {
@@ -998,6 +1091,7 @@ switch [copy_setup] {
 	untested $test5
 	if [is_elf_format] {
 	    untested $test6
+	    untested $test7
 	}
     }
     "3" {
@@ -1011,6 +1105,7 @@ switch [copy_setup] {
 					 "$OBJCOPY" "$OBJCOPYFLAGS" "$test5"
 	if [is_elf_format] {
 	    keep_debug_symbols_and_check_links "$STRIP" "--only-keep-debug $STRIPFLAGS" "$test6"
+	    keep_debug_symbols_for_elf_relocatable "$STRIP" "--only-keep-debug $STRIPFLAGS" "$test7"
 	}
     }
     "0" {
@@ -1021,6 +1116,7 @@ switch [copy_setup] {
 					 "$OBJCOPY" "$OBJCOPYFLAGS" "$test5"
 	if [is_elf_format] {
 	    keep_debug_symbols_and_check_links "$STRIP" "--only-keep-debug $STRIPFLAGS" "$test6"
+	    keep_debug_symbols_for_elf_relocatable "$STRIP" "--only-keep-debug $STRIPFLAGS" "$test7"
 	}
     }
 }
@@ -1090,6 +1186,10 @@ proc objcopy_test_symbol_manipulation {} {
         verbose [file rootname $t]
         run_dump_test [file rootname $t]
     }
+
+    if { [supports_gnu_unique] } {
+	run_dump_test "weaken-gnu-unique"
+    }
 }
 
 proc objcopy_test_elf_common_symbols {} {
@@ -1120,14 +1220,7 @@ set elf64 ""
 if [is_elf_format] {
     objcopy_test_symbol_manipulation
     objcopy_test_elf_common_symbols
-
-    setup_xfail "hppa*-*-*"
-    setup_xfail "sh-*-coff*"
-    setup_xfail "tic54x-*-*"
-    clear_xfail "hppa*64*-*-hpux*" "hppa*-*-linux*" "hppa*-*-lites*"
-    clear_xfail "hppa*-*-*n*bsd*" "hppa*-*-rtems*" "hppa*-*-*elf*"
     objcopy_test "ELF unknown section type" unknown.s object "" ""
-
     objcopy_test_readelf "ELF group 1" group.s
     objcopy_test_readelf "ELF group 2" group-2.s
     objcopy_test_readelf "ELF group 3" group-3.s
@@ -1180,9 +1273,15 @@ if [is_elf_format] {
     run_dump_test "strip-7"
     run_dump_test "strip-8"
     run_dump_test "strip-9"
+    # This requires STB_GNU_UNIQUE support with OSABI set to GNU.
+    if { [supports_gnu_unique] } {
+	run_dump_test "strip-10"
+    }
+    run_dump_test "strip-11"
     run_dump_test "strip-12"
 
-    if { [istarget "mips64*-*-openbsd*"] } {
+    if { [istarget "mips64*-*-openbsd*"] \
+	 || [istarget "mips64*-*-*-gnuabi64"] } {
 	set reloc_format mips64
     }
     # A relocation type not supported by any target
@@ -1214,12 +1313,7 @@ if [is_elf_format] {
     run_dump_test "strip-15" [list \
 				  [list source strip-15${reloc_format}.s] \
 				  [list as "${elf64} --defsym RELOC=${reloc}"]]
-
-    # This requires STB_GNU_UNIQUE support with OSABI set to GNU.
-    if { [supports_gnu_unique] } {
-	run_dump_test "strip-10"
-    }
-    run_dump_test "strip-11"
+    run_dump_test "strip-16"
 
     if { [istarget "i*86-*"] || [istarget "x86_64-*-*"] } {
 	# Check to make sure we don't strip a symbol named in relocations.
@@ -1270,6 +1364,11 @@ if [is_elf_format] {
         verbose [file rootname $t]
         run_dump_test [file rootname $t]
     }
+
+    # Test --strip-section-headers
+    run_dump_test "strip-section-headers-1" [list \
+			  [list source strip-15${reloc_format}.s] \
+			  [list as "${elf64} --defsym RELOC=${reloc}"]]
 }
 run_dump_test "localize-hidden-2"
 
@@ -1342,6 +1441,13 @@ proc objcopy_remove_relocations_from_executable { } {
     set out tmpdir/pr23611.out
 
     set exec_output1 [binutils_run $OBJCOPY "-R .rela.plt -R .rela.dyn -R .rel.plt -R .rel.dyn $objfile $out"]
+
+    set exec_output1 [prune_warnings $exec_output1]
+    if ![string equal "" $exec_output1] {
+	fail $test
+	return
+    }
+
     set exec_output2 [binutils_run $READELF "-S $out"]
     if { [string match "*.rel.plt*" $exec_output2] || [string match "*.rela.plt*" $exec_output2] || [string match "*.rel.dyn*" $exec_output2] || [string match "*.rela.dyn*" $exec_output2] } {
 	fail $test
@@ -1350,17 +1456,19 @@ proc objcopy_remove_relocations_from_executable { } {
     pass $test
 }
 
-objcopy_remove_relocations_from_executable
+if [is_elf_format] {
+    objcopy_remove_relocations_from_executable
+}
 
 run_dump_test "pr23633"
 
 run_dump_test "set-section-alignment"
+run_dump_test "section-alignment"
 
 setup_xfail "hppa*-*-*"
-setup_xfail "sh-*-coff*"
 setup_xfail "spu-*-*"
 clear_xfail "hppa*64*-*-hpux*" "hppa*-*-linux*" "hppa*-*-lites*"
-clear_xfail "hppa*-*-*n*bsd*" "hppa*-*-rtems*" "hppa*-*-*elf*"
+clear_xfail "hppa*-*-*n*bsd*" "hppa*-*-*elf*"
 if { [istarget pdp11-*-*] } {
     set src "pr25662-pdp11.s"
 } else {
@@ -1376,3 +1484,5 @@ if { [istarget *-*-cygwin] || [istarget *-*-mingw*] } {
 if { ![is_xcoff_format] } {
     objcopy_test "pr25662" $src executable "" $ldflags
 }
+
+run_dump_test "rename-section-01"

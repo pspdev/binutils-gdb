@@ -1,5 +1,5 @@
 /* Matsushita 10200 specific support for 32-bit ELF
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -46,7 +46,7 @@ static reloc_howto_type elf_mn10200_howto_table[] =
   /* Dummy relocation.  Does nothing.  */
   HOWTO (R_MN10200_NONE,
 	 0,
-	 3,
+	 0,
 	 0,
 	 false,
 	 0,
@@ -60,7 +60,7 @@ static reloc_howto_type elf_mn10200_howto_table[] =
   /* Standard 32 bit reloc.  */
   HOWTO (R_MN10200_32,
 	 0,
-	 2,
+	 4,
 	 32,
 	 false,
 	 0,
@@ -74,7 +74,7 @@ static reloc_howto_type elf_mn10200_howto_table[] =
   /* Standard 16 bit reloc.  */
   HOWTO (R_MN10200_16,
 	 0,
-	 1,
+	 2,
 	 16,
 	 false,
 	 0,
@@ -88,7 +88,7 @@ static reloc_howto_type elf_mn10200_howto_table[] =
   /* Standard 8 bit reloc.  */
   HOWTO (R_MN10200_8,
 	 0,
-	 0,
+	 1,
 	 8,
 	 false,
 	 0,
@@ -102,7 +102,7 @@ static reloc_howto_type elf_mn10200_howto_table[] =
   /* Standard 24 bit reloc.  */
   HOWTO (R_MN10200_24,
 	 0,
-	 2,
+	 4,
 	 24,
 	 false,
 	 0,
@@ -116,7 +116,7 @@ static reloc_howto_type elf_mn10200_howto_table[] =
   /* Simple 8 pc-relative reloc.  */
   HOWTO (R_MN10200_PCREL8,
 	 0,
-	 0,
+	 1,
 	 8,
 	 true,
 	 0,
@@ -130,7 +130,7 @@ static reloc_howto_type elf_mn10200_howto_table[] =
   /* Simple 16 pc-relative reloc.  */
   HOWTO (R_MN10200_PCREL16,
 	 0,
-	 1,
+	 2,
 	 16,
 	 true,
 	 0,
@@ -145,7 +145,7 @@ static reloc_howto_type elf_mn10200_howto_table[] =
      to get the pc-relative offset correct.  */
   HOWTO (R_MN10200_PCREL24,
 	 0,
-	 2,
+	 4,
 	 24,
 	 true,
 	 0,
@@ -577,8 +577,9 @@ mn10200_elf_relax_section (bfd *abfd,
      this section does not have relocs, or if this is not a
      code section.  */
   if (bfd_link_relocatable (link_info)
-      || (sec->flags & SEC_RELOC) == 0
       || sec->reloc_count == 0
+      || (sec->flags & SEC_RELOC) == 0
+      || (sec->flags & SEC_HAS_CONTENTS) == 0
       || (sec->flags & SEC_CODE) == 0)
     return true;
 
@@ -795,13 +796,7 @@ mn10200_elf_relax_section (bfd *abfd,
       if (ELF32_R_TYPE (irel->r_info) == (int) R_MN10200_PCREL8)
 	{
 	  Elf_Internal_Rela *nrel;
-	  bfd_vma value = symval;
 	  unsigned char code;
-
-	  /* Deal with pc-relative gunk.  */
-	  value -= (sec->output_section->vma + sec->output_offset);
-	  value -= (irel->r_offset + 1);
-	  value += irel->r_addend;
 
 	  /* Do nothing if this reloc is the last byte in the section.  */
 	  if (irel->r_offset == sec->size)
@@ -1295,6 +1290,13 @@ mn10200_elf_get_relocated_section_contents (bfd *output_bfd,
 
   symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
 
+  bfd_byte *orig_data = data;
+  if (data == NULL)
+    {
+      data = bfd_malloc (input_section->size);
+      if (data == NULL)
+	return NULL;
+    }
   memcpy (data, elf_section_data (input_section)->this_hdr.contents,
 	  (size_t) input_section->size);
 
@@ -1366,6 +1368,8 @@ mn10200_elf_get_relocated_section_contents (bfd *output_bfd,
     free (isymbuf);
   if (elf_section_data (input_section)->relocs != internal_relocs)
     free (internal_relocs);
+  if (orig_data == NULL)
+    free (data);
   return NULL;
 }
 

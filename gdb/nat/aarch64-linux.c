@@ -1,4 +1,4 @@
-/* Copyright (C) 2009-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2009-2024 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GDB.
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "gdbsupport/common-defs.h"
 #include "gdbsupport/break-common.h"
 #include "nat/linux-nat.h"
 #include "nat/aarch64-linux-hw-point.h"
@@ -81,9 +80,9 @@ aarch64_linux_new_thread (struct lwp_info *lwp)
   /* If there are hardware breakpoints/watchpoints in the process then mark that
      all the hardware breakpoint/watchpoint register pairs for this thread need
      to be initialized (with data from aarch_process_info.debug_reg_state).  */
-  if (aarch64_linux_any_set_debug_regs_state (state, false))
+  if (aarch64_any_set_debug_regs_state (state, false))
     DR_MARK_ALL_CHANGED (info->dr_changed_bp, aarch64_num_bp_regs);
-  if (aarch64_linux_any_set_debug_regs_state (state, true))
+  if (aarch64_any_set_debug_regs_state (state, true))
     DR_MARK_ALL_CHANGED (info->dr_changed_wp, aarch64_num_wp_regs);
 
   lwp_set_arch_private_info (lwp, info);
@@ -249,4 +248,25 @@ aarch64_ps_get_thread_area (struct ps_prochandle *ph,
     *base = (void *) (uintptr_t) (reg32 - idx);
 
   return PS_OK;
+}
+
+/* See nat/aarch64-linux.h.  */
+
+int
+aarch64_tls_register_count (int tid)
+{
+  uint64_t tls_regs[2];
+  struct iovec iovec;
+  iovec.iov_base = tls_regs;
+  iovec.iov_len = sizeof (tls_regs);
+
+  /* Attempt to read both TPIDR and TPIDR2.  If ptrace returns less data than
+     we are expecting, that means it doesn't support all the registers.  From
+     the iovec length, figure out how many TPIDR registers the target actually
+     supports.  */
+  if (ptrace (PTRACE_GETREGSET, tid, NT_ARM_TLS, &iovec) != 0)
+    return 0;
+
+  /* Calculate how many TPIDR registers we have.  */
+  return iovec.iov_len / sizeof (uint64_t);
 }

@@ -1,4 +1,4 @@
-# Copyright 2021 Free Software Foundation, Inc.
+# Copyright 2021-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,7 +22,34 @@ if {[prepare_for_testing "failed to prepare" "${testfile}" \
     return -1
 }
 
-set index_file ${testfile}.gdb-index
+set have_index [have_index $binfile]
+set have_index_re \
+    [list \
+	 "Error while writing index for \[^\r\n\]*:" \
+	 "Cannot use an index to create the index"]
+set have_index_re [join $have_index_re]
+set no_debug_re \
+    [list \
+	 "Error while writing index for \[^\r\n\]*:" \
+	 "No debugging symbols"]
+set no_debug_re [join $no_debug_re]
+set readnow_p [readnow]
+
+set index_dir [host_standard_output_file ""]
 # The bug was that gdb would crash here.
-gdb_test_no_output "save gdb-index [file dirname ${index_file}]" \
-    "try to save gdb index"
+set cmd "save gdb-index $index_dir"
+gdb_test_multiple $cmd "try to save gdb index" {
+    -re -wrap $have_index_re {
+	if { $have_index != "" || $readnow_p } {
+	    unsupported $gdb_test_name
+	} else {
+	    fail $gdb_test_name
+	}
+    }
+    -re -wrap $no_debug_re {
+	pass $gdb_test_name
+    }
+    -re -wrap "^" {
+	pass $gdb_test_name
+    }
+}

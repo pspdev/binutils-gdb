@@ -1,5 +1,5 @@
 /* tc-vax.c - vax-specific -
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -1020,10 +1020,6 @@ vax_reg_parse (char c1, char c2, char c3, char c4)
   c1 = c2;
   c2 = c3;
   c3 = c4;
-#endif
-#ifdef OBJ_VMS
-  if (c4 != 0)		/* Register prefixes are not allowed under VMS.  */
-    return retval;
 #endif
 #ifdef OBJ_AOUT
   if (c1 == '%')	/* Register prefixes are optional under a.out.  */
@@ -2178,32 +2174,30 @@ md_create_short_jump (char *ptr,
 
 void
 md_create_long_jump (char *ptr,
-		     addressT from_addr ATTRIBUTE_UNUSED,
+		     addressT from_addr,
 		     addressT to_addr,
-		     fragS *frag,
-		     symbolS *to_symbol)
+		     fragS *frag ATTRIBUTE_UNUSED,
+		     symbolS *to_symbol ATTRIBUTE_UNUSED)
 {
   valueT offset;
 
-  offset = to_addr - S_GET_VALUE (to_symbol);
-  *ptr++ = VAX_JMP;		/* Arbitrary jump.  */
-  *ptr++ = VAX_ABSOLUTE_MODE;
+  /* Account for 1 byte instruction, 1 byte of address specifier and
+     4 bytes of offset from PC.  */
+  offset = to_addr - (from_addr + 1 + 1 + 4);
+  *ptr++ = VAX_JMP;
+  *ptr++ = VAX_PC_RELATIVE_MODE;
   md_number_to_chars (ptr, offset, 4);
-  fix_new (frag, ptr - frag->fr_literal, 4, to_symbol, (long) 0, 0, NO_RELOC);
 }
 
-#ifdef OBJ_VMS
-const char *md_shortopts = "d:STt:V+1h:Hv::";
-#elif defined(OBJ_ELF)
-const char *md_shortopts = "d:STt:VkKQ:";
+#ifdef OBJ_ELF
+const char *md_shortopts = "d:STt:VkQ:";
 #else
 const char *md_shortopts = "d:STt:V";
 #endif
 struct option md_longopts[] =
 {
 #ifdef OBJ_ELF
-#define OPTION_PIC (OPTION_MD_BASE)
-  { "pic", no_argument, NULL, OPTION_PIC },
+  { "pic", no_argument, NULL, 'k' },
 #endif
   { NULL, no_argument, NULL, 0 }
 };
@@ -2234,40 +2228,7 @@ md_parse_option (int c, const char *arg)
       as_warn (_("I don't use an interpass file! -V ignored"));
       break;
 
-#ifdef OBJ_VMS
-    case '+':			/* For g++.  Hash any name > 31 chars long.  */
-      flag_hash_long_names = 1;
-      break;
-
-    case '1':			/* For backward compatibility.  */
-      flag_one = 1;
-      break;
-
-    case 'H':			/* Show new symbol after hash truncation.  */
-      flag_show_after_trunc = 1;
-      break;
-
-    case 'h':			/* No hashing of mixed-case names.  */
-      {
-	extern char vms_name_mapping;
-	vms_name_mapping = atoi (arg);
-	flag_no_hash_mixed_case = 1;
-      }
-      break;
-
-    case 'v':
-      {
-	extern char *compiler_version_string;
-
-	if (!arg || !*arg || access (arg, 0) == 0)
-	  return 0;		/* Have caller show the assembler version.  */
-	compiler_version_string = arg;
-      }
-      break;
-#endif
-
 #ifdef OBJ_ELF
-    case OPTION_PIC:
     case 'k':
       flag_want_pic = 1;
       break;			/* -pic, Position Independent Code.  */
@@ -2296,15 +2257,11 @@ VAX options:\n\
 -t FILE			ignored\n\
 -T			ignored\n\
 -V			ignored\n"));
-#ifdef OBJ_VMS
+#ifdef OBJ_ELF
   fprintf (stream, _("\
-VMS options:\n\
--+			hash encode names longer than 31 characters\n\
--1			`const' handling compatible with gcc 1.x\n\
--H			show new symbol after hash truncation\n\
--h NUM			don't hash mixed-case names, and adjust case:\n\
-			0 = upper, 2 = lower, 3 = preserve case\n\
--v\"VERSION\"		code being assembled was produced by compiler \"VERSION\"\n"));
+ELF options:\n\
+-k -pic			enable PIC mode\n\
+-Q[y|n]			ignored\n"));
 #endif
 }
 
@@ -2683,8 +2640,9 @@ md_assemble (char *instruction_string)
 		}
 	      else
 		{
-		  as_warn (_("A bignum/flonum may not be a displacement: 0x%lx used"),
-			   (expP->X_add_number = 0x80000000L));
+		  as_warn (_("A bignum/flonum may not be a displacement: 0x%"
+			     PRIx64 " used"),
+			   (uint64_t) (expP->X_add_number = 0x80000000L));
 		  /* Chosen so luser gets the most offset bits to patch later.  */
 		}
 	      expP->X_add_number = floatP->low[0]

@@ -1,6 +1,6 @@
 /* Process record and replay target for GDB, the GNU debugger.
 
-   Copyright (C) 2013-2021 Free Software Foundation, Inc.
+   Copyright (C) 2013-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,6 +19,8 @@
 
 #ifndef RECORD_FULL_H
 #define RECORD_FULL_H
+
+#include "gdbsupport/scoped_restore.h"
 
 extern bool record_full_memory_query;
 

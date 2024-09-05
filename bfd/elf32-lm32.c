@@ -1,5 +1,5 @@
 /* Lattice Mico32-specific support for 32-bit ELF
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2024 Free Software Foundation, Inc.
    Contributed by Jon Beniston <jon@beniston.com>
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -164,7 +164,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
   /* This reloc does nothing.  */
   HOWTO (R_LM32_NONE,		    /* type */
 	 0,			    /* rightshift */
-	 3,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 0,			    /* size */
 	 0,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -179,7 +179,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
   /* An 8 bit absolute relocation.  */
   HOWTO (R_LM32_8,		    /* type */
 	 0,			    /* rightshift */
-	 0,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 1,			    /* size */
 	 8,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -194,7 +194,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
   /* A 16 bit absolute relocation.  */
   HOWTO (R_LM32_16,		    /* type */
 	 0,			    /* rightshift */
-	 1,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 2,			    /* size */
 	 16,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -209,7 +209,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
   /* A 32 bit absolute relocation.  */
   HOWTO (R_LM32_32,		    /* type */
 	 0,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 32,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -223,7 +223,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_HI16,		    /* type */
 	 16,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 16,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -237,7 +237,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_LO16,		    /* type */
 	 0,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 16,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -251,7 +251,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_GPREL16,	    /* type */
 	 0,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 16,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -265,7 +265,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_CALL,		    /* type */
 	 2,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 26,			    /* bitsize */
 	 true,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -279,7 +279,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_BRANCH,		    /* type */
 	 2,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 16,			    /* bitsize */
 	 true,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -294,7 +294,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
   /* GNU extension to record C++ vtable hierarchy.  */
   HOWTO (R_LM32_GNU_VTINHERIT,	    /* type */
 	 0,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 0,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -309,7 +309,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
   /* GNU extension to record C++ vtable member usage.  */
   HOWTO (R_LM32_GNU_VTENTRY,	    /* type */
 	 0,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 0,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -323,7 +323,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_16_GOT,		    /* type */
 	 0,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 16,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -337,7 +337,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_GOTOFF_HI16,	    /* type */
 	 16,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 16,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -351,7 +351,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_GOTOFF_LO16,	    /* type */
 	 0,			    /* rightshift */
-	 2,			    /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			    /* size */
 	 16,			    /* bitsize */
 	 false,			    /* pc_relative */
 	 0,			    /* bitpos */
@@ -365,7 +365,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_COPY,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -379,7 +379,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_GLOB_DAT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -393,7 +393,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_JMP_SLOT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -407,7 +407,7 @@ static reloc_howto_type lm32_elf_howto_table [] =
 
   HOWTO (R_LM32_RELATIVE,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1120,7 +1120,7 @@ lm32_elf_check_relocs (bfd *abfd,
 		       const Elf_Internal_Rela *relocs)
 {
   Elf_Internal_Shdr *symtab_hdr;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
   struct elf_lm32_link_hash_table *htab;
@@ -1131,9 +1131,6 @@ lm32_elf_check_relocs (bfd *abfd,
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof (Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   htab = lm32_elf_hash_table (info);
   if (htab == NULL)
@@ -1430,8 +1427,6 @@ lm32_elf_finish_dynamic_symbol (bfd *output_bfd,
   bfd_byte *loc;
 
   htab = lm32_elf_hash_table (info);
-  if (htab == NULL)
-    return false;
 
   if (h->plt.offset != (bfd_vma) -1)
     {
@@ -1909,8 +1904,8 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void * inf)
 /* Set the sizes of the dynamic sections.  */
 
 static bool
-lm32_elf_size_dynamic_sections (bfd *output_bfd,
-				struct bfd_link_info *info)
+lm32_elf_late_size_sections (bfd *output_bfd,
+			     struct bfd_link_info *info)
 {
   struct elf_lm32_link_hash_table *htab;
   bfd *dynobj;
@@ -1923,7 +1918,8 @@ lm32_elf_size_dynamic_sections (bfd *output_bfd,
     return false;
 
   dynobj = htab->root.dynobj;
-  BFD_ASSERT (dynobj != NULL);
+  if (dynobj == NULL)
+    return true;
 
   if (htab->root.dynamic_sections_created)
     {
@@ -2070,7 +2066,7 @@ lm32_elf_size_dynamic_sections (bfd *output_bfd,
       struct weak_symbol_list *list_start = NULL, *list_end = NULL;
       int rgot_weak_count = 0;
       int r32_count = 0;
-      int rgot_count = 0;
+      int rgot_count ATTRIBUTE_UNUSED = 0;
       /* Look for deleted sections.  */
       for (ibfd = info->input_bfds; ibfd != NULL; ibfd = ibfd->link.next)
 	{
@@ -2312,7 +2308,7 @@ lm32_elf_create_dynamic_sections (bfd *abfd, struct bfd_link_info *info)
 }
 
 static bool
-lm32_elf_always_size_sections (bfd *output_bfd, struct bfd_link_info *info)
+lm32_elf_early_size_sections (bfd *output_bfd, struct bfd_link_info *info)
 {
   if (!bfd_link_relocatable (info))
     {
@@ -2398,7 +2394,7 @@ lm32_elf_fdpic_copy_private_bfd_data (bfd *ibfd, bfd *obfd)
 #define bfd_elf32_bfd_link_hash_table_create	lm32_elf_link_hash_table_create
 #define elf_backend_check_relocs		lm32_elf_check_relocs
 #define elf_backend_reloc_type_class		lm32_elf_reloc_type_class
-#define elf_backend_size_dynamic_sections	lm32_elf_size_dynamic_sections
+#define elf_backend_late_size_sections		lm32_elf_late_size_sections
 #define elf_backend_omit_section_dynsym		_bfd_elf_omit_section_dynsym_all
 #define elf_backend_create_dynamic_sections	lm32_elf_create_dynamic_sections
 #define elf_backend_finish_dynamic_sections	lm32_elf_finish_dynamic_sections
@@ -2419,8 +2415,8 @@ lm32_elf_fdpic_copy_private_bfd_data (bfd *ibfd, bfd *obfd)
 #undef	elf32_bed
 #define	elf32_bed		elf32_lm32fdpic_bed
 
-#undef	elf_backend_always_size_sections
-#define elf_backend_always_size_sections	lm32_elf_always_size_sections
+#undef	elf_backend_early_size_sections
+#define elf_backend_early_size_sections		lm32_elf_early_size_sections
 #undef	bfd_elf32_bfd_copy_private_bfd_data
 #define bfd_elf32_bfd_copy_private_bfd_data	lm32_elf_fdpic_copy_private_bfd_data
 

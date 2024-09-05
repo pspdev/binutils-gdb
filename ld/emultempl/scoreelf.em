@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+#   Copyright (C) 2006-2024 Free Software Foundation, Inc.
 #   Contributed by:
 #   Brain.lin (brain.lin@sunplusct.com)
 #   Mei Ligang (ligang@sunnorth.com.cn)
@@ -47,6 +47,10 @@ fragment <<EOF
 EOF
 fi
 fragment <<EOF
+  link_info.separate_code = DEFAULT_LD_Z_SEPARATE_CODE;
+  link_info.warn_execstack = DEFAULT_LD_WARN_EXECSTACK;
+  link_info.no_warn_rwx_segments = ! DEFAULT_LD_WARN_RWX_SEGMENTS;
+  link_info.default_execstack = DEFAULT_LD_EXECSTACK;
 }
 
 static void
@@ -72,7 +76,6 @@ EOF
 # Define some shell vars to insert bits of code into the standard elf
 # parse_args and list_options functions.
 #
-PARSE_AND_LIST_PROLOGUE=''
 PARSE_AND_LIST_SHORTOPTS=
 PARSE_AND_LIST_LONGOPTS=''
 PARSE_AND_LIST_OPTIONS=''

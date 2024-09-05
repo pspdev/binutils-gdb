@@ -1,5 +1,5 @@
 /* Native-dependent code for GNU/Linux RISC-V.
-   Copyright (C) 2018-2021 Free Software Foundation, Inc.
+   Copyright (C) 2018-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "regcache.h"
 #include "gregset.h"
 #include "linux-nat.h"
@@ -66,17 +65,17 @@ supply_gregset_regnum (struct regcache *regcache, const prgregset_t *gregs,
 	regcache->raw_supply (i, regp + i);
 
       /* GDB stores PC in reg 32.  Linux kernel stores it in reg 0.  */
-      regcache->raw_supply (32, regp + 0);
+      regcache->raw_supply (RISCV_PC_REGNUM, regp + 0);
 
       /* Fill the inaccessible zero register with zero.  */
-      regcache->raw_supply_zeroed (0);
+      regcache->raw_supply_zeroed (RISCV_ZERO_REGNUM);
     }
   else if (regnum == RISCV_ZERO_REGNUM)
-    regcache->raw_supply_zeroed (0);
+    regcache->raw_supply_zeroed (RISCV_ZERO_REGNUM);
   else if (regnum > RISCV_ZERO_REGNUM && regnum < RISCV_PC_REGNUM)
     regcache->raw_supply (regnum, regp + regnum);
   else if (regnum == RISCV_PC_REGNUM)
-    regcache->raw_supply (32, regp + 0);
+    regcache->raw_supply (RISCV_PC_REGNUM, regp + 0);
 }
 
 /* Copy all general purpose registers from regset GREGS into REGCACHE.  */
@@ -147,7 +146,7 @@ fill_gregset (const struct regcache *regcache, prgregset_t *gregs, int regnum)
       for (int i = RISCV_ZERO_REGNUM + 1; i < RISCV_PC_REGNUM; i++)
 	regcache->raw_collect (i, regp + i);
 
-      regcache->raw_collect (32, regp + 0);
+      regcache->raw_collect (RISCV_PC_REGNUM, regp + 0);
     }
   else if (regnum == RISCV_ZERO_REGNUM)
     /* Nothing to do here.  */
@@ -155,7 +154,7 @@ fill_gregset (const struct regcache *regcache, prgregset_t *gregs, int regnum)
   else if (regnum > RISCV_ZERO_REGNUM && regnum < RISCV_PC_REGNUM)
     regcache->raw_collect (regnum, regp + regnum);
   else if (regnum == RISCV_PC_REGNUM)
-    regcache->raw_collect (32, regp + 0);
+    regcache->raw_collect (RISCV_PC_REGNUM, regp + 0);
 }
 
 /* Copy floating point register REGNUM (or all fp regs if REGNUM == -1)
@@ -201,6 +200,9 @@ fill_fpregset (const struct regcache *regcache, prfpregset_t *fpregs,
 const struct target_desc *
 riscv_linux_nat_target::read_description ()
 {
+  if (inferior_ptid == null_ptid)
+    return this->beneath ()->read_description ();
+
   const struct riscv_gdbarch_features features
     = riscv_linux_read_features (inferior_ptid.pid ());
   return riscv_lookup_target_description (features);

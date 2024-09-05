@@ -1,6 +1,6 @@
 /* Abstract base class inherited by all process_stratum targets
 
-   Copyright (C) 2018-2021 Free Software Foundation, Inc.
+   Copyright (C) 2018-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,6 +23,7 @@
 #include "target.h"
 #include <set>
 #include "gdbsupport/intrusive_list.h"
+#include "gdbsupport/gdb-checked-static-cast.h"
 #include "gdbthread.h"
 
 /* Abstract base class inherited by all process_stratum targets.  */
@@ -50,11 +51,8 @@ public:
   bool supports_non_stop () override { return false; }
   bool supports_disable_randomization () override { return false; }
 
-  /* This default implementation returns the inferior's address
-     space.  */
-  struct address_space *thread_address_space (ptid_t ptid) override;
-
-  /* This default implementation always returns target_gdbarch ().  */
+  /* This default implementation always returns the current inferior's
+     gdbarch.  */
   struct gdbarch *thread_architecture (ptid_t ptid) override;
 
   /* Default implementations for process_stratum targets.  Return true
@@ -72,6 +70,15 @@ public:
      and add an initial thread to FOLLOW_INF.  */
   void follow_exec (inferior *follow_inf, ptid_t ptid,
 		    const char *execd_pathname) override;
+
+  /* Default implementation of follow_fork.
+
+     If a child inferior was created by infrun while following the fork
+     (CHILD_INF is non-nullptr), push this target on CHILD_INF's target stack
+     and add an initial thread with ptid CHILD_PTID.  */
+  void follow_fork (inferior *child_inf, ptid_t child_ptid,
+		    target_waitkind fork_kind, bool follow_child,
+		    bool detach_on_fork) override;
 
   /* True if any thread is, or may be executing.  We need to track
      this separately because until we fully sync the thread list, we
@@ -97,6 +104,9 @@ public:
      and matching FILTER_PTID.  */
   thread_info *random_resumed_with_pending_wait_status
     (inferior *inf, ptid_t filter_ptid);
+
+  /* Search function to lookup a (non-exited) thread by 'ptid'.  */
+  thread_info *find_thread (ptid_t ptid);
 
   /* The connection number.  Visible in "info connections".  */
   int connection_number = 0;
@@ -151,7 +161,7 @@ static inline process_stratum_target *
 as_process_stratum_target (target_ops *target)
 {
   gdb_assert (target->stratum () == process_stratum);
-  return static_cast<process_stratum_target *> (target);
+  return gdb::checked_static_cast<process_stratum_target *> (target);
 }
 
 /* Return a collection of targets that have non-exited inferiors.  */

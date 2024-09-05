@@ -1,6 +1,6 @@
 /* Generic serial interface functions.
 
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "event-top.h"
 #include "serial.h"
 #include "ser-base.h"
 #include "gdbsupport/event-loop.h"
@@ -108,13 +108,13 @@ reschedule (struct serial *scb)
 	    {
 	    case FD_SCHEDULED:
 	      if (scb->async_state != FD_SCHEDULED)
-		fprintf_unfiltered (gdb_stdlog, "[fd%d->fd-scheduled]\n",
-				    scb->fd);
+		gdb_printf (gdb_stdlog, "[fd%d->fd-scheduled]\n",
+			    scb->fd);
 	      break;
 	    default: /* TIMER SCHEDULED */
 	      if (scb->async_state == FD_SCHEDULED)
-		fprintf_unfiltered (gdb_stdlog, "[fd%d->timer-scheduled]\n",
-				    scb->fd);
+		gdb_printf (gdb_stdlog, "[fd%d->timer-scheduled]\n",
+			    scb->fd);
 	      break;
 	    }
 	}
@@ -306,12 +306,12 @@ ser_base_read_error_fd (struct serial *scb, int close_fd)
 	  while ((newline = strstr (current, "\n")) != NULL)
 	    {
 	      *newline = '\0';
-	      fputs_unfiltered (current, gdb_stderr);
-	      fputs_unfiltered ("\n", gdb_stderr);
+	      gdb_puts (current, gdb_stderr);
+	      gdb_puts ("\n", gdb_stderr);
 	      current = newline + 1;
 	    }
 
-	  fputs_unfiltered (current, gdb_stderr);
+	  gdb_puts (current, gdb_stderr);
        }
     }
 }
@@ -471,7 +471,7 @@ ser_base_readchar (struct serial *scb, int timeout)
   return generic_readchar (scb, timeout, do_ser_base_readchar);
 }
 
-int
+void
 ser_base_write (struct serial *scb, const void *buf, size_t count)
 {
   const char *str = (const char *) buf;
@@ -487,12 +487,11 @@ ser_base_write (struct serial *scb, const void *buf, size_t count)
 	{
 	  if (errno == EINTR)
 	    continue;
-	  return 1;
+	  perror_with_name ("error while writing");
 	}
       count -= cc;
       str += cc;
     }
-  return 0;
 }
 
 int
@@ -514,10 +513,9 @@ ser_base_flush_input (struct serial *scb)
     return SERIAL_ERROR;
 }
 
-int
+void
 ser_base_send_break (struct serial *scb)
 {
-  return 0;
 }
 
 int
@@ -561,10 +559,10 @@ ser_base_print_tty_state (struct serial *scb,
   return;
 }
 
-int
+void
 ser_base_setbaudrate (struct serial *scb, int rate)
 {
-  return 0;			/* Never fails!  */
+  /* Never fails!  */
 }
 
 int
@@ -592,8 +590,8 @@ ser_base_async (struct serial *scb,
       /* Force a re-schedule.  */
       scb->async_state = NOTHING_SCHEDULED;
       if (serial_debug_p (scb))
-	fprintf_unfiltered (gdb_stdlog, "[fd%d->asynchronous]\n",
-			    scb->fd);
+	gdb_printf (gdb_stdlog, "[fd%d->asynchronous]\n",
+		    scb->fd);
       reschedule (scb);
 
       if (scb->error_fd != -1)
@@ -602,8 +600,8 @@ ser_base_async (struct serial *scb,
   else
     {
       if (serial_debug_p (scb))
-	fprintf_unfiltered (gdb_stdlog, "[fd%d->synchronous]\n",
-			    scb->fd);
+	gdb_printf (gdb_stdlog, "[fd%d->synchronous]\n",
+		    scb->fd);
       /* De-schedule whatever tasks are currently scheduled.  */
       switch (scb->async_state)
 	{

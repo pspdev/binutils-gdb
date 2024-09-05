@@ -1,5 +1,5 @@
 /* Line completion stuff for GDB, the GNU debugger.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,11 +16,10 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "expression.h"
-#include "filenames.h"		/* For DOSish file names.  */
+#include "filenames.h"
 #include "language.h"
 #include "gdbsupport/gdb_signals.h"
 #include "target.h"
@@ -31,12 +30,13 @@
 #include <algorithm>
 #include "linespec.h"
 #include "cli/cli-decode.h"
+#include "gdbsupport/gdb_tilde_expand.h"
 
 /* FIXME: This is needed because of lookup_cmd_1 ().  We should be
    calling a hook instead so we eliminate the CLI dependency.  */
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 
-/* Needed for rl_completer_word_break_characters() and for
+/* Needed for rl_completer_word_break_characters and for
    rl_filename_completion_function.  */
 #include "readline/readline.h"
 
@@ -44,6 +44,13 @@
 #undef savestring
 
 #include "completer.h"
+
+/* Forward declarations.  */
+static const char *completion_find_completion_word (completion_tracker &tracker,
+						    const char *text,
+						    int *quote_char);
+
+static void set_rl_completer_word_break_characters (const char *break_chars);
 
 /* See completer.h.  */
 
@@ -175,18 +182,16 @@ static const char gdb_completer_file_name_break_characters[] =
   " \t\n*|\"';:?><";
 #endif
 
-/* Characters that can be used to quote completion strings.  Note that
-   we can't include '"' because the gdb C parser treats such quoted
+/* Characters that can be used to quote expressions.  Note that we can't
+   include '"' (double quote) because the gdb C parser treats such quoted
    sequences as strings.  */
-static const char gdb_completer_quote_characters[] = "'";
-
-/* Accessor for some completer data that may interest other files.  */
+static const char gdb_completer_expression_quote_characters[] = "'";
 
-const char *
-get_gdb_completer_quote_characters (void)
-{
-  return gdb_completer_quote_characters;
-}
+/* Characters that can be used to quote file names.  We do allow '"'
+   (double quotes) in this set as file names are not passed through the C
+   expression parser.  */
+static const char gdb_completer_file_name_quote_characters[] = "'\"";
+
 
 /* This can be used for functions which don't want to complete on
    symbols but don't want to complete on anything else either.  */
@@ -205,13 +210,13 @@ filename_completer (struct cmd_list_element *ignore,
 		    completion_tracker &tracker,
 		    const char *text, const char *word)
 {
-  int subsequent_name;
+  rl_completer_quote_characters = gdb_completer_file_name_quote_characters;
 
-  subsequent_name = 0;
+  int subsequent_name = 0;
   while (1)
     {
       gdb::unique_xmalloc_ptr<char> p_rl
-	(rl_filename_completion_function (text, subsequent_name));
+	(rl_filename_completion_function (word, subsequent_name));
       if (p_rl == NULL)
 	break;
       /* We need to set subsequent_name to a non-zero value before the
@@ -225,17 +230,23 @@ filename_completer (struct cmd_list_element *ignore,
       if (p[strlen (p) - 1] == '~')
 	continue;
 
+      /* Readline appends a trailing '/' if the completion is a
+	 directory.  If this completion request originated from outside
+	 readline (e.g. GDB's 'complete' command), then we append the
+	 trailing '/' ourselves now.  */
+      if (!tracker.from_readline ())
+	{
+	  std::string expanded = gdb_tilde_expand (p_rl);
+	  struct stat finfo;
+	  const bool isdir = (stat (expanded.c_str (), &finfo) == 0
+			      && S_ISDIR (finfo.st_mode));
+	  if (isdir)
+	    p_rl.reset (concat (p_rl.get (), "/", nullptr));
+	}
+
       tracker.add_completion
-	(make_completion_match_str (std::move (p_rl), text, word));
+	(make_completion_match_str (std::move (p_rl), word, word));
     }
-#if 0
-  /* There is no way to do this just long enough to affect quote
-     inserting without also affecting the next completion.  This
-     should be fixed in readline.  FIXME.  */
-  /* Ensure that readline does the right thing
-     with respect to inserting quotes.  */
-  rl_completer_word_break_characters = "";
-#endif
 }
 
 /* The corresponding completer_handle_brkchars
@@ -248,6 +259,8 @@ filename_completer_handle_brkchars (struct cmd_list_element *ignore,
 {
   set_rl_completer_word_break_characters
     (gdb_completer_file_name_break_characters);
+
+  rl_completer_quote_characters = gdb_completer_file_name_quote_characters;
 }
 
 /* Find the bounds of the current word for completion purposes, and
@@ -393,12 +406,13 @@ gdb_rl_find_completion_word (struct gdb_rl_completion_word_info *info,
 static const char *
 advance_to_completion_word (completion_tracker &tracker,
 			    const char *word_break_characters,
+			    const char *quote_characters,
 			    const char *text)
 {
   gdb_rl_completion_word_info info;
 
   info.word_break_characters = word_break_characters;
-  info.quote_characters = gdb_completer_quote_characters;
+  info.quote_characters = quote_characters;
   info.basic_quote_characters = rl_basic_quote_characters;
 
   int delimiter;
@@ -423,7 +437,8 @@ advance_to_expression_complete_word_point (completion_tracker &tracker,
 					   const char *text)
 {
   const char *brk_chars = current_language->word_break_characters ();
-  return advance_to_completion_word (tracker, brk_chars, text);
+  const char *quote_chars = gdb_completer_expression_quote_characters;
+  return advance_to_completion_word (tracker, brk_chars, quote_chars, text);
 }
 
 /* See completer.h.  */
@@ -433,7 +448,8 @@ advance_to_filename_complete_word_point (completion_tracker &tracker,
 					 const char *text)
 {
   const char *brk_chars = gdb_completer_file_name_break_characters;
-  return advance_to_completion_word (tracker, brk_chars, text);
+  const char *quote_chars = gdb_completer_file_name_quote_characters;
+  return advance_to_completion_word (tracker, brk_chars, quote_chars, text);
 }
 
 /* See completer.h.  */
@@ -707,13 +723,13 @@ string_or_empty (const char *string)
 
 static void
 collect_explicit_location_matches (completion_tracker &tracker,
-				   struct event_location *location,
+				   location_spec *locspec,
 				   enum explicit_location_match_type what,
 				   const char *word,
 				   const struct language_defn *language)
 {
-  const struct explicit_location *explicit_loc
-    = get_explicit_location (location);
+  const explicit_location_spec *explicit_loc
+    = as_explicit_location_spec (locspec);
 
   /* True if the option expects an argument.  */
   bool needs_arg = true;
@@ -725,7 +741,8 @@ collect_explicit_location_matches (completion_tracker &tracker,
     {
     case MATCH_SOURCE:
       {
-	const char *source = string_or_empty (explicit_loc->source_filename);
+	const char *source
+	  = string_or_empty (explicit_loc->source_filename.get ());
 	completion_list matches
 	  = make_source_files_completion_list (source, source);
 	tracker.add_completions (std::move (matches));
@@ -734,10 +751,11 @@ collect_explicit_location_matches (completion_tracker &tracker,
 
     case MATCH_FUNCTION:
       {
-	const char *function = string_or_empty (explicit_loc->function_name);
+	const char *function
+	  = string_or_empty (explicit_loc->function_name.get ());
 	linespec_complete_function (tracker, function,
 				    explicit_loc->func_name_match_type,
-				    explicit_loc->source_filename);
+				    explicit_loc->source_filename.get ());
       }
       break;
 
@@ -750,10 +768,10 @@ collect_explicit_location_matches (completion_tracker &tracker,
 
     case MATCH_LABEL:
       {
-	const char *label = string_or_empty (explicit_loc->label_name);
+	const char *label = string_or_empty (explicit_loc->label_name.get ());
 	linespec_complete_label (tracker, language,
-				 explicit_loc->source_filename,
-				 explicit_loc->function_name,
+				 explicit_loc->source_filename.get (),
+				 explicit_loc->function_name.get (),
 				 explicit_loc->func_name_match_type,
 				 label);
       }
@@ -846,19 +864,19 @@ skip_keyword (completion_tracker &tracker,
   return -1;
 }
 
-/* A completer function for explicit locations.  This function
+/* A completer function for explicit location specs.  This function
    completes both options ("-source", "-line", etc) and values.  If
    completing a quoted string, then QUOTED_ARG_START and
    QUOTED_ARG_END point to the quote characters.  LANGUAGE is the
    current language.  */
 
 static void
-complete_explicit_location (completion_tracker &tracker,
-			    struct event_location *location,
-			    const char *text,
-			    const language_defn *language,
-			    const char *quoted_arg_start,
-			    const char *quoted_arg_end)
+complete_explicit_location_spec (completion_tracker &tracker,
+				 location_spec *locspec,
+				 const char *text,
+				 const language_defn *language,
+				 const char *quoted_arg_start,
+				 const char *quoted_arg_end)
 {
   if (*text != '-')
     return;
@@ -916,7 +934,7 @@ complete_explicit_location (completion_tracker &tracker,
 	}
 
       /* Now gather matches  */
-      collect_explicit_location_matches (tracker, location, what, text,
+      collect_explicit_location_matches (tracker, locspec, what, text,
 					 language);
     }
 }
@@ -943,9 +961,9 @@ location_completer (struct cmd_list_element *ignore,
   const char *copy = text;
 
   explicit_completion_info completion_info;
-  event_location_up location
-    = string_to_explicit_location (&copy, current_language,
-				   &completion_info);
+  location_spec_up locspec
+    = string_to_explicit_location_spec (&copy, current_language,
+					&completion_info);
   if (completion_info.quoted_arg_start != NULL
       && completion_info.quoted_arg_end == NULL)
     {
@@ -954,7 +972,7 @@ location_completer (struct cmd_list_element *ignore,
       tracker.advance_custom_word_point_by (1);
     }
 
-  if (completion_info.saw_explicit_location_option)
+  if (completion_info.saw_explicit_location_spec_option)
     {
       if (*copy != '\0')
 	{
@@ -987,15 +1005,15 @@ location_completer (struct cmd_list_element *ignore,
 						- text);
 	  text = completion_info.last_option;
 
-	  complete_explicit_location (tracker, location.get (), text,
-				      current_language,
-				      completion_info.quoted_arg_start,
-				      completion_info.quoted_arg_end);
+	  complete_explicit_location_spec (tracker, locspec.get (), text,
+					   current_language,
+					   completion_info.quoted_arg_start,
+					   completion_info.quoted_arg_end);
 
 	}
     }
   /* This is an address or linespec location.  */
-  else if (location != NULL)
+  else if (locspec != nullptr)
     {
       /* Handle non-explicit location options.  */
 
@@ -1008,7 +1026,7 @@ location_completer (struct cmd_list_element *ignore,
 	  text = copy;
 
 	  symbol_name_match_type match_type
-	    = get_explicit_location (location.get ())->func_name_match_type;
+	    = as_explicit_location_spec (locspec.get ())->func_name_match_type;
 	  complete_address_and_linespec_locations (tracker, text, match_type);
 	}
     }
@@ -1055,107 +1073,31 @@ location_completer_handle_brkchars (struct cmd_list_element *ignore,
   location_completer (ignore, tracker, text, NULL);
 }
 
-/* Helper for expression_completer which recursively adds field and
-   method names from TYPE, a struct or union type, to the OUTPUT
-   list.  */
-
-static void
-add_struct_fields (struct type *type, completion_list &output,
-		   const char *fieldname, int namelen)
-{
-  int i;
-  int computed_type_name = 0;
-  const char *type_name = NULL;
-
-  type = check_typedef (type);
-  for (i = 0; i < type->num_fields (); ++i)
-    {
-      if (i < TYPE_N_BASECLASSES (type))
-	add_struct_fields (TYPE_BASECLASS (type, i),
-			   output, fieldname, namelen);
-      else if (TYPE_FIELD_NAME (type, i))
-	{
-	  if (TYPE_FIELD_NAME (type, i)[0] != '\0')
-	    {
-	      if (! strncmp (TYPE_FIELD_NAME (type, i), 
-			     fieldname, namelen))
-		output.emplace_back (xstrdup (TYPE_FIELD_NAME (type, i)));
-	    }
-	  else if (type->field (i).type ()->code () == TYPE_CODE_UNION)
-	    {
-	      /* Recurse into anonymous unions.  */
-	      add_struct_fields (type->field (i).type (),
-				 output, fieldname, namelen);
-	    }
-	}
-    }
-
-  for (i = TYPE_NFN_FIELDS (type) - 1; i >= 0; --i)
-    {
-      const char *name = TYPE_FN_FIELDLIST_NAME (type, i);
-
-      if (name && ! strncmp (name, fieldname, namelen))
-	{
-	  if (!computed_type_name)
-	    {
-	      type_name = type->name ();
-	      computed_type_name = 1;
-	    }
-	  /* Omit constructors from the completion list.  */
-	  if (!type_name || strcmp (type_name, name))
-	    output.emplace_back (xstrdup (name));
-	}
-    }
-}
-
 /* See completer.h.  */
 
 void
 complete_expression (completion_tracker &tracker,
 		     const char *text, const char *word)
 {
-  struct type *type = NULL;
-  gdb::unique_xmalloc_ptr<char> fieldname;
-  enum type_code code = TYPE_CODE_UNDEF;
+  expression_up exp;
+  std::unique_ptr<expr_completion_base> expr_completer;
 
   /* Perform a tentative parse of the expression, to see whether a
      field completion is required.  */
   try
     {
-      type = parse_expression_for_completion (text, &fieldname, &code);
+      exp = parse_expression_for_completion (text, &expr_completer);
     }
   catch (const gdb_exception_error &except)
     {
       return;
     }
 
-  if (fieldname != nullptr && type)
-    {
-      for (;;)
-	{
-	  type = check_typedef (type);
-	  if (type->code () != TYPE_CODE_PTR && !TYPE_IS_REFERENCE (type))
-	    break;
-	  type = TYPE_TARGET_TYPE (type);
-	}
-
-      if (type->code () == TYPE_CODE_UNION
-	  || type->code () == TYPE_CODE_STRUCT)
-	{
-	  completion_list result;
-
-	  add_struct_fields (type, result, fieldname.get (),
-			     strlen (fieldname.get ()));
-	  tracker.add_completions (std::move (result));
-	  return;
-	}
-    }
-  else if (fieldname != nullptr && code != TYPE_CODE_UNDEF)
-    {
-      collect_symbol_completion_matches_type (tracker, fieldname.get (),
-					      fieldname.get (), code);
-      return;
-    }
+  /* Part of the parse_expression_for_completion contract.  */
+  gdb_assert ((exp == nullptr) == (expr_completer == nullptr));
+  if (expr_completer != nullptr
+      && expr_completer->complete (exp.get (), tracker))
+    return;
 
   complete_files_symbols (tracker, text, word);
 }
@@ -1172,9 +1114,12 @@ expression_completer (struct cmd_list_element *ignore,
   complete_expression (tracker, text, word);
 }
 
-/* See definition in completer.h.  */
+/* Set the word break characters array to BREAK_CHARS.  This function is
+   useful as const-correct alternative to direct assignment to
+   rl_completer_word_break_characters, which is "char *", not "const
+   char *".  */
 
-void
+static void
 set_rl_completer_word_break_characters (const char *break_chars)
 {
   rl_completer_word_break_characters = (char *) break_chars;
@@ -1257,23 +1202,6 @@ complete_line_internal_normal_command (completion_tracker &tracker,
 				       complete_line_internal_reason reason,
 				       struct cmd_list_element *c)
 {
-  const char *p = cmd_args;
-
-  if (c->completer == filename_completer)
-    {
-      /* Many commands which want to complete on file names accept
-	 several file names, as in "run foo bar >>baz".  So we don't
-	 want to complete the entire text after the command, just the
-	 last word.  To this end, we need to find the beginning of the
-	 file name by starting at `word' and going backwards.  */
-      for (p = word;
-	   p > command
-	     && strchr (gdb_completer_file_name_break_characters,
-			p[-1]) == NULL;
-	   p--)
-	;
-    }
-
   if (reason == handle_brkchars)
     {
       completer_handle_brkchars_ftype *brkchars_fn;
@@ -1287,11 +1215,11 @@ complete_line_internal_normal_command (completion_tracker &tracker,
 	       (c->completer));
 	}
 
-      brkchars_fn (c, tracker, p, word);
+      brkchars_fn (c, tracker, cmd_args, word);
     }
 
   if (reason != handle_brkchars && c->completer != NULL)
-    (*c->completer) (c, tracker, p, word);
+    (*c->completer) (c, tracker, cmd_args, word);
 }
 
 /* Internal function used to handle completions.
@@ -1327,6 +1255,11 @@ complete_line_internal_1 (completion_tracker &tracker,
      commands.  */
   set_rl_completer_word_break_characters
     (current_language->word_break_characters ());
+
+  /* Likewise for the quote characters.  If we later find out that we are
+     completing file names then we can switch to the file name quote
+     character set (i.e., both single- and double-quotes).  */
+  rl_completer_quote_characters = gdb_completer_expression_quote_characters;
 
   /* Decide whether to complete on a list of gdb commands or on
      symbols.  */
@@ -1548,7 +1481,8 @@ int max_completions = 200;
 
 /* See completer.h.  */
 
-completion_tracker::completion_tracker ()
+completion_tracker::completion_tracker (bool from_readline)
+  : m_from_readline (from_readline)
 {
   discard_completions ();
 }
@@ -1745,8 +1679,8 @@ make_completion_match_str (gdb::unique_xmalloc_ptr<char> &&match_name,
 completion_result
 complete (const char *line, char const **word, int *quote_char)
 {
-  completion_tracker tracker_handle_brkchars;
-  completion_tracker tracker_handle_completions;
+  completion_tracker tracker_handle_brkchars (false);
+  completion_tracker tracker_handle_completions (false);
   completion_tracker *tracker;
 
   /* The WORD should be set to the end of word to complete.  We initialize
@@ -1895,13 +1829,9 @@ reg_or_group_completer_1 (completion_tracker &tracker,
 
   if ((targets & complete_reggroup_names) != 0)
     {
-      struct reggroup *group;
-
-      for (group = reggroup_next (gdbarch, NULL);
-	   group != NULL;
-	   group = reggroup_next (gdbarch, group))
+      for (const struct reggroup *group : gdbarch_reggroups (gdbarch))
 	{
-	  name = reggroup_name (group);
+	  name = group->name ();
 	  if (strncmp (word, name, len) == 0)
 	    tracker.add_completion (make_unique_xstrdup (name));
 	}
@@ -1980,7 +1910,7 @@ gdb_completion_word_break_characters_throw ()
   /* New completion starting.  Get rid of the previous tracker and
      start afresh.  */
   delete current_completion.tracker;
-  current_completion.tracker = new completion_tracker ();
+  current_completion.tracker = new completion_tracker (true);
 
   completion_tracker &tracker = *current_completion.tracker;
 
@@ -2011,11 +1941,15 @@ gdb_completion_word_break_characters_throw ()
       rl_basic_quote_characters = NULL;
     }
 
-  return rl_completer_word_break_characters;
+  return (char *) rl_completer_word_break_characters;
 }
 
-char *
-gdb_completion_word_break_characters ()
+/* Get the list of chars that are considered as word breaks for the current
+   command.  This function does not throw any exceptions and is called from
+   readline.  See gdb_completion_word_break_characters_throw for details.  */
+
+static char *
+gdb_completion_word_break_characters () noexcept
 {
   /* New completion starting.  */
   current_completion.aborted = false;
@@ -2034,9 +1968,14 @@ gdb_completion_word_break_characters ()
   return NULL;
 }
 
-/* See completer.h.  */
+/* Find the bounds of the word in TEXT for completion purposes, and return
+   a pointer to the end of the word.  Calls the completion machinery for a
+   handle_brkchars phase (using TRACKER) to figure out the right work break
+   characters for the command in TEXT.  QUOTE_CHAR, if non-null, is set to
+   the opening quote character if we found an unclosed quoted substring,
+   '\0' otherwise.  */
 
-const char *
+static const char *
 completion_find_completion_word (completion_tracker &tracker, const char *text,
 				 int *quote_char)
 {
@@ -2054,7 +1993,7 @@ completion_find_completion_word (completion_tracker &tracker, const char *text,
   gdb_rl_completion_word_info info;
 
   info.word_break_characters = rl_completer_word_break_characters;
-  info.quote_characters = gdb_completer_quote_characters;
+  info.quote_characters = rl_completer_quote_characters;
   info.basic_quote_characters = rl_basic_quote_characters;
 
   return gdb_rl_find_completion_word (&info, quote_char, NULL, text);
@@ -2119,7 +2058,7 @@ completion_tracker::recompute_lowest_common_denominator ()
 	return 1;
       };
 
-  htab_traverse (m_entries_hash.get (), visitor_func, this);
+  htab_traverse_noresize (m_entries_hash.get (), visitor_func, this);
   m_lowest_common_denominator_valid = true;
 }
 
@@ -2386,7 +2325,7 @@ gdb_rl_attempted_completion_function_throw (const char *text, int start, int end
   if (end == 0 || !current_completion.tracker->use_custom_word_point ())
     {
       delete current_completion.tracker;
-      current_completion.tracker = new completion_tracker ();
+      current_completion.tracker = new completion_tracker (true);
 
       complete_line (*current_completion.tracker, text,
 		     rl_line_buffer, rl_point);
@@ -2405,7 +2344,7 @@ gdb_rl_attempted_completion_function_throw (const char *text, int start, int end
    hook.  Wrapper around gdb_rl_attempted_completion_function_throw
    that catches C++ exceptions, which can't cross readline.  */
 
-char **
+static char **
 gdb_rl_attempted_completion_function (const char *text, int start, int end)
 {
   /* Restore globals that might have been tweaked in
@@ -2431,61 +2370,6 @@ gdb_rl_attempted_completion_function (const char *text, int start, int end)
     }
 
   return NULL;
-}
-
-/* Skip over the possibly quoted word STR (as defined by the quote
-   characters QUOTECHARS and the word break characters BREAKCHARS).
-   Returns pointer to the location after the "word".  If either
-   QUOTECHARS or BREAKCHARS is NULL, use the same values used by the
-   completer.  */
-
-const char *
-skip_quoted_chars (const char *str, const char *quotechars,
-		   const char *breakchars)
-{
-  char quote_char = '\0';
-  const char *scan;
-
-  if (quotechars == NULL)
-    quotechars = gdb_completer_quote_characters;
-
-  if (breakchars == NULL)
-    breakchars = current_language->word_break_characters ();
-
-  for (scan = str; *scan != '\0'; scan++)
-    {
-      if (quote_char != '\0')
-	{
-	  /* Ignore everything until the matching close quote char.  */
-	  if (*scan == quote_char)
-	    {
-	      /* Found matching close quote.  */
-	      scan++;
-	      break;
-	    }
-	}
-      else if (strchr (quotechars, *scan))
-	{
-	  /* Found start of a quoted string.  */
-	  quote_char = *scan;
-	}
-      else if (strchr (breakchars, *scan))
-	{
-	  break;
-	}
-    }
-
-  return (scan);
-}
-
-/* Skip over the possibly quoted word STR (as defined by the quote
-   characters and word break characters used by the completer).
-   Returns pointer to the location after the "word".  */
-
-const char *
-skip_quoted (const char *str)
-{
-  return skip_quoted_chars (str, NULL, NULL);
 }
 
 /* Return a message indicating that the maximum number of completions
@@ -2892,7 +2776,7 @@ gdb_complete_get_screenwidth (const struct match_list_displayer *displayer)
 extern int _rl_completion_prefix_display_length;
 extern int _rl_print_completions_horizontally;
 
-EXTERN_C int _rl_qsort_string_compare (const void *, const void *);
+extern "C" int _rl_qsort_string_compare (const void *, const void *);
 typedef int QSFUNC (const void *, const void *);
 
 /* GDB version of readline/complete.c:rl_display_match_list.
@@ -3071,10 +2955,68 @@ gdb_display_match_list (char **matches, int len, int max,
     }
 }
 
+/* See completer.h.  */
+
+bool
+skip_over_slash_fmt (completion_tracker &tracker, const char **args)
+{
+  const char *text = *args;
+
+  if (text[0] == '/')
+    {
+      bool in_fmt;
+      tracker.set_use_custom_word_point (true);
+
+      if (text[1] == '\0')
+	{
+	  /* The user tried to complete after typing just the '/' character
+	     of the /FMT string.  Step the completer past the '/', but we
+	     don't offer any completions.  */
+	  in_fmt = true;
+	  ++text;
+	}
+      else
+	{
+	  /* The user has typed some characters after the '/', we assume
+	     this is a complete /FMT string, first skip over it.  */
+	  text = skip_to_space (text);
+
+	  if (*text == '\0')
+	    {
+	      /* We're at the end of the input string.  The user has typed
+		 '/FMT' and asked for a completion.  Push an empty
+		 completion string, this will cause readline to insert a
+		 space so the user now has '/FMT '.  */
+	      in_fmt = true;
+	      tracker.add_completion (make_unique_xstrdup (text));
+	    }
+	  else
+	    {
+	      /* The user has already typed things after the /FMT, skip the
+		 whitespace and return false.  Whoever called this function
+		 should then try to complete what comes next.  */
+	      in_fmt = false;
+	      text = skip_spaces (text);
+	    }
+	}
+
+      tracker.advance_custom_word_point_by (text - *args);
+      *args = text;
+      return in_fmt;
+    }
+
+  return false;
+}
+
 void _initialize_completer ();
 void
 _initialize_completer ()
 {
+  /* Setup some readline completion globals.  */
+  rl_completion_word_break_hook = gdb_completion_word_break_characters;
+  rl_attempted_completion_function = gdb_rl_attempted_completion_function;
+  set_rl_completer_word_break_characters (default_word_break_characters ());
+
   add_setshow_zuinteger_unlimited_cmd ("max-completions", no_class,
 				       &max_completions, _("\
 Set maximum number of completion candidates."), _("\

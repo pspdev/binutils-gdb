@@ -1,4 +1,4 @@
-# Copyright 2020-2021 Free Software Foundation, Inc.
+# Copyright 2020-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,10 +17,7 @@
 # loading a new target description file, and which registers show up
 # in the output of the 'info registers' command.
 
-if {![istarget "riscv*-*-*"]} {
-    verbose "Skipping ${gdb_test_file_name}."
-    return
-}
+require {istarget "riscv*-*-*"}
 
 standard_testfile
 
@@ -31,7 +28,6 @@ if { [prepare_for_testing "failed to prepare" ${testfile} ${srcfile} \
 }
 
 if { ![runto_main] } {
-    untested "failed to runto main"
     return -1
 }
 
@@ -137,4 +133,28 @@ foreach rgroup {x_all all save restore general system csr} {
 	    "register $reg seen in reggroup $rgroup $expected_count times"
     }
     array unset reg_counts
+}
+
+# Next load a target description that contains fcsr, but not fflags or
+# frm.  Then check that GDB provides an fflags and frm registers using
+# the pseudo-register mechanism.
+if { $xlen == 4 } {
+    set xml_tdesc "riscv-tdesc-fcsr-32.xml"
+} else {
+    set xml_tdesc "riscv-tdesc-fcsr-64.xml"
+}
+set xml_tdesc "${srcdir}/${subdir}/${xml_tdesc}"
+
+# Maybe copy the target over if we're remote testing.
+if {[is_remote host]} {
+    set remote_file [remote_download host $xml_tdesc]
+} else {
+    set remote_file $xml_tdesc
+}
+
+gdb_test_no_output "set tdesc filename $remote_file" \
+    "load the target description that lacks fflags and frm"
+
+foreach reg {fflags frm} {
+    gdb_test "info registers $reg" "^$reg\\s+\[^\r\n\]+"
 }

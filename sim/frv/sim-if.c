@@ -1,5 +1,5 @@
 /* Main simulator entry points specific to the FRV.
-   Copyright (C) 1998-2021 Free Software Foundation, Inc.
+   Copyright (C) 1998-2024 Free Software Foundation, Inc.
    Contributed by Red Hat.
 
 This file is part of the GNU simulators.
@@ -20,14 +20,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 /* This must come before any other includes.  */
 #include "defs.h"
 
+#include <stdlib.h>
+
+#include "sim/callback.h"
+
 #define WANT_CPU
 #define WANT_CPU_FRVBF
 #include "sim-main.h"
-#include <stdlib.h>
 #include "sim-options.h"
 #include "libiberty.h"
 #include "bfd.h"
-#include "elf-bfd.h"
+#include "bfd/elf-bfd.h"
 
 static void free_state (SIM_DESC);
 
@@ -62,7 +65,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *callback, bfd *abfd,
   current_target_byte_order = BFD_ENDIAN_BIG;
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
-  if (sim_cpu_alloc_all (sd, 1) != SIM_RC_OK)
+  if (sim_cpu_alloc_all_extra (sd, 0, sizeof (struct frv_sim_cpu)) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -92,11 +95,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *callback, bfd *abfd,
     sim_do_commandf (sd, "memory region 0,0x%x", FRV_DEFAULT_MEM_SIZE);
 
   /* check for/establish the reference program image */
-  if (sim_analyze_program (sd,
-			   (STATE_PROG_ARGV (sd) != NULL
-			    ? *STATE_PROG_ARGV (sd)
-			    : NULL),
-			   abfd) != SIM_RC_OK)
+  if (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -179,10 +178,11 @@ frv_sim_close (SIM_DESC sd, int quitting)
 
 SIM_RC
 sim_create_inferior (SIM_DESC sd, bfd *abfd, char * const *argv,
-		     char * const *envp)
+		     char * const *env)
 {
   SIM_CPU *current_cpu = STATE_CPU (sd, 0);
-  SIM_ADDR addr;
+  host_callback *cb = STATE_CALLBACK (sd);
+  bfd_vma addr;
 
   if (abfd != NULL)
     addr = bfd_get_start_address (abfd);
@@ -199,6 +199,15 @@ sim_create_inferior (SIM_DESC sd, bfd *abfd, char * const *argv,
       freeargv (STATE_PROG_ARGV (sd));
       STATE_PROG_ARGV (sd) = dupargv (argv);
     }
+
+  if (STATE_PROG_ENVP (sd) != env)
+    {
+      freeargv (STATE_PROG_ENVP (sd));
+      STATE_PROG_ENVP (sd) = dupargv (env);
+    }
+
+  cb->argv = STATE_PROG_ARGV (sd);
+  cb->envp = STATE_PROG_ENVP (sd);
 
   return SIM_RC_OK;
 }

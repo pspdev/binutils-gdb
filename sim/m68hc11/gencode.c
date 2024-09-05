@@ -1,5 +1,5 @@
 /* gencode.c -- Motorola 68HC11 & 68HC12 Emulator Generator
-   Copyright 1999-2021 Free Software Foundation, Inc.
+   Copyright 1999-2024 Free Software Foundation, Inc.
    Written by Stephane Carrez (stcarrez@nerim.fr)
 
 This file is part of GDB, GAS, and the GNU binutils.
@@ -89,7 +89,7 @@ struct m6811_opcode_pattern
  * Size	    -----------------+	      +--------------- Min # cycles
  *				 +-------------------- Opcode
  */
-struct m6811_opcode_pattern m6811_opcode_patterns[] = {
+static struct m6811_opcode_pattern m6811_opcode_patterns[] = {
   /* Move 8 and 16 bits.  We need two implementations: one that sets the
      flags and one that preserve them.	*/
   { "movtst8",	"dst8 = src8",	 "cpu_ccr_update_tst8 (cpu, dst8)" },
@@ -134,7 +134,7 @@ struct m6811_opcode_pattern m6811_opcode_patterns[] = {
   { "rts11",  "addr = cpu_m68hc11_pop_uint16 (cpu); cpu_set_pc (cpu, addr); cpu_return (cpu)" },
   { "rts12",  "addr = cpu_m68hc12_pop_uint16 (cpu); cpu_set_pc (cpu, addr); cpu_return (cpu)" },
 
-  { "mul16", "dst16 = ((uint16) src8 & 0x0FF) * ((uint16) dst8 & 0x0FF)",
+  { "mul16", "dst16 = ((uint16_t) src8 & 0x0FF) * ((uint16_t) dst8 & 0x0FF)",
     "cpu_set_ccr_C (cpu, src8 & 0x80)" },
   { "neg8", "dst8 = - src8",
     "cpu_set_ccr_C (cpu, src8 == 0); cpu_ccr_update_tst8 (cpu, dst8)" },
@@ -227,7 +227,7 @@ dst16 = dst16 + src16", 0 },
   { "txys16", "dst16 = src16 - 1;"},
 
   /* Add b to X or Y with an unsigned extension 8->16.	Flags not changed.  */
-  { "abxy16","dst16 = dst16 + (uint16) src8"},
+  { "abxy16","dst16 = dst16 + (uint16_t) src8"},
 
   /* After 'daa', the Z flag is undefined. Mark it as changed.	*/
   { "daa8",  "cpu_special (cpu, M6811_DAA)" },
@@ -256,8 +256,8 @@ cpu_set_ccr_V (cpu, 1);\n\
 cpu_set_ccr_C (cpu, dst16 == 0);\n\
 }\nelse\n{\n\
 unsigned long l = (unsigned long) (dst16) << 16;\n\
-cpu_set_d (cpu, (uint16) (l % (unsigned long) (src16)));\n\
-dst16 = (uint16) (l / (unsigned long) (src16));\n\
+cpu_set_d (cpu, (uint16_t) (l % (unsigned long) (src16)));\n\
+dst16 = (uint16_t) (l / (unsigned long) (src16));\n\
 cpu_set_ccr_V (cpu, 0);\n\
 cpu_set_ccr_C (cpu, 0);\n\
 cpu_set_ccr_Z (cpu, dst16 == 0);\n\
@@ -289,8 +289,8 @@ cpu_set_ccr_Z (cpu, dst16 == 0);\n\
   { "call_ind", "cpu_special (cpu, M6812_CALL_INDIRECT)" },
   { "dbcc8", "cpu_dbcc (cpu)" },
   { "ediv",  "cpu_special (cpu, M6812_EDIV)" },
-  { "emul",  "{ uint32 src1 = (uint32) cpu_get_d (cpu);\
-  uint32 src2 = (uint32) cpu_get_y (cpu);\
+  { "emul",  "{ uint32_t src1 = (uint32_t) cpu_get_d (cpu);\
+  uint32_t src2 = (uint32_t) cpu_get_y (cpu);\
   src1 *= src2;\
   cpu_set_d (cpu, src1);\
   cpu_set_y (cpu, src1 >> 16);\
@@ -358,7 +358,7 @@ struct m6811_opcode_def
  * (y)->a     src8 = (IND, Y)		a = dst8
  * ()->b      src8 = (EXT)		b = dst8
  */
-struct m6811_opcode_def m6811_page1_opcodes[] = {
+static struct m6811_opcode_def m6811_page1_opcodes[] = {
   { "test", 0,		0,	     1, 0x00,  5, _M,  CHG_NONE },
   { "nop",  0,		0,	     1, 0x01,  2,  2,  CHG_NONE },
   { "idiv", "x,d->x",	"idiv16",    1, 0x02,  3, 41,  CLR_V_CHG_ZC},
@@ -612,7 +612,7 @@ struct m6811_opcode_def m6811_page1_opcodes[] = {
  * Pattern   -----------+	       +--------------- Min # cycles
  * Size	     -----------------+	  +-------------------- Opcode
  */
-struct m6811_opcode_def m6811_page2_opcodes[] = {
+static struct m6811_opcode_def m6811_page2_opcodes[] = {
   { "iny",  "y->y",	"inc16",     2, 0x08, 4, 4, CHG_Z },
   { "dey",  "y->y",	"dec16",     2, 0x09, 4, 4, CHG_Z },
   { "bset", "(y),#->(y)","or8",	     4, 0x1c, 8, 8, CLR_V_CHG_NZ },
@@ -687,7 +687,7 @@ struct m6811_opcode_def m6811_page2_opcodes[] = {
  * Pattern   -----------+	       +--------------- Min # cycles
  * Size	     -----------------+	  +-------------------- Opcode
  */
-struct m6811_opcode_def m6811_page3_opcodes[] = {
+static struct m6811_opcode_def m6811_page3_opcodes[] = {
   { "cmpd", "#,d",	"sub16",     4, 0x83, 5, 5, CHG_NZVC },
   { "cmpd", "*,d",	"sub16",     3, 0x93, 6, 6, CHG_NZVC },
   { "cmpd", "(x),d",	"sub16",     3, 0xa3, 7, 7, CHG_NZVC },
@@ -705,7 +705,7 @@ struct m6811_opcode_def m6811_page3_opcodes[] = {
  * Pattern   -----------+	       +--------------- Min # cycles
  * Size	     -----------------+	  +-------------------- Opcode
  */
-struct m6811_opcode_def m6811_page4_opcodes[] = {
+static struct m6811_opcode_def m6811_page4_opcodes[] = {
   { "syscall", "",	"syscall",   2, 0x03, 6, 6, CHG_NONE },
   { "cmpd", "(y),d",	"sub16",     3, 0xa3, 7, 7, CHG_NZVC },
   { "cmpx", "(y),x",	"sub16",     3, 0xac, 7, 7, CHG_NZVC },
@@ -721,7 +721,7 @@ struct m6811_opcode_def m6811_page4_opcodes[] = {
  * Pattern   -----------+	       +--------------- Min # cycles
  * Size	     -----------------+	  +-------------------- Opcode
  */
-struct m6811_opcode_def m6812_page1_opcodes[] = {
+static struct m6811_opcode_def m6812_page1_opcodes[] = {
   { "adca", "#,a->a",    "adc8",     2, 0x89,  1,  1,  CHG_HNZVC },
   { "adca", "*,a->a",    "adc8",     2, 0x99,  3,  3,  CHG_HNZVC },
   { "adca", "(),a->a",   "adc8",     3, 0xb9,  3,  3,  CHG_HNZVC },
@@ -1070,7 +1070,7 @@ struct m6811_opcode_def m6812_page1_opcodes[] = {
   { "wai",  0,            0,          1, 0x3e,  8,  _M, CHG_NONE }
 };
 
-struct m6811_opcode_def m6812_page2_opcodes[] = {
+static struct m6811_opcode_def m6812_page2_opcodes[] = {
   { "cba",  "b,a",        "sub8",     2, 0x17,  2,  2,  CHG_NZVC },
 
   /* After 'daa', the Z flag is undefined. Mark it as changed.  */
@@ -1138,27 +1138,14 @@ struct m6811_opcode_def m6812_page2_opcodes[] = {
   { "wav",  0,            0,          2, 0x3c,  8,  _M, SET_Z_CHG_HNVC }
 };
 
-void fatal_error (const struct m6811_opcode_def*, const char*, ...);
-void print (FILE*, int, const char*,...);
-int gen_fetch_operands (FILE*, int, const struct m6811_opcode_def*,
-			const char*);
-void gen_save_result (FILE*, int, const struct m6811_opcode_def*,
-		      int, const char*);
-const struct m6811_opcode_pattern*
-find_opcode_pattern (const struct m6811_opcode_def*);
-void gen_interp (FILE*, int, const struct m6811_opcode_def*);
-void gen_interpreter_for_table (FILE*, int,
-				const struct m6811_opcode_def*,
-				int, const char*);
-void gen_interpreter (FILE*);
-
 
 static int indent_level = 2;
 static int current_insn_size = 0;
 
 /* Fatal error message and exit.  This method is called when an inconsistency
    is detected in the generation table.	 */
-void
+ATTRIBUTE_PRINTF_2
+static void
 fatal_error (const struct m6811_opcode_def *opcode, const char *msg, ...)
 {
   va_list argp;
@@ -1180,7 +1167,8 @@ fatal_error (const struct m6811_opcode_def *opcode, const char *msg, ...)
 
 
 /* Format and pretty print for the code generation.  (printf like format).  */
-void
+ATTRIBUTE_PRINTF_3
+static void
 print (FILE *fp, int col, const char *msg, ...)
 {
   va_list argp;
@@ -1284,15 +1272,15 @@ print (FILE *fp, int col, const char *msg, ...)
    -	End of input operands.
   
    Example:
-       (x),a->a	      addr = x + (uint16) (fetch8 (cpu));
+       (x),a->a	      addr = x + (uint16_t) (fetch8 (cpu));
 		      src8 = a
-       *,#,r	      addr = (uint16) (fetch8 (cpu))  <- Temporary 'addr'
+       *,#,r	      addr = (uint16_t) (fetch8 (cpu))  <- Temporary 'addr'
 		      src8 = read_mem8 (cpu, addr)
 		      dst8 = fetch8 (cpu)
 		      addr = fetch_relbranch (cpu)    <- Final 'addr'
   
    Returns 1 if the 'addr' operand is set, 0 otherwise.	 */
-int
+static int
 gen_fetch_operands (FILE *fp, int col,
 		    const struct m6811_opcode_def *opcode,
 		    const char *operand_size)
@@ -1357,7 +1345,7 @@ gen_fetch_operands (FILE *fp, int col,
 	  
 	  addr_set = 1;
 	  current_insn_size += 1;
-	  print (fp, col, "addr = (uint16) cpu_fetch8 (cpu);");
+	  print (fp, col, "addr = (uint16_t) cpu_fetch8 (cpu);");
 	  print (fp, col, "%s%s = memory_read%s (cpu, addr);",
 		 vars[cur_var], operand_size, operand_size);
 	  break;
@@ -1370,13 +1358,13 @@ gen_fetch_operands (FILE *fp, int col,
 	  if (strncmp (operands, "(x)", 3) == 0)
 	    {
 	      current_insn_size += 1;
-	      print (fp, col, "addr = cpu_get_x (cpu) + (uint16) cpu_fetch8 (cpu);");
+	      print (fp, col, "addr = cpu_get_x (cpu) + (uint16_t) cpu_fetch8 (cpu);");
 	      operands += 3;
 	    }
 	  else if (strncmp (operands, "(y)", 3) == 0)
 	    {
 	      current_insn_size += 1;
-	      print (fp, col, "addr = cpu_get_y (cpu) + (uint16) cpu_fetch8 (cpu);");
+	      print (fp, col, "addr = cpu_get_y (cpu) + (uint16_t) cpu_fetch8 (cpu);");
 	      operands += 3;
 	    }
 	  else if (strncmp (operands, "()", 2) == 0)
@@ -1408,7 +1396,7 @@ gen_fetch_operands (FILE *fp, int col,
 	    {
 	      addr_set = 1;
 	      current_insn_size += 1;
-	      print (fp, col, "addr = cpu_get_x (cpu) + (uint16) cpu_fetch8 (cpu);");
+	      print (fp, col, "addr = cpu_get_x (cpu) + (uint16_t) cpu_fetch8 (cpu);");
 	      print (fp, col, "%s%s = memory_read%s (cpu, addr);",
 		     vars[cur_var], operand_size, operand_size);
 	      operands += 2;
@@ -1417,7 +1405,7 @@ gen_fetch_operands (FILE *fp, int col,
 	    {
 	      addr_set = 1;
 	      current_insn_size += 1;
-	      print (fp, col, "addr = cpu_get_y (cpu) + (uint16) cpu_fetch8 (cpu);");
+	      print (fp, col, "addr = cpu_get_y (cpu) + (uint16_t) cpu_fetch8 (cpu);");
 	      print (fp, col, "%s%s = memory_read%s (cpu, addr);",
 		     vars[cur_var], operand_size, operand_size);
 	      operands += 2;
@@ -1608,7 +1596,7 @@ gen_fetch_operands (FILE *fp, int col,
    []   68HC12 indexed indirect
    (sp) Push
 	Push the 8/16-bits result on the stack.	 */
-void
+static void
 gen_save_result (FILE *fp, int col,
 		 const struct m6811_opcode_def *opcode,
 		 int addr_set,
@@ -1668,7 +1656,7 @@ gen_save_result (FILE *fp, int col,
       if (addr_set == 0)
 	{
 	  current_insn_size += 1;
-	  print (fp, col, "addr = (uint16) cpu_fetch8 (cpu);");
+	  print (fp, col, "addr = (uint16_t) cpu_fetch8 (cpu);");
 	}
       result_size = operand_size;
       print (fp, col, "memory_write%s (cpu, addr, dst%s);",
@@ -1804,7 +1792,7 @@ gen_save_result (FILE *fp, int col,
 
 
 /* Find the instruction pattern for a given instruction.  */
-const struct m6811_opcode_pattern*
+static const struct m6811_opcode_pattern*
 find_opcode_pattern (const struct m6811_opcode_def *opcode)
 {
   int i;
@@ -1826,7 +1814,7 @@ find_opcode_pattern (const struct m6811_opcode_def *opcode)
 }
 
 /* Generate the code for interpretation of instruction 'opcode'.  */
-void
+static void
 gen_interp (FILE *fp, int col, const struct m6811_opcode_def *opcode)
 {
   const char *operands = opcode->operands;
@@ -1885,7 +1873,7 @@ gen_interp (FILE *fp, int col, const struct m6811_opcode_def *opcode)
 
 
 /* Generate the interpretor for a given 68HC11 page set.  */
-void
+static void
 gen_interpreter_for_table (FILE *fp, int col,
 			   const struct m6811_opcode_def *table,
 			   int size,
@@ -1930,7 +1918,7 @@ gen_interpreter_for_table (FILE *fp, int col,
 
 /* Generate the table of instruction cycle.  These tables are indexed
    by the opcode number to allow a fast cycle time computation.	 */
-void
+static void
 gen_cycle_table (FILE *fp, const char *name,
 		 const struct m6811_opcode_def *table,
 		 int size)
@@ -1986,7 +1974,7 @@ gen_cycle_table (FILE *fp, const char *name,
 #define USE_SRC8 1
 #define USE_DST8 2
 
-void
+static void
 gen_function_entry (FILE *fp, const char *name, int locals)
 {
   /* Generate interpretor entry point.	*/
@@ -1995,20 +1983,20 @@ gen_function_entry (FILE *fp, const char *name, int locals)
 
   /* Interpretor local variables.  */
   print (fp, indent_level, "unsigned char op;");
-  print (fp, indent_level, "uint16 addr, src16, dst16;");
+  print (fp, indent_level, "uint16_t addr, src16, dst16;");
   if (locals & USE_SRC8)
-    print (fp, indent_level, "uint8 src8;\n");
+    print (fp, indent_level, "uint8_t src8;\n");
   if (locals & USE_DST8)
-    print (fp, indent_level, "uint8 dst8;\n");
+    print (fp, indent_level, "uint8_t dst8;\n");
 }
 
-void
+static void
 gen_function_close (FILE *fp)
 {
   print (fp, 0, "}\n");
 }
 
-int
+static int
 cmp_opcode (const void *e1, const void *e2)
 {
   struct m6811_opcode_def* op1 = (struct m6811_opcode_def*) e1;
@@ -2017,7 +2005,7 @@ cmp_opcode (const void *e1, const void *e2)
   return (int) (op1->insn_code) - (int) (op2->insn_code);
 }
 
-void
+static void
 prepare_table (struct m6811_opcode_def* table, int size)
 {
   int i;
@@ -2033,7 +2021,7 @@ prepare_table (struct m6811_opcode_def* table, int size)
     }
 }
 
-void
+static void
 gen_interpreter (FILE *fp)
 {
   int col = 0;
@@ -2048,7 +2036,7 @@ gen_interpreter (FILE *fp)
 
   /* Generate header of interpretor.  */
   print (fp, col, "/* File generated automatically by gencode. */\n");
-  print (fp, col, "#include \"sim-main.h\"\n\n");
+  print (fp, col, "#include \"m68hc11-sim.h\"\n\n");
 
   if (cpu_type & cpu6811)
     {
@@ -2119,7 +2107,7 @@ gen_interpreter (FILE *fp)
     }
 }
 
-void
+static void
 usage (char* prog)
 {
   fprintf (stderr, "Usage: %s {-m6811|-m6812}\n", prog);

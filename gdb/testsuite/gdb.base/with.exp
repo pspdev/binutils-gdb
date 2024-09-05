@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 
-# Copyright 2019-2021 Free Software Foundation, Inc.
+# Copyright 2019-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -54,14 +54,17 @@ proc test_with_error {setting tmp_val expected_re} {
     global gdb_prompt
 
     with_test_prefix "$setting, $tmp_val" {
-	set test "save org value"
 	set org_val ""
-	gdb_test_multiple "maint show test-settings $setting" $test {
-	    -re "(.*)\r\n$gdb_prompt $" {
-		set org_val $expect_out(1,string)
-		pass $test
+	gdb_test_multiple "maint show test-settings $setting" \
+	    "save org value" {
+		-re "^maint show test-settings $setting\r\n" {
+		    exp_continue
+		}
+		-re "^(.*)\r\n$gdb_prompt $" {
+		    set org_val $expect_out(1,string)
+		    pass $gdb_test_name
+		}
 	    }
-	}
 
 	gdb_test \
 	    "maint with test-settings $setting $tmp_val -- p 1" \
@@ -99,14 +102,14 @@ with_test_prefix "maint" {
     test_with_error "boolean" "2" "\"on\" or \"off\" expected\\."
     test_with_error "uinteger" "-1" "integer -1 out of range"
     test_with_error "uinteger" "" \
-	"Argument required \\(integer to set it to, or \"unlimited\"\\.\\)\\."
+	"Argument required \\(integer to set it to, or \"unlimited\"\\)\\."
     test_with_error "zuinteger" "-1" "integer -1 out of range"
     test_with_error "zuinteger" "" \
-	"Argument required \\(integer to set it to\\.\\)\\."
+	"Argument required \\(integer to set it to\\)\\."
     test_with_error "zuinteger-unlimited" "-2" \
-	"only -1 is allowed to set as unlimited"
+	"integer -2 out of range"
     test_with_error "zuinteger-unlimited" "" \
-	"Argument required \\(integer to set it to, or \"unlimited\"\\.\\)\\."
+	"Argument required \\(integer to set it to, or \"unlimited\"\\)\\."
     test_with_error "filename" "" \
 	"Argument required \\(filename to set it to\\.\\)\\."
     test_with_error "enum" "" \
@@ -209,7 +212,6 @@ with_test_prefix "run control" {
     clean_restart $binfile
 
     if ![runto_main] {
-	fail "cannot run to main"
 	return
     }
 
@@ -244,7 +246,7 @@ with_test_prefix "errors" {
 	"Cannot use this setting with the \"with\" command"
 
     gdb_test "with print elements -- p 1" \
-	"Argument required \\(integer to set it to, or \"unlimited\"\\.\\)\\."
+	"Argument required \\(integer to set it to, or \"unlimited\"\\)\\."
 
     gdb_test "with -- p 1" \
 	"Missing setting before '--' delimiter"

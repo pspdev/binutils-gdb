@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2021 Free Software Foundation, Inc.
+# Copyright (C) 2015-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,9 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if ![supports_reverse] {
-    return
-}
+require supports_reverse !use_gdb_stub
 
 standard_testfile
 
@@ -23,8 +21,7 @@ if {[prepare_for_testing "failed to prepare" $testfile $srcfile \
 	 [list debug]]} {
     return -1
 }
-if { ![runto_main] } then {
-    fail "run to main"
+if {![runto_main]} {
     return
 }
 
@@ -98,17 +95,19 @@ proc test { func testcase_nr } {
 
 	    if { $prev_insn_addr == $insn_addr } {
 		# Failed to make progress, might have run into SIGILL.
-		unsupported "no progress at: $expect_out(2,string)"
+		fail "no progress at: $expect_out(2,string)"
+		# Ignore the last instruction recorded
+		incr count -1
 		break
 	    }
 
 	    set pre_regs($count) [capture_command_output "info all-registers" ""]
-	    gdb_test "si" "" ""
+	    gdb_test -nopass "si"
 	}
 
 	# Registers contents after each backward single step.
 	for {set i [expr $count - 1]} {$i >= 0} {incr i -1} {
-	    gdb_test "reverse-stepi" "" ""
+	    gdb_test -nopass "reverse-stepi"
 	    set post_regs($i) [capture_command_output "info all-registers" ""]
 	}
 

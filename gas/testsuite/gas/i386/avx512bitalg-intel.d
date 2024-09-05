@@ -1,4 +1,3 @@
-#as:
 #objdump: -dw -Mintel
 #name: i386 AVX512BITALG insns (Intel disassembly)
 #source: avx512bitalg.s
@@ -8,7 +7,7 @@
 
 Disassembly of section \.text:
 
-00000000 <_start>:
+00000000 <bitalg>:
 [ 	]*[a-f0-9]+:[ 	]*62 f2 55 48 8f ec[ 	]*vpshufbitqmb k5,zmm5,zmm4
 [ 	]*[a-f0-9]+:[ 	]*62 f2 55 4f 8f ec[ 	]*vpshufbitqmb k5\{k7\},zmm5,zmm4
 [ 	]*[a-f0-9]+:[ 	]*62 f2 55 48 8f ac f4 c0 1d fe ff[ 	]*vpshufbitqmb k5,zmm5,ZMMWORD PTR \[esp\+esi\*8-0x1e240\]
@@ -28,13 +27,13 @@ Disassembly of section \.text:
 [ 	]*[a-f0-9]+:[ 	]*62 f2 7d cf 55 f5[ 	]*vpopcntd zmm6\{k7\}\{z\},zmm5
 [ 	]*[a-f0-9]+:[ 	]*62 f2 7d 48 55 b4 f4 c0 1d fe ff[ 	]*vpopcntd zmm6,ZMMWORD PTR \[esp\+esi\*8-0x1e240\]
 [ 	]*[a-f0-9]+:[ 	]*62 f2 7d 48 55 72 7f[ 	]*vpopcntd zmm6,ZMMWORD PTR \[edx\+0x1fc0\]
-[ 	]*[a-f0-9]+:[ 	]*62 f2 7d 58 55 72 7f[ 	]*vpopcntd zmm6,DWORD PTR \[edx\+0x1fc\]\{1to16\}
+[ 	]*[a-f0-9]+:[ 	]*62 f2 7d 58 55 72 7f[ 	]*vpopcntd zmm6,DWORD BCST \[edx\+0x1fc\]
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd 48 55 f5[ 	]*vpopcntq zmm6,zmm5
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd 4f 55 f5[ 	]*vpopcntq zmm6\{k7\},zmm5
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd cf 55 f5[ 	]*vpopcntq zmm6\{k7\}\{z\},zmm5
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd 48 55 b4 f4 c0 1d fe ff[ 	]*vpopcntq zmm6,ZMMWORD PTR \[esp\+esi\*8-0x1e240\]
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd 48 55 72 7f[ 	]*vpopcntq zmm6,ZMMWORD PTR \[edx\+0x1fc0\]
-[ 	]*[a-f0-9]+:[ 	]*62 f2 fd 58 55 72 7f[ 	]*vpopcntq zmm6,QWORD PTR \[edx\+0x3f8\]\{1to8\}
+[ 	]*[a-f0-9]+:[ 	]*62 f2 fd 58 55 72 7f[ 	]*vpopcntq zmm6,QWORD BCST \[edx\+0x3f8\]
 [ 	]*[a-f0-9]+:[ 	]*62 f2 55 48 8f ec[ 	]*vpshufbitqmb k5,zmm5,zmm4
 [ 	]*[a-f0-9]+:[ 	]*62 f2 55 4f 8f ec[ 	]*vpshufbitqmb k5\{k7\},zmm5,zmm4
 [ 	]*[a-f0-9]+:[ 	]*62 f2 55 48 8f ac f4 c0 1d fe ff[ 	]*vpshufbitqmb k5,zmm5,ZMMWORD PTR \[esp\+esi\*8-0x1e240\]
@@ -54,11 +53,11 @@ Disassembly of section \.text:
 [ 	]*[a-f0-9]+:[ 	]*62 f2 7d cf 55 f5[ 	]*vpopcntd zmm6\{k7\}\{z\},zmm5
 [ 	]*[a-f0-9]+:[ 	]*62 f2 7d 48 55 b4 f4 c0 1d fe ff[ 	]*vpopcntd zmm6,ZMMWORD PTR \[esp\+esi\*8-0x1e240\]
 [ 	]*[a-f0-9]+:[ 	]*62 f2 7d 48 55 72 7f[ 	]*vpopcntd zmm6,ZMMWORD PTR \[edx\+0x1fc0\]
-[ 	]*[a-f0-9]+:[ 	]*62 f2 7d 58 55 72 7f[ 	]*vpopcntd zmm6,DWORD PTR \[edx\+0x1fc\]\{1to16\}
+[ 	]*[a-f0-9]+:[ 	]*62 f2 7d 58 55 72 7f[ 	]*vpopcntd zmm6,DWORD BCST \[edx\+0x1fc\]
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd 48 55 f5[ 	]*vpopcntq zmm6,zmm5
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd 4f 55 f5[ 	]*vpopcntq zmm6\{k7\},zmm5
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd cf 55 f5[ 	]*vpopcntq zmm6\{k7\}\{z\},zmm5
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd 48 55 b4 f4 c0 1d fe ff[ 	]*vpopcntq zmm6,ZMMWORD PTR \[esp\+esi\*8-0x1e240\]
 [ 	]*[a-f0-9]+:[ 	]*62 f2 fd 48 55 72 7f[ 	]*vpopcntq zmm6,ZMMWORD PTR \[edx\+0x1fc0\]
-[ 	]*[a-f0-9]+:[ 	]*62 f2 fd 58 55 72 7f[ 	]*vpopcntq zmm6,QWORD PTR \[edx\+0x3f8\]\{1to8\}
+[ 	]*[a-f0-9]+:[ 	]*62 f2 fd 58 55 72 7f[ 	]*vpopcntq zmm6,QWORD BCST \[edx\+0x3f8\]
 #pass

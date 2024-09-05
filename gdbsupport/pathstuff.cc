@@ -1,6 +1,6 @@
 /* Path manipulation routines for GDB and gdbserver.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "common-defs.h"
 #include "pathstuff.h"
 #include "host-defs.h"
 #include "filenames.h"
@@ -29,6 +28,10 @@
 
 /* See gdbsupport/pathstuff.h.  */
 
+char *current_directory;
+
+/* See gdbsupport/pathstuff.h.  */
+
 gdb::unique_xmalloc_ptr<char>
 gdb_realpath (const char *filename)
 {
@@ -37,7 +40,7 @@ gdb_realpath (const char *filename)
 
    But the situation is slightly more complex on Windows, due to some
    versions of GCC which were reported to generate paths where
-   backlashes (the directory separator) were doubled.  For instance:
+   backslashes (the directory separator) were doubled.  For instance:
       c:\\some\\double\\slashes\\dir
    ... instead of ...
       c:\some\double\slashes\dir
@@ -82,17 +85,16 @@ gdb_realpath (const char *filename)
 
 /* See gdbsupport/pathstuff.h.  */
 
-gdb::unique_xmalloc_ptr<char>
+std::string
 gdb_realpath_keepfile (const char *filename)
 {
   const char *base_name = lbasename (filename);
   char *dir_name;
-  char *result;
 
   /* Extract the basename of filename, and return immediately
      a copy of filename if it does not contain any directory prefix.  */
   if (base_name == filename)
-    return make_unique_xstrdup (filename);
+    return filename;
 
   dir_name = (char *) alloca ((size_t) (base_name - filename + 2));
   /* Allocate enough space to store the dir_name + plus one extra
@@ -116,33 +118,23 @@ gdb_realpath_keepfile (const char *filename)
      directory separator, avoid doubling it.  */
   gdb::unique_xmalloc_ptr<char> path_storage = gdb_realpath (dir_name);
   const char *real_path = path_storage.get ();
-  if (IS_DIR_SEPARATOR (real_path[strlen (real_path) - 1]))
-    result = concat (real_path, base_name, (char *) NULL);
-  else
-    result = concat (real_path, SLASH_STRING, base_name, (char *) NULL);
-
-  return gdb::unique_xmalloc_ptr<char> (result);
+  return path_join (real_path, base_name);
 }
 
 /* See gdbsupport/pathstuff.h.  */
 
-gdb::unique_xmalloc_ptr<char>
+std::string
 gdb_abspath (const char *path)
 {
   gdb_assert (path != NULL && path[0] != '\0');
 
   if (path[0] == '~')
-    return gdb_tilde_expand_up (path);
+    return gdb_tilde_expand (path);
 
   if (IS_ABSOLUTE_PATH (path) || current_directory == NULL)
-    return make_unique_xstrdup (path);
+    return path;
 
-  /* Beware the // my son, the Emacs barfs, the botch that catch...  */
-  return gdb::unique_xmalloc_ptr<char>
-    (concat (current_directory,
-	     IS_DIR_SEPARATOR (current_directory[strlen (current_directory) - 1])
-	     ? "" : SLASH_STRING,
-	     path, (char *) NULL));
+  return path_join (current_directory, path);
 }
 
 /* See gdbsupport/pathstuff.h.  */
@@ -197,6 +189,35 @@ child_path (const char *parent, const char *child)
 
 /* See gdbsupport/pathstuff.h.  */
 
+std::string
+path_join (gdb::array_view<const char *> paths)
+{
+  std::string ret;
+
+  for (int i = 0; i < paths.size (); ++i)
+    {
+      const char *path = paths[i];
+
+      if (!ret.empty ())
+	{
+	  /* If RET doesn't already end with a separator then add one.  */
+	  if (!IS_DIR_SEPARATOR (ret.back ()))
+	    ret += '/';
+
+	  /* Now that RET ends with a separator, ignore any at the start of
+	     PATH.  */
+	  while (IS_DIR_SEPARATOR (path[0]))
+	    ++path;
+	}
+
+      ret.append (path);
+    }
+
+  return ret;
+}
+
+/* See gdbsupport/pathstuff.h.  */
+
 bool
 contains_dir_separator (const char *path)
 {
@@ -225,8 +246,8 @@ get_standard_cache_dir ()
   if (xdg_cache_home != NULL && xdg_cache_home[0] != '\0')
     {
       /* Make sure the path is absolute and tilde-expanded.  */
-      gdb::unique_xmalloc_ptr<char> abs (gdb_abspath (xdg_cache_home));
-      return string_printf ("%s/gdb", abs.get ());
+      std::string abs = gdb_abspath (xdg_cache_home);
+      return path_join (abs.c_str (), "gdb");
     }
 #endif
 
@@ -234,8 +255,8 @@ get_standard_cache_dir ()
   if (home != NULL && home[0] != '\0')
     {
       /* Make sure the path is absolute and tilde-expanded.  */
-      gdb::unique_xmalloc_ptr<char> abs (gdb_abspath (home));
-      return string_printf ("%s/" HOME_CACHE_DIR "/gdb", abs.get ());
+      std::string abs = gdb_abspath (home);
+      return path_join (abs.c_str (), HOME_CACHE_DIR,  "gdb");
     }
 
 #ifdef WIN32
@@ -243,8 +264,8 @@ get_standard_cache_dir ()
   if (win_home != NULL && win_home[0] != '\0')
     {
       /* Make sure the path is absolute and tilde-expanded.  */
-      gdb::unique_xmalloc_ptr<char> abs (gdb_abspath (win_home));
-      return string_printf ("%s/gdb", abs.get ());
+      std::string abs = gdb_abspath (win_home);
+      return path_join (abs.c_str (), "gdb");
     }
 #endif
 
@@ -292,8 +313,8 @@ get_standard_config_dir ()
   if (xdg_config_home != NULL && xdg_config_home[0] != '\0')
     {
       /* Make sure the path is absolute and tilde-expanded.  */
-      gdb::unique_xmalloc_ptr<char> abs (gdb_abspath (xdg_config_home));
-      return string_printf ("%s/gdb", abs.get ());
+      std::string abs = gdb_abspath (xdg_config_home);
+      return path_join (abs.c_str (), "gdb");
     }
 #endif
 
@@ -301,8 +322,8 @@ get_standard_config_dir ()
   if (home != NULL && home[0] != '\0')
     {
       /* Make sure the path is absolute and tilde-expanded.  */
-      gdb::unique_xmalloc_ptr<char> abs (gdb_abspath (home));
-      return string_printf ("%s/" HOME_CONFIG_DIR "/gdb", abs.get ());
+      std::string abs = gdb_abspath (home);
+      return path_join (abs.c_str (), HOME_CONFIG_DIR, "gdb");
     }
 
   return {};
@@ -343,9 +364,8 @@ find_gdb_home_config_file (const char *name, struct stat *buf)
   if (homedir != nullptr && homedir[0] != '\0')
     {
       /* Make sure the path is absolute and tilde-expanded.  */
-      gdb::unique_xmalloc_ptr<char> abs (gdb_abspath (homedir));
-      std::string path = (std::string (abs.get ()) + SLASH_STRING
-			  + std::string (name));
+      std::string abs = gdb_abspath (homedir);
+      std::string path = string_printf ("%s/%s", abs.c_str (), name);
       if (stat (path.c_str (), buf) == 0)
 	return path;
     }

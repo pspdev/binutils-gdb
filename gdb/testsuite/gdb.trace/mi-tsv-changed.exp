@@ -1,4 +1,4 @@
-# Copyright 2012-2021 Free Software Foundation, Inc.
+# Copyright 2012-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,10 +18,7 @@ load_lib mi-support.exp
 
 standard_testfile actions.c
 
-if ![gdb_trace_common_supports_arch] {
-    unsupported "no trace-common.h support for arch"
-    return -1
-}
+require gdb_trace_common_supports_arch
 
 if { [gdb_compile "$srcdir/$subdir/$srcfile" $binfile \
 	  executable {debug nowarnings}] != "" } {
@@ -71,7 +68,6 @@ proc test_create_delete_modify_tsv { } {
 	clean_restart $testfile
 
 	if ![runto_main] {
-	    fail "can't run to main to check for trace support"
 	    return -1
 	}
 
@@ -80,16 +76,14 @@ proc test_create_delete_modify_tsv { } {
 	    return -1
 	}
 	gdb_exit
-	if [mi_gdb_start] {
-	    continue
-	}
 
-	mi_gdb_reinitialize_dir $srcdir/$subdir
-	mi_gdb_load ${binfile}
+	if {[mi_clean_restart $binfile]} {
+	    return
+	}
 
 	mi_gdb_test "tvariable \$tvar3 = 3" \
 	    ".*=tsv-created,name=\"tvar3\",initial=\"3\".*\\^done" \
-	    "tvariable \$tvar3 modified"
+	    "tvariable \$tvar3 modified to 3"
 	mi_gdb_test "-break-insert -a gdb_c_test" \
 	    {.*\^done,bkpt=.*} \
 	    "insert tracepoint on gdb_c_test"
@@ -128,7 +122,7 @@ proc test_create_delete_modify_tsv { } {
 	mi_gdb_test "-trace-list-variables" ".*" "list trace variables"
 	mi_gdb_test "tvariable \$tvar3 = 2" \
 	    ".*=tsv-modified,name=\"tvar3\",initial=\"2\",current=\"6\".*\\^done" \
-	    "tvariable \$tvar3 modified"
+	    "tvariable \$tvar3 modified to 2"
 
     }
 }
@@ -152,8 +146,7 @@ proc test_upload_tsv { } {
 	}
 
 	clean_restart $testfile
-	if ![runto_main] then {
-	    fail "can't run to main"
+	if {![runto_main]} {
 	    return 0
 	}
 
@@ -182,18 +175,10 @@ proc test_upload_tsv { } {
 	    }
 	}
 
-	gdb_exit
-
-	if [mi_gdb_start] {
+	global binfile
+	if {[mi_clean_restart $binfile]} {
 	    return
 	}
-
-	global srcdir
-	global subdir
-	global binfile
-
-	mi_gdb_reinitialize_dir $srcdir/$subdir
-	mi_gdb_load ${binfile}
 
 	global gdbserver_protocol
 	global gdbserver_gdbport
@@ -239,7 +224,6 @@ proc test_upload_tsv { } {
 clean_restart $testfile
 
 if ![runto_main] {
-    fail "can't run to main to check for trace support"
     return -1
 }
 
@@ -251,5 +235,3 @@ if ![gdb_target_supports_trace] {
 gdb_exit
 
 test_upload_tsv
-
-return 0

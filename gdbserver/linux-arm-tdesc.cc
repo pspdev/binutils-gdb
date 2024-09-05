@@ -1,4 +1,4 @@
-/* Copyright (C) 2019-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2019-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -15,7 +15,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "server.h"
 
 #include "linux-arm-tdesc.h"
 
@@ -35,7 +34,7 @@ arm_linux_read_description (arm_fp_type fp_type)
 
   if (tdesc == nullptr)
     {
-      tdesc = arm_create_target_description (fp_type);
+      tdesc = arm_create_target_description (fp_type, false);
 
       static const char *expedite_regs[] = { "r11", "sp", "pc", 0 };
       init_target_desc (tdesc, expedite_regs);

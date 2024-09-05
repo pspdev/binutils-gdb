@@ -1,5 +1,5 @@
 /* Object file "section" support for the BFD library.
-   Copyright (C) 1990-2021 Free Software Foundation, Inc.
+   Copyright (C) 1990-2024 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -137,19 +137,38 @@ SUBSECTION
 /*
 DOCDD
 INODE
-typedef asection, section prototypes, Section Output, Sections
+	typedef asection, section prototypes, Section Output, Sections
 SUBSECTION
 	typedef asection
 
 	Here is the section structure:
 
-CODE_FRAGMENT
+EXTERNAL
+.{* Linenumber stuff.  *}
+.typedef struct lineno_cache_entry
+.{
+.  unsigned int line_number;	{* Linenumber from start of function.  *}
+.  union
+.  {
+.    struct bfd_symbol *sym;	{* Function name.  *}
+.    bfd_vma offset;		{* Offset into section.  *}
+.  } u;
+.}
+.alent;
 .
+
+CODE_FRAGMENT
 .typedef struct bfd_section
 .{
 .  {* The name of the section; the name isn't a copy, the pointer is
 .     the same as that passed to bfd_make_section.  *}
 .  const char *name;
+.
+.  {* The next section in the list belonging to the BFD, or NULL.  *}
+.  struct bfd_section *next;
+.
+.  {* The previous section in the list belonging to the BFD, or NULL.  *}
+.  struct bfd_section *prev;
 .
 .  {* A unique sequence number.  *}
 .  unsigned int id;
@@ -160,12 +179,6 @@ CODE_FRAGMENT
 .
 .  {* Which section in the bfd; 0..n-1 as sections are created in a bfd.  *}
 .  unsigned int index;
-.
-.  {* The next section in the list belonging to the BFD, or NULL.  *}
-.  struct bfd_section *next;
-.
-.  {* The previous section in the list belonging to the BFD, or NULL.  *}
-.  struct bfd_section *prev;
 .
 .  {* The field flags contains attributes of the section. Some
 .     flags are read in from the object file, and some are
@@ -336,9 +349,8 @@ CODE_FRAGMENT
 .     executables or shared objects. This is for COFF only.  *}
 .#define SEC_COFF_SHARED             0x8000000
 .
-.  {* This section should be compressed.  This is for ELF linker
-.     internal use only.  *}
-.#define SEC_ELF_COMPRESS            0x8000000
+.  {* Indicate that section has the purecode flag set.  *}
+.#define SEC_ELF_PURECODE            0x8000000
 .
 .  {* When a section with this flag is being linked, then if the size of
 .     the input section is less than a page, it should not cross a page
@@ -347,9 +359,8 @@ CODE_FRAGMENT
 .     TMS320C54X only.  *}
 .#define SEC_TIC54X_BLOCK           0x10000000
 .
-.  {* This section should be renamed.  This is for ELF linker
-.     internal use only.  *}
-.#define SEC_ELF_RENAME             0x10000000
+.  {* This section has the SHF_X86_64_LARGE flag.  This is ELF x86-64 only.  *}
+.#define SEC_ELF_LARGE              0x10000000
 .
 .  {* Conditionally link this section; do not link if there are no
 .     references found to any symbol in the section.  This is for TI
@@ -367,9 +378,6 @@ CODE_FRAGMENT
 .  {* Indicate that section has the no read flag set. This happens
 .     when memory read flag isn't set. *}
 .#define SEC_COFF_NOREAD            0x40000000
-.
-.  {* Indicate that section has the purecode flag set.  *}
-.#define SEC_ELF_PURECODE           0x80000000
 .
 .  {*  End of section flags.  *}
 .
@@ -392,7 +400,8 @@ CODE_FRAGMENT
 .  unsigned int compress_status : 2;
 .#define COMPRESS_SECTION_NONE    0
 .#define COMPRESS_SECTION_DONE    1
-.#define DECOMPRESS_SECTION_SIZED 2
+.#define DECOMPRESS_SECTION_ZLIB  2
+.#define DECOMPRESS_SECTION_ZSTD  3
 .
 .  {* The following flags are used by the ELF linker. *}
 .
@@ -408,9 +417,13 @@ CODE_FRAGMENT
 .#define SEC_INFO_TYPE_JUST_SYMS 4
 .#define SEC_INFO_TYPE_TARGET    5
 .#define SEC_INFO_TYPE_EH_FRAME_ENTRY 6
+.#define SEC_INFO_TYPE_SFRAME  7
 .
 .  {* Nonzero if this section uses RELA relocations, rather than REL.  *}
 .  unsigned int use_rela_p:1;
+.
+.  {* Nonzero if this section contents are mmapped, rather than malloced.  *}
+.  unsigned int mmapped_p:1;
 .
 .  {* Bits used by various backends.  The generic code doesn't touch
 .     these fields.  *}
@@ -455,13 +468,6 @@ CODE_FRAGMENT
 .  {* The compressed size of the section in octets.  *}
 .  bfd_size_type compressed_size;
 .
-.  {* Relaxation table. *}
-.  struct relax_table *relax;
-.
-.  {* Count of used relaxation table entries. *}
-.  int relax_count;
-.
-.
 .  {* If this section is going to be output, then this value is the
 .     offset in *bytes* into the output section of the first byte in the
 .     input section (byte ==> smallest addressable unit on the
@@ -474,10 +480,6 @@ CODE_FRAGMENT
 .  {* The output section through which to map on output.  *}
 .  struct bfd_section *output_section;
 .
-.  {* The alignment requirement of the section, as an exponent of 2 -
-.     e.g., 3 aligns to 2^3 (or 8).  *}
-.  unsigned int alignment_power;
-.
 .  {* If an input section, a pointer to a vector of relocation
 .     records for the data in this section.  *}
 .  struct reloc_cache_entry *relocation;
@@ -488,6 +490,10 @@ CODE_FRAGMENT
 .
 .  {* The number of relocation records in one of the above.  *}
 .  unsigned reloc_count;
+.
+.  {* The alignment requirement of the section, as an exponent of 2 -
+.     e.g., 3 aligns to 2^3 (or 8).  *}
+.  unsigned int alignment_power;
 .
 .  {* Information below is back end specific - and not always used
 .     or updated.  *}
@@ -506,7 +512,7 @@ CODE_FRAGMENT
 .
 .  {* If the SEC_IN_MEMORY flag is set, this points to the actual
 .     contents.  *}
-.  unsigned char *contents;
+.  bfd_byte *contents;
 .
 .  {* Attached line number information.  *}
 .  alent *lineno;
@@ -551,23 +557,19 @@ CODE_FRAGMENT
 .    struct bfd_section *s;
 .    const char *linked_to_symbol_name;
 .  } map_head, map_tail;
-. {* Points to the output section this section is already assigned to, if any.
-.    This is used when support for non-contiguous memory regions is enabled.  *}
-. struct bfd_section *already_assigned;
+.
+.  {* Points to the output section this section is already assigned to,
+.     if any.  This is used when support for non-contiguous memory
+.     regions is enabled.  *}
+.  struct bfd_section *already_assigned;
+.
+.  {* Explicitly specified section type, if non-zero.  *}
+.  unsigned int type;
 .
 .} asection;
 .
-.{* Relax table contains information about instructions which can
-.   be removed by relaxation -- replacing a long address with a
-.   short address.  *}
-.struct relax_table {
-.  {* Address where bytes may be deleted. *}
-.  bfd_vma addr;
-.
-.  {* Number of bytes to be deleted.  *}
-.  int size;
-.};
-.
+
+EXTERNAL
 .static inline const char *
 .bfd_section_name (const asection *sec)
 .{
@@ -644,6 +646,8 @@ CODE_FRAGMENT
 .static inline bool
 .bfd_set_section_alignment (asection *sec, unsigned int val)
 .{
+.  if (val >= sizeof (bfd_vma) * 8 - 1)
+.    return false;
 .  sec->alignment_power = val;
 .  return true;
 .}
@@ -704,26 +708,26 @@ CODE_FRAGMENT
 .}
 .
 .#define BFD_FAKE_SECTION(SEC, SYM, NAME, IDX, FLAGS)			\
-.  {* name, id,  section_id, index, next, prev, flags, user_set_vma, *}	\
-.  {  NAME, IDX, 0,          0,     NULL, NULL, FLAGS, 0,		\
+.  {* name, next, prev, id,  section_id, index, flags, user_set_vma, *}	\
+.  {  NAME, NULL, NULL, IDX, 0,          0,     FLAGS, 0,		\
 .									\
 .  {* linker_mark, linker_has_input, gc_mark, decompress_status,     *}	\
 .     0,           0,                1,       0,			\
 .									\
-.  {* segment_mark, sec_info_type, use_rela_p,                       *}	\
-.     0,            0,             0,					\
+.  {* segment_mark, sec_info_type, use_rela_p, mmapped_p,           *}	\
+.     0,            0,             0,	       0,			\
 .									\
 .  {* sec_flg0, sec_flg1, sec_flg2, sec_flg3, sec_flg4, sec_flg5,    *}	\
 .     0,        0,        0,        0,        0,        0,		\
 .									\
-.  {* vma, lma, size, rawsize, compressed_size, relax, relax_count,  *}	\
-.     0,   0,   0,    0,       0,               0,     0,		\
+.  {* vma, lma, size, rawsize, compressed_size,                      *}	\
+.     0,   0,   0,    0,       0,					\
 .									\
-.  {* output_offset, output_section, alignment_power,                *}	\
-.     0,             &SEC,           0,					\
+.  {* output_offset, output_section, relocation, orelocation,        *}	\
+.     0,             &SEC,           NULL,       NULL,			\
 .									\
-.  {* relocation, orelocation, reloc_count, filepos, rel_filepos,    *}	\
-.     NULL,       NULL,        0,           0,       0,			\
+.  {* reloc_count, alignment_power, filepos, rel_filepos,            *}	\
+.     0,           0,               0,       0,				\
 .									\
 .  {* line_filepos, userdata, contents, lineno, lineno_count,        *}	\
 .     0,            NULL,     NULL,     NULL,   0,			\
@@ -737,8 +741,8 @@ CODE_FRAGMENT
 .  {* symbol,                    symbol_ptr_ptr,                     *}	\
 .     (struct bfd_symbol *) SYM, &SEC.symbol,				\
 .									\
-.  {* map_head, map_tail, already_assigned                           *}	\
-.     { NULL }, { NULL }, NULL						\
+.  {* map_head, map_tail, already_assigned, type                     *}	\
+.     { NULL }, { NULL }, NULL,             0				\
 .									\
 .    }
 .
@@ -1561,32 +1565,53 @@ bfd_get_section_contents (bfd *abfd,
 {
   bfd_size_type sz;
 
+  if (count == 0)
+    /* Don't bother.  */
+    return true;
+
+  if (section == NULL)
+    {
+      bfd_set_error (bfd_error_bad_value);
+      return false;
+    }
+
+  if (location == NULL)
+    {
+      if (section->mmapped_p)
+	{
+	  /* Pass this request straight on to the target's function.
+	     All of the code below assumes that location != NULL.
+	     FIXME: Should we still check that count is sane ?  */
+	  return BFD_SEND (abfd, _bfd_get_section_contents,
+			   (abfd, section, location, offset, count));
+	}
+
+      bfd_set_error (bfd_error_bad_value);
+      return false;
+    }
+
   if (section->flags & SEC_CONSTRUCTOR)
     {
       memset (location, 0, (size_t) count);
       return true;
     }
 
-  if (abfd->direction != write_direction && section->rawsize != 0)
-    sz = section->rawsize;
-  else
-    sz = section->size;
+  if ((section->flags & SEC_HAS_CONTENTS) == 0)
+    {
+      memset (location, 0, (size_t) count);
+      return true;
+    }
+
+  if (abfd == NULL)
+    return false;
+
+  sz = bfd_get_section_limit_octets (abfd, section);
   if ((bfd_size_type) offset > sz
       || count > sz - offset
       || count != (size_t) count)
     {
       bfd_set_error (bfd_error_bad_value);
       return false;
-    }
-
-  if (count == 0)
-    /* Don't bother.  */
-    return true;
-
-  if ((section->flags & SEC_HAS_CONTENTS) == 0)
-    {
-      memset (location, 0, (size_t) count);
-      return true;
     }
 
   if ((section->flags & SEC_IN_MEMORY) != 0)
@@ -1620,11 +1645,15 @@ SYNOPSIS
 DESCRIPTION
 	Read all data from @var{section} in BFD @var{abfd}
 	into a buffer, *@var{buf}, malloc'd by this function.
+	Return @code{true} on success, @code{false} on failure in which
+	case *@var{buf} will be NULL.
 */
 
 bool
 bfd_malloc_and_get_section (bfd *abfd, sec_ptr sec, bfd_byte **buf)
 {
+  if (sec->mmapped_p)
+    abort ();
   *buf = NULL;
   return bfd_get_full_section_contents (abfd, sec, buf);
 }
@@ -1712,4 +1741,70 @@ _bfd_nowrite_set_section_contents (bfd *abfd,
 				   bfd_size_type count ATTRIBUTE_UNUSED)
 {
   return _bfd_bool_bfd_false_error (abfd);
+}
+
+/*
+FUNCTION
+	bfd_section_size_insane
+
+SYNOPSIS
+	bool bfd_section_size_insane (bfd *abfd, asection *sec);
+
+DESCRIPTION
+	Returns true if the given section has a size that indicates
+	it cannot be read from file.  Return false if the size is OK
+	*or* this function can't say one way or the other.
+
+*/
+
+bool
+bfd_section_size_insane (bfd *abfd, asection *sec)
+{
+  bfd_size_type size = bfd_get_section_limit_octets (abfd, sec);
+  if (size == 0)
+    return false;
+
+  if ((bfd_section_flags (sec) & SEC_IN_MEMORY) != 0
+      /* PR 24753: Linker created sections can be larger than
+	 the file size, eg if they are being used to hold stubs.  */
+      || (bfd_section_flags (sec) & SEC_LINKER_CREATED) != 0
+      /* PR 24753: Sections which have no content should also be
+	 excluded as they contain no size on disk.  */
+      || (bfd_section_flags (sec) & SEC_HAS_CONTENTS) == 0
+      /* The MMO file format supports its own special compression
+	 technique, but it uses COMPRESS_SECTION_NONE when loading
+	 a section's contents.  */
+      || bfd_get_flavour (abfd) == bfd_target_mmo_flavour)
+    return false;
+
+  ufile_ptr filesize = bfd_get_file_size (abfd);
+  if (filesize == 0)
+    return false;
+
+  if (sec->compress_status == DECOMPRESS_SECTION_ZSTD
+      || sec->compress_status == DECOMPRESS_SECTION_ZLIB)
+    {
+      /* PR26946, PR28834: Sanity check compress header uncompressed
+	 size against the original file size, and check that the
+	 compressed section can be read from file.  We choose an
+	 arbitrary uncompressed size of 10x the file size, rather than
+	 a compress ratio.  The reason being that compiling
+	 "int aaa..a;" with "a" repeated enough times can result in
+	 compression ratios without limit for .debug_str, whereas such
+	 a file will usually also have the enormous symbol
+	 uncompressed in .symtab.  */
+     if (size / 10 > filesize)
+       {
+	 bfd_set_error (bfd_error_bad_value);
+	 return true;
+       }
+     size = sec->compressed_size;
+    }
+
+  if ((ufile_ptr) sec->filepos > filesize || size > filesize - sec->filepos)
+    {
+      bfd_set_error (bfd_error_file_truncated);
+      return true;
+    }
+  return false;
 }

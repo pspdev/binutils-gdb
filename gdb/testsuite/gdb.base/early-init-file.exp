@@ -1,4 +1,4 @@
-# Copyright 2021 Free Software Foundation, Inc.
+# Copyright 2021-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,6 +15,9 @@
 
 # Test GDB's early init file mechanism.
 
+# Test assumes host == build.
+require {!is_remote host}
+
 standard_testfile
 
 # Compile the test executable.
@@ -22,9 +25,23 @@ if {[build_executable "failed to build" $testfile $srcfile]} {
     return -1
 }
 
+set custom_signal_handle_re \
+    "warning: Found custom handler for signal $decimal \(\[^\r\n\]+\) preinstalled\."
+set signal_dispositions_re \
+    [multi_line \
+	 "Some signal dispositions inherited from the environment \(\[^\r\n\]+\)" \
+	 "won't be propagated to spawned programs\." ]
+set gdb_sanitizer_msg_re \
+    [multi_line \
+	 "($custom_signal_handle_re" \
+	 ")+$signal_dispositions_re" \
+	 ""]
+
 # Start gdb and ensure that the initial version string is styled in
 # STYLE, use MESSAGE as the name of the test.
 proc check_gdb_startup_version_string { style { message "" } } {
+    global gdb_sanitizer_msg_re
+
     if { $message == "" } {
 	set message "check startup version string has style $style"
     }
@@ -32,7 +49,7 @@ proc check_gdb_startup_version_string { style { message "" } } {
     gdb_exit
     gdb_spawn
     set vers [style "GNU gdb.*" $style]
-    gdb_test "" "^${vers}.*" $message
+    gdb_test "" "^(${gdb_sanitizer_msg_re})?${vers}.*" $message
 }
 
 # Return a list containing two directory paths for newly created home
@@ -70,23 +87,44 @@ proc setup_home_directories { prefix content } {
 # drop straight to the prompt.
 proc check_gdb_startups_up_quietly { message } {
     global gdb_prompt
+    global gdb_sanitizer_msg_re
 
     gdb_exit
     gdb_spawn
 
     gdb_test_multiple "" $message {
-	-re "^$gdb_prompt $" {
+	-re "^(${gdb_sanitizer_msg_re})?$gdb_prompt $" {
 	    pass $gdb_test_name
 	}
     }
 }
 
-save_vars { env(TERM) } {
-    # We need an ANSI-capable terminal to get the output.
-    setenv TERM ansi
+# Restart GDB and check that the size of the thread pool has not been
+# adjusted to match the number of machine cores at early init time.
+proc check_gdb_maint_show { message } {
+    global gdb_prompt
+    global gdb_sanitizer_msg_re
+    gdb_exit
+    gdb_spawn
+    set setshowprefix "The number of worker threads GDB can use is"
+    set unset "$setshowprefix the default \\\(currently 0\\\)."
+    set final "$setshowprefix 1."
+    # Output when CXX_STD_THREAD is undefined.
+    set off "$setshowprefix 0."
+    gdb_test_multiple "" $message {
+	-re "^(${gdb_sanitizer_msg_re})?($unset|$off)\r\n($final|$off)\r\n$gdb_prompt $" {
+	    pass $gdb_test_name
+	}
+    }
+}
+
+with_ansi_styling_terminal {
 
     # Start GDB and confirm that the version string is styled.
-    check_gdb_startup_version_string version
+    save_vars { INTERNAL_GDBFLAGS env(HOME) env(XDG_CONFIG_HOME) } {
+	set INTERNAL_GDBFLAGS [string map {"-q" ""} $INTERNAL_GDBFLAGS]
+	check_gdb_startup_version_string version
+    }
 
     # Create an empty directory we can use as HOME for some of the
     # tests below.  When we set XDG_CONFIG_HOME we still need to point
@@ -105,7 +143,7 @@ save_vars { env(TERM) } {
 
     # Now arrange to use the fake home directory early init file.
     save_vars { INTERNAL_GDBFLAGS env(HOME) env(XDG_CONFIG_HOME) } {
-	set INTERNAL_GDBFLAGS [string map {"-nx" ""} $INTERNAL_GDBFLAGS]
+	set INTERNAL_GDBFLAGS [string map {"-nx" "" "-q" ""} $INTERNAL_GDBFLAGS]
 
 	# Now test GDB when using the HOME directory.
 	set env(HOME) $home_dir
@@ -129,7 +167,7 @@ save_vars { env(TERM) } {
 
     # Now arrange to use the fake home directory startup file.
     save_vars { INTERNAL_GDBFLAGS env(HOME) env(XDG_CONFIG_HOME) } {
-	set INTERNAL_GDBFLAGS [string map {"-nx" ""} $INTERNAL_GDBFLAGS]
+	set INTERNAL_GDBFLAGS [string map {"-nx" "" "-q" ""} $INTERNAL_GDBFLAGS]
 
 	# Now test GDB when using the HOME directory.
 	set env(HOME) $home_dir
@@ -144,5 +182,26 @@ save_vars { env(TERM) } {
 	set env(HOME) $empty_home_dir
 	check_gdb_startups_up_quietly \
 	    "check GDB starts quietly using XDG_CONFIG_HOME"
+    }
+
+    # Create fake home directory for the thread pool size check.
+    set dirs [setup_home_directories "maint-show" \
+		  [multi_line_input \
+		       "set startup-quietly on" \
+		       "maint show worker-threads" \
+		       "maint set worker-threads 1" \
+		       "maint show worker-threads"]]
+
+    set home_dir [lindex $dirs 0]
+
+    # Now arrange to use the fake home directory startup file.
+    save_vars { INTERNAL_GDBFLAGS env(HOME) env(XDG_CONFIG_HOME) } {
+	set INTERNAL_GDBFLAGS [string map {"-nx" "" "-q" ""} $INTERNAL_GDBFLAGS]
+
+	# Now test GDB when using the HOME directory.
+	set env(HOME) $home_dir
+	unset -nocomplain env(XDG_CONFIG_HOME)
+	check_gdb_maint_show \
+	    "check early init of thread pool size"
     }
 }

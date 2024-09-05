@@ -1,5 +1,5 @@
 /* Generic COFF swapping routines, for BFD.
-   Copyright (C) 1990-2021 Free Software Foundation, Inc.
+   Copyright (C) 1990-2024 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -246,6 +246,33 @@ coff_swap_reloc_out (bfd * abfd, void * src, void * dst)
   return bfd_coff_relsz (abfd);
 }
 
+#ifdef TICOFF
+static void
+coff_swap_reloc_v0_in (bfd *abfd, void *src, void *dst)
+{
+  struct external_reloc_v0 *reloc_src = (struct external_reloc_v0 *) src;
+  struct internal_reloc *reloc_dst = (struct internal_reloc *) dst;
+
+  reloc_dst->r_vaddr  = GET_RELOC_VADDR (abfd, reloc_src->r_vaddr);
+  reloc_dst->r_symndx = H_GET_16 (abfd, reloc_src->r_symndx);
+  reloc_dst->r_type   = H_GET_16 (abfd, reloc_src->r_type);
+}
+
+static unsigned int
+coff_swap_reloc_v0_out (bfd *abfd, void *src, void *dst)
+{
+  struct internal_reloc *reloc_src = (struct internal_reloc *) src;
+  struct external_reloc_v0 *reloc_dst = (struct external_reloc_v0 *) dst;
+
+  PUT_RELOC_VADDR (abfd, reloc_src->r_vaddr, reloc_dst->r_vaddr);
+  H_PUT_16 (abfd, reloc_src->r_symndx, reloc_dst->r_symndx);
+  H_PUT_16 (abfd, reloc_src->r_type, reloc_dst->r_type);
+  SWAP_OUT_RELOC_EXTRA (abfd, reloc_src, reloc_dst);
+
+  return bfd_coff_relsz (abfd);
+}
+#endif
+
 #endif /* NO_COFF_RELOCS */
 
 static void
@@ -375,8 +402,8 @@ coff_swap_aux_in (bfd *abfd,
 		  void * ext1,
 		  int type,
 		  int in_class,
-		  int indx,
-		  int numaux,
+		  int indx ATTRIBUTE_UNUSED,
+		  int numaux ATTRIBUTE_UNUSED,
 		  void * in1)
 {
   AUXENT *ext = (AUXENT *) ext1;
@@ -391,22 +418,15 @@ coff_swap_aux_in (bfd *abfd,
     case C_FILE:
       if (ext->x_file.x_fname[0] == 0)
 	{
-	  in->x_file.x_n.x_zeroes = 0;
-	  in->x_file.x_n.x_offset = H_GET_32 (abfd, ext->x_file.x_n.x_offset);
+	  in->x_file.x_n.x_n.x_zeroes = 0;
+	  in->x_file.x_n.x_n.x_offset = H_GET_32 (abfd, ext->x_file.x_n.x_offset);
 	}
       else
 	{
 #if FILNMLEN != E_FILNMLEN
 #error we need to cope with truncating or extending FILNMLEN
 #else
-	  if (numaux > 1 && coff_data (abfd)->pe)
-	    {
-	      if (indx == 0)
-		memcpy (in->x_file.x_fname, ext->x_file.x_fname,
-			numaux * sizeof (AUXENT));
-	    }
-	  else
-	    memcpy (in->x_file.x_fname, ext->x_file.x_fname, FILNMLEN);
+	  memcpy (in->x_file.x_n.x_fname, ext->x_file.x_fname, FILNMLEN);
 #endif
 	}
       goto end;
@@ -433,7 +453,7 @@ coff_swap_aux_in (bfd *abfd,
       break;
     }
 
-  in->x_sym.x_tagndx.l = H_GET_32 (abfd, ext->x_sym.x_tagndx);
+  in->x_sym.x_tagndx.u32 = H_GET_32 (abfd, ext->x_sym.x_tagndx);
 #ifndef NO_TVNDX
   in->x_sym.x_tvndx = H_GET_16 (abfd, ext->x_sym.x_tvndx);
 #endif
@@ -442,7 +462,7 @@ coff_swap_aux_in (bfd *abfd,
       || ISTAG (in_class))
     {
       in->x_sym.x_fcnary.x_fcn.x_lnnoptr = GET_FCN_LNNOPTR (abfd, ext);
-      in->x_sym.x_fcnary.x_fcn.x_endndx.l = GET_FCN_ENDNDX (abfd, ext);
+      in->x_sym.x_fcnary.x_fcn.x_endndx.u32 = GET_FCN_ENDNDX (abfd, ext);
     }
   else
     {
@@ -495,17 +515,17 @@ coff_swap_aux_out (bfd * abfd,
   switch (in_class)
     {
     case C_FILE:
-      if (in->x_file.x_fname[0] == 0)
+      if (in->x_file.x_n.x_fname[0] == 0)
 	{
 	  H_PUT_32 (abfd, 0, ext->x_file.x_n.x_zeroes);
-	  H_PUT_32 (abfd, in->x_file.x_n.x_offset, ext->x_file.x_n.x_offset);
+	  H_PUT_32 (abfd, in->x_file.x_n.x_n.x_offset, ext->x_file.x_n.x_offset);
 	}
       else
 	{
 #if FILNMLEN != E_FILNMLEN
 #error we need to cope with truncating or extending FILNMLEN
 #else
-	  memcpy (ext->x_file.x_fname, in->x_file.x_fname, FILNMLEN);
+	  memcpy (ext->x_file.x_fname, in->x_file.x_n.x_fname, FILNMLEN);
 #endif
 	}
       goto end;
@@ -525,7 +545,7 @@ coff_swap_aux_out (bfd * abfd,
       break;
     }
 
-  H_PUT_32 (abfd, in->x_sym.x_tagndx.l, ext->x_sym.x_tagndx);
+  H_PUT_32 (abfd, in->x_sym.x_tagndx.u32, ext->x_sym.x_tagndx);
 #ifndef NO_TVNDX
   H_PUT_16 (abfd, in->x_sym.x_tvndx, ext->x_sym.x_tvndx);
 #endif
@@ -534,7 +554,7 @@ coff_swap_aux_out (bfd * abfd,
       || ISTAG (in_class))
     {
       PUT_FCN_LNNOPTR (abfd, in->x_sym.x_fcnary.x_fcn.x_lnnoptr, ext);
-      PUT_FCN_ENDNDX (abfd, in->x_sym.x_fcnary.x_fcn.x_endndx.l, ext);
+      PUT_FCN_ENDNDX (abfd, in->x_sym.x_fcnary.x_fcn.x_endndx.u32, ext);
     }
   else
     {

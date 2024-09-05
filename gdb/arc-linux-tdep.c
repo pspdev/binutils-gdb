@@ -1,6 +1,6 @@
 /* Target dependent code for GNU/Linux ARC.
 
-   Copyright 2020-2021 Free Software Foundation, Inc.
+   Copyright 2020-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,12 +18,12 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 /* GDB header files.  */
-#include "defs.h"
 #include "linux-tdep.h"
 #include "objfiles.h"
 #include "opcode/arc.h"
 #include "osabi.h"
 #include "solib-svr4.h"
+#include "disasm.h"
 
 /* ARC header files.  */
 #include "opcodes/arc-dis.h"
@@ -158,7 +158,7 @@ static const int arc_linux_core_reg_offsets[] = {
    Returns TRUE if this is a sigtramp frame.  */
 
 static bool
-arc_linux_is_sigtramp (struct frame_info *this_frame)
+arc_linux_is_sigtramp (const frame_info_ptr &this_frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
   CORE_ADDR pc = get_frame_pc (this_frame);
@@ -173,6 +173,9 @@ arc_linux_is_sigtramp (struct frame_info *this_frame)
     0x20, 0x8a, 0x12, 0xc2,	/* mov  r8,nr_rt_sigreturn */
     0x22, 0x6f, 0x00, 0x3f	/* swi */
   };
+
+  constexpr size_t max_insn_sz = std::max (sizeof (insns_be_hs),
+					   sizeof (insns_be_700));
 
   gdb_byte arc_sigtramp_insns[sizeof (insns_be_700)];
   size_t insns_sz;
@@ -200,7 +203,8 @@ arc_linux_is_sigtramp (struct frame_info *this_frame)
 	std::swap (arc_sigtramp_insns[i], arc_sigtramp_insns[i+1]);
     }
 
-  gdb_byte buf[insns_sz];
+  gdb_assert (insns_sz <= max_insn_sz);
+  gdb_byte buf[max_insn_sz];
 
   /* Read the memory at the PC.  Since we are stopped, any breakpoint must
      have been removed.  */
@@ -256,7 +260,7 @@ arc_linux_is_sigtramp (struct frame_info *this_frame)
    etc) in GDB hardcode values.  */
 
 static CORE_ADDR
-arc_linux_sigcontext_addr (struct frame_info *this_frame)
+arc_linux_sigcontext_addr (const frame_info_ptr &this_frame)
 {
   const int ucontext_offset = 0x80;
   const int sigcontext_offset = 0x14;
@@ -355,7 +359,7 @@ arc_linux_sw_breakpoint_from_kind (struct gdbarch *gdbarch,
    */
 
 static std::vector<CORE_ADDR>
-handle_atomic_sequence (arc_instruction insn, disassemble_info &di)
+handle_atomic_sequence (arc_instruction insn, disassemble_info *di)
 {
   const int atomic_seq_len = 24;    /* Instruction sequence length.  */
   std::vector<CORE_ADDR> next_pcs;
@@ -373,26 +377,26 @@ handle_atomic_sequence (arc_instruction insn, disassemble_info &di)
   for (int insn_count = 0; insn_count < atomic_seq_len; ++insn_count)
     {
       arc_insn_decode (arc_insn_get_linear_next_pc (insn),
-		       &di, arc_delayed_print_insn, &insn);
+		       di, arc_delayed_print_insn, &insn);
 
       if (insn.insn_class == BRCC)
-        {
-          /* If more than one conditional branch is found, this is not
-             the pattern we are interested in.  */
-          if (found_bc)
+	{
+	  /* If more than one conditional branch is found, this is not
+	     the pattern we are interested in.  */
+	  if (found_bc)
 	    break;
 	  found_bc = true;
 	  continue;
-        }
+	}
 
       /* This is almost a happy ending.  */
       if (insn.insn_class == SCOND)
-        {
+	{
 	  /* SCOND should match the LLOCK's data size.  */
 	  if (insn.data_size_mode == llock_data_size_mode)
 	    is_pattern_valid = true;
 	  break;
-        }
+	}
     }
 
   if (is_pattern_valid)
@@ -410,16 +414,16 @@ static std::vector<CORE_ADDR>
 arc_linux_software_single_step (struct regcache *regcache)
 {
   struct gdbarch *gdbarch = regcache->arch ();
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
-  struct disassemble_info di = arc_disassemble_info (gdbarch);
+  arc_gdbarch_tdep *tdep = gdbarch_tdep<arc_gdbarch_tdep> (gdbarch);
+  struct gdb_non_printing_memory_disassembler dis (gdbarch);
 
   /* Read current instruction.  */
   struct arc_instruction curr_insn;
-  arc_insn_decode (regcache_read_pc (regcache), &di, arc_delayed_print_insn,
-		   &curr_insn);
+  arc_insn_decode (regcache_read_pc (regcache), dis.disasm_info (),
+		   arc_delayed_print_insn, &curr_insn);
 
   if (curr_insn.insn_class == LLOCK)
-    return handle_atomic_sequence (curr_insn, di);
+    return handle_atomic_sequence (curr_insn, dis.disasm_info ());
 
   CORE_ADDR next_pc = arc_insn_get_linear_next_pc (curr_insn);
   std::vector<CORE_ADDR> next_pcs;
@@ -430,7 +434,8 @@ arc_linux_software_single_step (struct regcache *regcache)
   if (curr_insn.has_delay_slot)
     {
       struct arc_instruction next_insn;
-      arc_insn_decode (next_pc, &di, arc_delayed_print_insn, &next_insn);
+      arc_insn_decode (next_pc, dis.disasm_info (), arc_delayed_print_insn,
+		       &next_insn);
       next_pcs.push_back (arc_insn_get_linear_next_pc (next_insn));
     }
   else
@@ -501,14 +506,14 @@ arc_linux_skip_solib_resolver (struct gdbarch *gdbarch, CORE_ADDR pc)
 
      So we look for the symbol `_dl_linux_resolver', and if we are there,
      gdb sets a breakpoint at the return address, and continues.  */
-  struct bound_minimal_symbol resolver
-    = lookup_minimal_symbol ("_dl_linux_resolver", NULL, NULL);
+  bound_minimal_symbol resolver
+    = lookup_minimal_symbol (current_program_space, "_dl_linux_resolver");
 
   if (arc_debug)
     {
       if (resolver.minsym != nullptr)
 	{
-	  CORE_ADDR res_addr = BMSYMBOL_VALUE_ADDRESS (resolver);
+	  CORE_ADDR res_addr = resolver.value_address ();
 	  arc_linux_debug_printf ("pc = %s, resolver at %s",
 				  print_core_address (gdbarch, pc),
 				  print_core_address (gdbarch, res_addr));
@@ -518,7 +523,7 @@ arc_linux_skip_solib_resolver (struct gdbarch *gdbarch, CORE_ADDR pc)
 				print_core_address (gdbarch, pc));
     }
 
-  if (resolver.minsym != nullptr && BMSYMBOL_VALUE_ADDRESS (resolver) == pc)
+  if (resolver.minsym != nullptr && resolver.value_address () == pc)
     {
       /* Find the return address.  */
       return frame_unwind_caller_pc (get_current_frame ());
@@ -547,7 +552,7 @@ arc_linux_supply_gregset (const struct regset *regset,
 			  struct regcache *regcache,
 			  int regnum, const void *gregs, size_t size)
 {
-  gdb_static_assert (ARC_LAST_REGNUM
+  static_assert (ARC_LAST_REGNUM
 		     < ARRAY_SIZE (arc_linux_core_reg_offsets));
 
   const bfd_byte *buf = (const bfd_byte *) gregs;
@@ -610,7 +615,7 @@ arc_linux_collect_gregset (const struct regset *regset,
 			   const struct regcache *regcache,
 			   int regnum, void *gregs, size_t size)
 {
-  gdb_static_assert (ARC_LAST_REGNUM
+  static_assert (ARC_LAST_REGNUM
 		     < ARRAY_SIZE (arc_linux_core_reg_offsets));
 
   gdb_byte *buf = (gdb_byte *) gregs;
@@ -692,7 +697,7 @@ arc_linux_core_read_description (struct gdbarch *gdbarch,
 static void
 arc_linux_init_osabi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  arc_gdbarch_tdep *tdep = gdbarch_tdep<arc_gdbarch_tdep> (gdbarch);
 
   arc_linux_debug_printf ("GNU/Linux OS/ABI initialization.");
 
@@ -732,7 +737,7 @@ arc_linux_init_osabi (struct gdbarch_info info, struct gdbarch *gdbarch)
   /* GNU/Linux uses SVR4-style shared libraries, with 32-bit ints, longs
      and pointers (ILP32).  */
   set_solib_svr4_fetch_link_map_offsets (gdbarch,
-					 svr4_ilp32_fetch_link_map_offsets);
+					 linux_ilp32_fetch_link_map_offsets);
 }
 
 /* Suppress warning from -Wmissing-prototypes.  */

@@ -39,7 +39,7 @@ You can build GDB right in the source directory:
 
 However, we recommend that an empty directory be used instead.
 This way you do not clutter your source tree with binary files
-and will be able to create different builds with different 
+and will be able to create different builds with different
 configuration options.
 
 You can build GDB in any empty build directory:
@@ -82,8 +82,8 @@ list of options, invoke the subdirectory `configure', like:
    (Take note of how this differs from the invocation used to actually
 configure the build tree.)
 
-   GDB requires a C++11 compiler.  If you do not have a
-C++11 compiler for your system, you may be able to download and install
+   GDB requires a C++17 compiler.  If you do not have a
+C++17 compiler for your system, you may be able to download and install
 the GNU CC compiler.  It is available via anonymous FTP from the
 directory `ftp://ftp.gnu.org/pub/gnu/gcc'.  GDB also requires an ISO
 C standard library.  The GDB remote server, GDBserver, builds with some
@@ -141,7 +141,7 @@ use depends on your system; `lpr -d' is common; another (for PostScript
 devices) is `dvips'.  The DVI print command may require a file name
 without any extension or a `.dvi' extension.
 
-   TeX also requires a macro definitions file called `texinfo.tex'. 
+   TeX also requires a macro definitions file called `texinfo.tex'.
 This file tells TeX how to typeset a document written in Texinfo
 format.  On its own, TeX cannot read, much less typeset a Texinfo file.
  `texinfo.tex' is distributed with GDB and is located in the
@@ -318,7 +318,7 @@ three pieces of information in the following pattern:
 `sparc-sun-sunos4'.
 
    The `configure' script accompanying GDB does not provide any query
-facility to list all supported host and target names or aliases. 
+facility to list all supported host and target names or aliases.
 `configure' calls the Bourne shell script `config.sub' to map
 abbreviations to full names; you can read the script, if you wish, or
 you can use it to test your guesses on abbreviations--for example:
@@ -451,7 +451,7 @@ more obscure GDB `configure' options are not listed here.
      library supplied as part of GDB.  Readline 7 or newer is required;
      this is enforced by the build system.
 
-`--with-system-zlib
+`--with-system-zlib'
      Use the zlib library installed on the host, rather than the
      library supplied as part of GDB.
 
@@ -484,21 +484,31 @@ more obscure GDB `configure' options are not listed here.
      not have liblzma installed, you can get the latest version from
      `https://tukaani.org/xz/'.
 
-`--with-libgmp-prefix=DIR'
+`--with-gmp=DIR'
+`--with-gmp-lib=LIBDIR'
+`--with-gmp-include=INCDIR'
      Build GDB using the GMP library installed at the directory DIR.
      If your host does not have GMP installed, you can get the latest
      version at `https://gmplib.org/'.
+     The `--with-gmp=gmpinstalldir` option is shorthand for
+     `--with-gmp-lib=gmpinstalldir/lib` and
+     `--with-gmp-include=gmpinstalldir/include`.
 
-`--with-mpfr'
-     Build GDB with GNU MPFR, a library for multiple-precision
-     floating-point computation with correct rounding.  (Done by
-     default if GNU MPFR is installed and found at configure time.)
+`--with-mpfr=DIR'
+`--with-mpfr-lib=LIBDIR'
+`--with-mpfr-include=INCDIR'
+     Build GDB using GNU MPFR installed at the directory DIR,
+     a library for multiple-precision floating-point computation
+     with correct rounding.
      This library is used to emulate target floating-point arithmetic
      during expression evaluation when the target uses different
-     floating-point formats than the host.  If GNU MPFR is not
-     available, GDB will fall back to using host floating-point
-     arithmetic.  If your host does not have GNU MPFR installed, you
+     floating-point formats than the host.
+     If your host does not have GNU MPFR installed, you
      can get the latest version from `https://www.mpfr.org/'.
+
+     The `--with-mpfr=mpfrinstalldir` option is shorthand for
+     `--with-mpfr-lib=mpfrinstalldir/lib` and
+     `--with-mpfr-include=mpfrinstalldir/include`.
 
 `--with-python[=PYTHON]'
      Build GDB with Python scripting support.  (Done by default if
@@ -506,7 +516,7 @@ more obscure GDB `configure' options are not listed here.
      GDB scripting much more powerful than the restricted CLI
      scripting language.  If your host does not have Python installed,
      you can find it on `http://www.python.org/download/'.  The oldest
-     version of Python supported by GDB is 2.6.  The optional argument
+     version of Python supported by GDB is 3.2.  The optional argument
      PYTHON is used to find the Python headers and libraries.  It can
      be either the name of a Python executable, or the name of the
      directory in which Python is installed.
@@ -531,6 +541,21 @@ more obscure GDB `configure' options are not listed here.
      speeds up various GDB operations such as symbol loading.  Enabled
      by default if libxxhash is found.
 
+`--with-amd-dbgapi=[auto,yes,no]'
+     Whether to use the amd-dbgapi library to support local debugging of
+     AMD GCN architecture GPUs.
+
+     When explicitly requesting support for an AMD GCN architecture through
+     `--enable-targets' or `--target', there is no need to use
+     `--with-amd-dbgapi': `configure' will automatically look for the
+     amd-dbgapi library and fail if not found.
+
+     When using --enable-targets=all, support for the AMD GCN architecture will
+     only be included if the amd-dbgapi is found.  `--with-amd-dbgapi=yes' can
+     be used to make it a failure if the amd-dbgapi library is not found.
+     `--with-amd-dbgapi=no' can be used to prevent looking for the amd-dbgapi
+     library altogether.
+
 `--without-included-regex'
      Don't use the regex library included with GDB (as part of the
      libiberty library).  This is the default on hosts with version 2
@@ -550,7 +575,7 @@ more obscure GDB `configure' options are not listed here.
      FILE should be an absolute file name.  If FILE is in a directory
      under the configured prefix, and GDB is moved to another location
      after being built, the location of the system-wide init file will
-     be adjusted accordingly. 
+     be adjusted accordingly.
 
 `--with-system-gdbinit-dir=DIR'
      Configure GDB to automatically load system-wide init files from
@@ -610,7 +635,7 @@ architecture than the host machine running GDB).
 Reporting Bugs in GDB
 =====================
 
-   There are several ways of reporting bugs in GDB.  The prefered
+   There are several ways of reporting bugs in GDB.  The preferred
 method is to use the World Wide Web:
 
       http://www.gnu.org/software/gdb/bugs/

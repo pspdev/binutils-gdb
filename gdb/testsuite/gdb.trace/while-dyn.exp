@@ -1,4 +1,4 @@
-#   Copyright 1998-2021 Free Software Foundation, Inc.
+#   Copyright 1998-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,28 +17,19 @@
 
 load_lib "trace-support.exp"
 
-
-gdb_exit
-gdb_start
-
 standard_testfile actions.c
 set executable $testfile
-if ![gdb_trace_common_supports_arch] {
-    unsupported "no trace-common.h support for arch"
-    return -1
-}
+require gdb_trace_common_supports_arch
 if { [gdb_compile "$srcdir/$subdir/$srcfile" $binfile \
 	  executable {debug nowarnings}] != "" } {
     untested "failed to compile"
     return -1
 }
-gdb_load $binfile
-gdb_test "tstop"       ".*" ""
-gdb_test "tfind none"  ".*" ""
-runto_main
-gdb_reinitialize_dir $srcdir/$subdir
 
-if { ![gdb_target_supports_trace] } then {
+clean_restart $binfile
+runto_main
+
+if {![gdb_target_supports_trace]} {
     unsupported "current target does not support trace"
     return 1
 }
@@ -53,49 +44,42 @@ proc test_while_stepping { while_stepping } {
     global gdb_prompt
     global executable
 
-    clean_restart $executable
+    with_test_prefix "$while_stepping" {
+	clean_restart $executable
 
-    gdb_test "tstop" ".*" ""
-    gdb_test "tfind none" ".*" ""
-    runto_main
+	runto_main
 
-    ## verify number of trace frames collected matches stepcount
+	## verify number of trace frames collected matches stepcount
 
-    gdb_delete_tracepoints
-    gdb_test "trace gdb_c_test" \
-	"Tracepoint $decimal at .*" \
-	"$while_stepping: Set tracepoint at gdb_c_test"
+	gdb_delete_tracepoints
+	gdb_test "trace gdb_c_test" \
+	    "Tracepoint $decimal at .*" \
+	    "Set tracepoint at gdb_c_test"
 
-    gdb_trace_setactions "5.12: define $while_stepping <stepcount>" \
-	"" \
-	"collect \$$fpreg" "^$" \
-	"$while_stepping 5" "^$" \
-	"collect p" "^$" \
-	"end" "^$" \
-	"end" ""
+	gdb_trace_setactions "define $while_stepping <stepcount>" \
+	    "" \
+	    "collect \$$fpreg" "^$" \
+	    "$while_stepping 5" "^$" \
+	    "collect p" "^$" \
+	    "end" "^$" \
+	    "end" ""
 
-    gdb_test "tstart" ".*" ""
+	gdb_test "tstart" ".*"
 
-    gdb_breakpoint "end" qualified
-    gdb_test "continue" \
-	"Continuing.*Breakpoint $decimal, end.*" \
-	"$while_stepping: run trace experiment"
+	gdb_breakpoint "end" qualified
+	gdb_test "continue" \
+	    "Continuing.*Breakpoint $decimal, end.*" \
+	    "run trace experiment"
 
-    gdb_test "tstop" ".*" ""
+	gdb_test "tstop" ".*"
 
-    gdb_tfind_test "$while_stepping: frame 5 should be the last one collected" "5" "5"
+	gdb_tfind_test "frame 5 should be the last one collected" "5" "5"
 
-    set test "$while_stepping: trace stopped after 5 stepping frames"
-    gdb_test_multiple "tfind 6" "$test" {
-	-re "failed to find.*$gdb_prompt $" {
-	    pass "$test"
-	}
-	-re ".*$gdb_prompt $" {
-	    fail "$test"
-	}
+	gdb_test "tfind 6" "failed to find.*" \
+	    "trace stopped after 5 stepping frames"
+
+	gdb_test "tfind none" ".*"
     }
-
-    gdb_test "tfind none" ".*" ""
 }
 
 # Test all while-stepping aliases.

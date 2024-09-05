@@ -1,6 +1,6 @@
 /* Portable <curses.h>.
 
-   Copyright (C) 2004-2021 Free Software Foundation, Inc.
+   Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -40,27 +40,27 @@
 #define NCURSES_NOMACROS
 
 #if defined (HAVE_NCURSESW_NCURSES_H)
-#include <ncursesw/ncurses.h>
+#include <ncursesw/ncurses.h> /* IWYU pragma: export */
 #elif defined (HAVE_NCURSES_NCURSES_H)
-#include <ncurses/ncurses.h>
+#include <ncurses/ncurses.h> /* IWYU pragma: export */
 #elif defined (HAVE_NCURSES_H)
-#include <ncurses.h>
+#include <ncurses.h> /* IWYU pragma: export */
 #elif defined (HAVE_CURSESX_H)
-#include <cursesX.h>
+#include <cursesX.h> /* IWYU pragma: export */
 #elif defined (HAVE_CURSES_H)
-#include <curses.h>
+#include <curses.h> /* IWYU pragma: export */
 #endif
 
 #if defined (HAVE_NCURSES_TERM_H)
-#include <ncurses/term.h>
+#include <ncurses/term.h> /* IWYU pragma: export */
 #elif defined (HAVE_TERM_H)
-#include <term.h>
+#include <term.h> /* IWYU pragma: export */
 #else
 /* On MinGW, a real termcap library is usually not present.  Stub versions
    of the termcap functions will be built from stub-termcap.c.  Readline
    provides its own extern declarations when there's no termcap.h; do the
    same here for the termcap functions used in GDB.  */
-EXTERN_C int tgetnum (const char *);
+extern "C" int tgetnum (const char *);
 #endif
 
 /* SunOS's curses.h has a '#define reg register' in it.  Thank you Sun.  */

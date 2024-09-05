@@ -1,6 +1,6 @@
 /* Target-dependent code for BPF.
 
-   Copyright (C) 2020-2021 Free Software Foundation, Inc.
+   Copyright (C) 2020-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "arch-utils.h"
 #include "dis-asm.h"
 #include "frame.h"
@@ -25,7 +24,7 @@
 #include "trad-frame.h"
 #include "symtab.h"
 #include "value.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "breakpoint.h"
 #include "inferior.h"
 #include "regcache.h"
@@ -34,6 +33,7 @@
 #include "osabi.h"
 #include "target-descriptions.h"
 #include "remote.h"
+#include "gdbarch.h"
 
 
 /* eBPF registers.  */
@@ -57,7 +57,7 @@ enum bpf_regnum
 #define BPF_NUM_REGS	(BPF_PC_REGNUM + 1)
 
 /* Target-dependent structure in gdbarch.  */
-struct gdbarch_tdep
+struct bpf_gdbarch_tdep : gdbarch_tdep_base
 {
 };
 
@@ -75,7 +75,7 @@ static void
 show_bpf_debug (struct ui_file *file, int from_tty,
 		struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Debugging of BPF is %s.\n"), value);
+  gdb_printf (file, _("Debugging of BPF is %s.\n"), value);
 }
 
 
@@ -92,9 +92,8 @@ static const char *bpf_register_names[] =
 static const char *
 bpf_register_name (struct gdbarch *gdbarch, int reg)
 {
-  if (reg >= 0 && reg < BPF_NUM_REGS)
-    return bpf_register_names[reg];
-  return NULL;
+  static_assert (ARRAY_SIZE (bpf_register_names) == BPF_NUM_REGS);
+  return bpf_register_names[reg];
 }
 
 /* Return the GDB type of register REGNUM.  */
@@ -135,9 +134,9 @@ bpf_gdb_print_insn (bfd_vma memaddr, disassemble_info *info)
 static CORE_ADDR
 bpf_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR start_pc)
 {
-  fprintf_unfiltered (gdb_stdlog,
-		      "Skipping prologue: start_pc=%s\n",
-		      paddress (gdbarch, start_pc));
+  gdb_printf (gdb_stdlog,
+	      "Skipping prologue: start_pc=%s\n",
+	      paddress (gdbarch, start_pc));
   /* XXX: to be completed.  */
   return start_pc + 0;
 }
@@ -154,7 +153,7 @@ bpf_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR start_pc)
 /* Given THIS_FRAME, return its ID.  */
 
 static void
-bpf_frame_this_id (struct frame_info *this_frame,
+bpf_frame_this_id (const frame_info_ptr &this_frame,
 		   void **this_prologue_cache,
 		   struct frame_id *this_id)
 {
@@ -165,7 +164,7 @@ bpf_frame_this_id (struct frame_info *this_frame,
 /* Return the reason why we can't unwind past THIS_FRAME.  */
 
 static enum unwind_stop_reason
-bpf_frame_unwind_stop_reason (struct frame_info *this_frame,
+bpf_frame_unwind_stop_reason (const frame_info_ptr &this_frame,
 			      void **this_cache)
 {
   return UNWIND_OUTERMOST;
@@ -174,7 +173,7 @@ bpf_frame_unwind_stop_reason (struct frame_info *this_frame,
 /* Ask THIS_FRAME to unwind its register.  */
 
 static struct value *
-bpf_frame_prev_register (struct frame_info *this_frame,
+bpf_frame_prev_register (const frame_info_ptr &this_frame,
 			 void **this_prologue_cache, int regnum)
 {
   return frame_unwind_got_register (this_frame, regnum, regnum);
@@ -235,7 +234,7 @@ bpf_sw_breakpoint_from_kind (struct gdbarch *gdbarch, int kind, int *size)
 /* Assuming THIS_FRAME is a dummy frame, return its frame ID.  */
 
 static struct frame_id
-bpf_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+bpf_dummy_id (struct gdbarch *gdbarch, const frame_info_ptr &this_frame)
 {
   CORE_ADDR sp = get_frame_register_unsigned (this_frame,
 					      gdbarch_sp_regnum (gdbarch));
@@ -251,8 +250,8 @@ bpf_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 		     function_call_return_method return_method,
 		     CORE_ADDR struct_addr)
 {
-  fprintf_unfiltered (gdb_stdlog, "Pushing dummy call: sp=%s\n",
-		      paddress (gdbarch, sp));
+  gdb_printf (gdb_stdlog, "Pushing dummy call: sp=%s\n",
+	      paddress (gdbarch, sp));
   /* XXX writeme  */
   return sp;
 }
@@ -264,7 +263,7 @@ static void
 bpf_extract_return_value (struct type *type, struct regcache *regcache,
 			  gdb_byte *valbuf)
 {
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
   gdb_byte vbuf[8];
 
   gdb_assert (len <= 8);
@@ -278,7 +277,7 @@ static void
 bpf_store_return_value (struct type *type, struct regcache *regcache,
 			const gdb_byte *valbuf)
 {
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
   gdb_byte vbuf[8];
 
   gdb_assert (len <= 8);
@@ -294,7 +293,7 @@ bpf_return_value (struct gdbarch *gdbarch, struct value *function,
 		  struct type *type, struct regcache *regcache,
 		  gdb_byte *readbuf, const gdb_byte *writebuf)
 {
-  int len = TYPE_LENGTH (type);
+  int len = type->length ();
 
   if (len > 8)
     return RETURN_VALUE_STRUCT_CONVENTION;
@@ -321,8 +320,8 @@ bpf_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     return arches->gdbarch;
 
   /* Allocate space for the new architecture.  */
-  struct gdbarch_tdep *tdep = XCNEW (struct gdbarch_tdep);
-  struct gdbarch *gdbarch = gdbarch_alloc (&info, tdep);
+  gdbarch *gdbarch
+    = gdbarch_alloc (&info, gdbarch_tdep_up (new bpf_gdbarch_tdep));
 
   /* Information about registers, etc.  */
   set_gdbarch_num_regs (gdbarch, BPF_NUM_REGS);
@@ -373,7 +372,7 @@ void _initialize_bpf_tdep ();
 void
 _initialize_bpf_tdep ()
 {
-  register_gdbarch_init (bfd_arch_bpf, bpf_gdbarch_init);
+  gdbarch_register (bfd_arch_bpf, bpf_gdbarch_init);
 
   /* Add commands 'set/show debug bpf'.  */
   add_setshow_zuinteger_cmd ("bpf", class_maintenance,

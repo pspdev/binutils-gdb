@@ -1,5 +1,5 @@
 /* Common definitions for remote server for GDB.
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,7 +29,7 @@
 
 #include <config.h>
 
-gdb_static_assert (sizeof (CORE_ADDR) >= sizeof (void *));
+static_assert (sizeof (CORE_ADDR) >= sizeof (void *));
 
 #include "gdbsupport/version.h"
 
@@ -52,7 +52,6 @@ int vsnprintf(char *str, size_t size, const char *format, va_list ap);
 #  define PROG "gdbserver"
 #endif
 
-#include "gdbsupport/buffer.h"
 #include "gdbsupport/xml-utils.h"
 #include "regcache.h"
 #include "gdbsupport/gdb_signals.h"
@@ -103,9 +102,9 @@ extern int in_queued_stop_replies (ptid_t ptid);
 #define MAXBUFBYTES(N) (((N)-32)/2)
 
 /* Buffer sizes for transferring memory, registers, etc.   Set to a constant
-   value to accomodate multiple register formats.  This value must be at least
+   value to accommodate multiple register formats.  This value must be at least
    as large as the largest register set supported by gdbserver.  */
-#define PBUFSIZ 18432
+#define PBUFSIZ 131104
 
 /* Definition for an unknown syscall, used basically in error-cases.  */
 #define UNKNOWN_SYSCALL (-1)
@@ -193,6 +192,11 @@ struct client_state
   /* If true, memory tagging features are supported.  */
   bool memory_tagging_feature = false;
 
+  /* If true then E.errtext style errors are supported everywhere,
+     including for the qRcmd and m packet.  When false E.errtext errors
+     are not supported with qRcmd and m packets, but are still supported
+     everywhere else.  This is for backward compatibility reasons.  */
+  bool error_message_supported = false;
 };
 
 client_state &get_client_state ();

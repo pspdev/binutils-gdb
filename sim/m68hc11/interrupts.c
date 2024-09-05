@@ -1,5 +1,5 @@
 /* interrupts.c -- 68HC11 Interrupts Emulation
-   Copyright 1999-2021 Free Software Foundation, Inc.
+   Copyright 1999-2024 Free Software Foundation, Inc.
    Written by Stephane Carrez (stcarrez@nerim.fr)
 
 This file is part of GDB, GAS, and the GNU binutils.
@@ -20,9 +20,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 /* This must come before any other includes.  */
 #include "defs.h"
 
+#include "bfd.h"
+
 #include "sim-main.h"
 #include "sim-options.h"
 #include "sim-signal.h"
+
+#include "m68hc11-sim.h"
 
 static const char *interrupt_names[] = {
   "R1",
@@ -95,7 +99,7 @@ struct interrupt_def idefs[] = {
 #endif
 };
 
-#define CYCLES_MAX ((((signed64) 1) << 62) - 1)
+#define CYCLES_MAX ((((int64_t) 1) << 62) - 1)
 
 enum
 {
@@ -128,7 +132,7 @@ static const OPTION interrupt_options[] =
 void
 interrupts_initialize (SIM_DESC sd, sim_cpu *cpu)
 {
-  struct interrupts *interrupts = &cpu->cpu_interrupts;
+  struct interrupts *interrupts = &M68HC11_SIM_CPU (cpu)->cpu_interrupts;
   
   interrupts->cpu          = cpu;
 
@@ -139,10 +143,12 @@ interrupts_initialize (SIM_DESC sd, sim_cpu *cpu)
 void
 interrupts_reset (struct interrupts *interrupts)
 {
+  sim_cpu *cpu = interrupts->cpu;
+  struct m68hc11_sim_cpu *m68hc11_cpu = M68HC11_SIM_CPU (cpu);
   int i;
   
   interrupts->pending_mask = 0;
-  if (interrupts->cpu->cpu_mode & M6811_SMOD)
+  if (m68hc11_cpu->cpu_mode & M6811_SMOD)
     interrupts->vectors_addr = 0xbfc0;
   else
     interrupts->vectors_addr = 0xffc0;
@@ -171,13 +177,13 @@ interrupts_reset (struct interrupts *interrupts)
 
   /* In bootstrap mode, initialize the vector table to point
      to the RAM location.  */
-  if (interrupts->cpu->cpu_mode == M6811_SMOD)
+  if (m68hc11_cpu->cpu_mode == M6811_SMOD)
     {
       bfd_vma addr = interrupts->vectors_addr;
-      uint16 vector = 0x0100 - 3 * (M6811_INT_NUMBER - 1);
+      uint16_t vector = 0x0100 - 3 * (M6811_INT_NUMBER - 1);
       for (i = 0; i < M6811_INT_NUMBER; i++)
         {
-          memory_write16 (interrupts->cpu, addr, vector);
+          memory_write16 (cpu, addr, vector);
           addr += 2;
           vector += 3;
         }
@@ -209,7 +215,7 @@ interrupt_option_handler (SIM_DESC sd, sim_cpu *cpu,
   if (cpu == 0)
     cpu = STATE_CPU (sd, 0);
 
-  interrupts = &cpu->cpu_interrupts;
+  interrupts = &M68HC11_SIM_CPU (cpu)->cpu_interrupts;
   switch (opt)
     {
     case OPTION_INTERRUPT_INFO:
@@ -285,18 +291,18 @@ void
 interrupts_update_pending (struct interrupts *interrupts)
 {
   int i;
-  uint8 *ioregs;
+  uint8_t *ioregs;
   unsigned long clear_mask;
   unsigned long set_mask;
 
   clear_mask = 0;
   set_mask = 0;
-  ioregs = &interrupts->cpu->ios[0];
+  ioregs = &M68HC11_SIM_CPU (interrupts->cpu)->ios[0];
   
   for (i = 0; i < ARRAY_SIZE (idefs); i++)
     {
       struct interrupt_def *idef = &idefs[i];
-      uint8 data;
+      uint8_t data;
       
       /* Look if the interrupt is enabled.  */
       if (idef->enable_paddr)
@@ -332,7 +338,7 @@ interrupts_update_pending (struct interrupts *interrupts)
      Also implements the breakpoint-on-interrupt.  */
   if (set_mask)
     {
-      signed64 cycle = cpu_current_cycle (interrupts->cpu);
+      int64_t cycle = cpu_current_cycle (interrupts->cpu);
       int must_stop = 0;
       
       for (i = 0; i < M6811_INT_NUMBER; i++)
@@ -427,7 +433,7 @@ int
 interrupts_process (struct interrupts *interrupts)
 {
   int id;
-  uint8 ccr;
+  uint8_t ccr;
 
   /* See if interrupts are enabled/disabled and keep track of the
      number of cycles the interrupts are masked.  Such information is
@@ -441,7 +447,7 @@ interrupts_process (struct interrupts *interrupts)
   else if (interrupts->start_mask_cycle >= 0
            && (ccr & M6811_I_BIT) == 0)
     {
-      signed64 t = cpu_current_cycle (interrupts->cpu);
+      int64_t t = cpu_current_cycle (interrupts->cpu);
 
       t -= interrupts->start_mask_cycle;
       if (t < interrupts->min_mask_cycles)
@@ -460,7 +466,7 @@ interrupts_process (struct interrupts *interrupts)
   else if (interrupts->xirq_start_mask_cycle >= 0
            && (ccr & M6811_X_BIT) == 0)
     {
-      signed64 t = cpu_current_cycle (interrupts->cpu);
+      int64_t t = cpu_current_cycle (interrupts->cpu);
 
       t -= interrupts->xirq_start_mask_cycle;
       if (t < interrupts->xirq_min_mask_cycles)
@@ -474,7 +480,7 @@ interrupts_process (struct interrupts *interrupts)
   id = interrupts_get_current (interrupts);
   if (id >= 0)
     {
-      uint16 addr;
+      uint16_t addr;
       struct interrupt_history *h;
 
       /* Implement the breakpoint-on-interrupt.  */
@@ -533,7 +539,7 @@ interrupts_raise (struct interrupts *interrupts, enum M6811_INT number)
 void
 interrupts_info (SIM_DESC sd, struct interrupts *interrupts)
 {
-  signed64 t, prev_interrupt;
+  int64_t t, prev_interrupt;
   int i;
   
   sim_io_printf (sd, "Interrupts Info:\n");
@@ -621,7 +627,7 @@ interrupts_info (SIM_DESC sd, struct interrupts *interrupts)
     {
       int which;
       struct interrupt_history *h;
-      signed64 dt;
+      int64_t dt;
 
       which = interrupts->history_index - i - 1;
       if (which < 0)

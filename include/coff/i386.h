@@ -1,6 +1,6 @@
 /* coff information for Intel 386/486.
    
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -95,6 +95,7 @@ struct external_reloc
 
 #define R_DIR32		 6
 #define R_IMAGEBASE	 7
+#define R_SECTION	10
 #define R_SECREL32	11
 #define R_RELBYTE	15
 #define R_RELWORD	16

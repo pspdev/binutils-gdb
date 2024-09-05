@@ -1,4 +1,4 @@
-/* Copyright (C) 2020-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2020-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -15,7 +15,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "server.h"
 #include "target.h"
 #include "netbsd-low.h"
 #include "nat/netbsd-nat.h"
@@ -206,20 +205,11 @@ static void
 netbsd_store_waitstatus (struct target_waitstatus *ourstatus, int hoststatus)
 {
   if (WIFEXITED (hoststatus))
-    {
-      ourstatus->kind = TARGET_WAITKIND_EXITED;
-      ourstatus->value.integer = WEXITSTATUS (hoststatus);
-    }
+    ourstatus->set_exited (WEXITSTATUS (hoststatus));
   else if (!WIFSTOPPED (hoststatus))
-    {
-      ourstatus->kind = TARGET_WAITKIND_SIGNALLED;
-      ourstatus->value.sig = gdb_signal_from_host (WTERMSIG (hoststatus));
-    }
+    ourstatus->set_signalled (gdb_signal_from_host (WTERMSIG (hoststatus)));
   else
-    {
-      ourstatus->kind = TARGET_WAITKIND_STOPPED;
-      ourstatus->value.sig = gdb_signal_from_host (WSTOPSIG (hoststatus));
-    }
+    ourstatus->set_stopped (gdb_signal_from_host (WSTOPSIG (hoststatus)));
 }
 
 /* Implement a safe wrapper around waitpid().  */
@@ -258,14 +248,14 @@ netbsd_wait (ptid_t ptid, struct target_waitstatus *ourstatus,
   if (pid == 0)
     {
       gdb_assert (target_options & TARGET_WNOHANG);
-      ourstatus->kind = TARGET_WAITKIND_IGNORE;
+      ourstatus->set_ignore ();
       return null_ptid;
     }
 
   gdb_assert (pid != -1);
 
   /* If the child stopped, keep investigating its status.  */
-  if (ourstatus->kind != TARGET_WAITKIND_STOPPED)
+  if (ourstatus->kind () != TARGET_WAITKIND_STOPPED)
     return wptid;
 
   /* Extract the event and thread that received a signal.  */
@@ -307,12 +297,11 @@ netbsd_wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	 Ignore exited events for an unknown LWP.  */
       thread_info *thr = find_thread_ptid (wptid);
       if (thr == nullptr)
-	  ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
+	  ourstatus->set_spurious ();
       else
 	{
-	  ourstatus->kind = TARGET_WAITKIND_THREAD_EXITED;
 	  /* NetBSD does not store an LWP exit status.  */
-	  ourstatus->value.integer = 0;
+	  ourstatus->set_thread_exited (0);
 
 	  remove_thread (thr);
 	}
@@ -320,7 +309,7 @@ netbsd_wait (ptid_t ptid, struct target_waitstatus *ourstatus,
     }
 
   if (find_thread_ptid (ptid_t (pid)))
-    current_thread = find_thread_ptid (wptid);
+    switch_to_thread (find_thread_ptid (wptid));
 
   if (code == TRAP_LWP && pst.pe_report_event == PTRACE_LWP_CREATE)
     {
@@ -329,20 +318,19 @@ netbsd_wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	 not yet reported their PTRACE_LWP_CREATE event.  Ignore
 	 born events for an already-known LWP.  */
       if (find_thread_ptid (wptid))
-	  ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
+	ourstatus->set_spurious ();
       else
 	{
 	  add_thread (wptid, NULL);
-	  ourstatus->kind = TARGET_WAITKIND_THREAD_CREATED;
+	  ourstatus->set_thread_created ();
 	}
       return wptid;
     }
 
   if (code == TRAP_EXEC)
     {
-      ourstatus->kind = TARGET_WAITKIND_EXECD;
-      ourstatus->value.execd_pathname
-	= xstrdup (netbsd_nat::pid_to_exec_file (pid));
+      ourstatus->set_execd
+	(make_unique_xstrdup (netbsd_nat::pid_to_exec_file (pid)));
       return wptid;
     }
 
@@ -356,14 +344,15 @@ netbsd_wait (ptid_t ptid, struct target_waitstatus *ourstatus,
       if (!netbsd_catch_this_syscall(sysnum))
 	{
 	  /* If the core isn't interested in this event, ignore it.  */
-	  ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
+	  ourstatus->set_spurious ();
 	  return wptid;
 	}
 
-      ourstatus->kind
-	= ((code == TRAP_SCE) ? TARGET_WAITKIND_SYSCALL_ENTRY :
-	   TARGET_WAITKIND_SYSCALL_RETURN);
-      ourstatus->value.syscall_number = sysnum;
+      if (code == TRAP_SCE)
+	ourstatus->set_syscall_entry (sysnum);
+      else
+	ourstatus->set_syscall_return (sysnum);
+
       return wptid;
     }
 
@@ -381,7 +370,7 @@ netbsd_wait (ptid_t ptid, struct target_waitstatus *ourstatus,
     }
 
   /* Unclassified SIGTRAP event.  */
-  ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
+  ourstatus->set_spurious ();
   return wptid;
 }
 
@@ -401,10 +390,10 @@ netbsd_process_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	 This may also happen on attach, when an event is registered on a thread
 	 that was not fully initialized during the attach stage.  */
       if (wptid.lwp () != 0 && !find_thread_ptid (wptid)
-	  && ourstatus->kind != TARGET_WAITKIND_THREAD_EXITED)
+	  && ourstatus->kind () != TARGET_WAITKIND_THREAD_EXITED)
 	add_thread (wptid, nullptr);
 
-      switch (ourstatus->kind)
+      switch (ourstatus->kind ())
 	{
 	case TARGET_WAITKIND_EXITED:
 	case TARGET_WAITKIND_STOPPED:
@@ -420,7 +409,7 @@ netbsd_process_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	case TARGET_WAITKIND_THREAD_CREATED:
 	case TARGET_WAITKIND_THREAD_EXITED:
 	  /* The core needlessly stops on these events.  */
-	  /* FALLTHROUGH */
+	  [[fallthrough]];
 	case TARGET_WAITKIND_SPURIOUS:
 	  /* Spurious events are unhandled by the gdbserver core.  */
 	  if (ptrace (PT_CONTINUE, current_process ()->pid, (void *) 1, 0)
@@ -591,11 +580,9 @@ netbsd_read_auxv(pid_t pid, void *offs, void *addr, size_t len)
    to debugger memory starting at MYADDR.  */
 
 int
-netbsd_process_target::read_auxv (CORE_ADDR offset,
+netbsd_process_target::read_auxv (int pid, CORE_ADDR offset,
 				  unsigned char *myaddr, unsigned int len)
 {
-  pid_t pid = pid_of (current_thread);
-
   return netbsd_read_auxv (pid, (void *) (intptr_t) offset, myaddr, len);
 }
 
@@ -1096,7 +1083,7 @@ netbsd_qxfer_libraries_svr4 (const pid_t pid, const char *annex,
 		}
 
 	      string_appendf (document, "<library name=\"");
-	      xml_escape_text_append (&document, (char *) libname);
+	      xml_escape_text_append (document, (char *) libname);
 	      string_appendf (document, "\" lm=\"0x%lx\" "
 			      "l_addr=\"0x%lx\" l_ld=\"0x%lx\"/>",
 			      (unsigned long) lm_addr, (unsigned long) l_addr,

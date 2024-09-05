@@ -1,5 +1,5 @@
 /* MI Command Set - information commands.
-   Copyright (C) 2011-2021 Free Software Foundation, Inc.
+   Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "osdata.h"
 #include "mi-cmds.h"
 #include "ada-lang.h"
@@ -25,11 +24,12 @@
 /* Implement the "-info-ada-exceptions" GDB/MI command.  */
 
 void
-mi_cmd_info_ada_exceptions (const char *command, char **argv, int argc)
+mi_cmd_info_ada_exceptions (const char *command, const char *const *argv,
+			    int argc)
 {
   struct ui_out *uiout = current_uiout;
   struct gdbarch *gdbarch = get_current_arch ();
-  char *regexp;
+  const char *regexp;
 
   switch (argc)
     {
@@ -64,10 +64,11 @@ mi_cmd_info_ada_exceptions (const char *command, char **argv, int argc)
 /* Implement the "-info-gdb-mi-command" GDB/MI command.  */
 
 void
-mi_cmd_info_gdb_mi_command (const char *command, char **argv, int argc)
+mi_cmd_info_gdb_mi_command (const char *command, const char *const *argv,
+			    int argc)
 {
   const char *cmd_name;
-  struct mi_cmd *cmd;
+  mi_command *cmd;
   struct ui_out *uiout = current_uiout;
 
   /* This command takes exactly one argument.  */
@@ -82,14 +83,14 @@ mi_cmd_info_gdb_mi_command (const char *command, char **argv, int argc)
   if (cmd_name[0] == '-')
     cmd_name++;
 
-  cmd = mi_lookup (cmd_name);
+  cmd = mi_cmd_lookup (cmd_name);
 
   ui_out_emit_tuple tuple_emitter (uiout, "command");
   uiout->field_string ("exists", cmd != NULL ? "true" : "false");
 }
 
 void
-mi_cmd_info_os (const char *command, char **argv, int argc)
+mi_cmd_info_os (const char *command, const char *const *argv, int argc)
 {
   switch (argc)
     {

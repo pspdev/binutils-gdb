@@ -1,4 +1,4 @@
-# Copyright 2004-2021 Free Software Foundation, Inc.
+# Copyright 2004-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,17 +17,13 @@
 
 # This contains tests for breakpoints in C++.
 
-if { [skip_cplus_tests] } { continue }
+require allow_cplus_tests
 
 #
 # test running programs
 #
 
 standard_testfile .cc
-
-if [get_compiler_info "c++"] {
-    return -1
-}
 
 if {[prepare_for_testing "failed to prepare" $testfile $srcfile {debug c++}]} {
     return -1
@@ -36,8 +32,7 @@ if {[prepare_for_testing "failed to prepare" $testfile $srcfile {debug c++}]} {
 proc test_breakpoint {name} {
     # Restart the program every time, so that a single failure doesn't
     # lead to a cascade.
-    if ![runto_main] then {
-	perror "couldn't run to main when testing ${name}"
+    if {![runto_main]} {
 	return -code continue
     } else {
 	gdb_breakpoint "${name}"
@@ -58,4 +53,3 @@ gdb_test "print i_" "\\\$2 = 3" "check the member variable from within C1::bar"
 
 
 gdb_exit
-return 0

@@ -1,5 +1,5 @@
 /* tc-nds32.h -- Header file for tc-nds32.c.
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
    Contributed by Andes Technology Corporation.
 
    This file is part of GAS.
@@ -88,7 +88,6 @@ extern void nds32_frob_file_before_fix (void);
 extern void elf_nds32_final_processing (void);
 extern int nds32_validate_fix_sub (struct fix *, segT);
 extern int nds32_force_relocation (struct fix *);
-extern void nds32_set_section_relocs (asection *, arelent ** , unsigned int);
 
 /* Fill in rs_align_code fragments.  TODO: Review this.  */
 extern void nds32_handle_align (fragS *);
@@ -110,7 +109,7 @@ extern void tc_nds32_frame_initial_instructions (void);
    || TC_FORCE_RELOCATION (FIX))
 #define TC_FORCE_RELOCATION(fix)		nds32_force_relocation (fix)
 #define TC_VALIDATE_FIX_SUB(FIX,SEG)		nds32_validate_fix_sub (FIX,SEG)
-#define SET_SECTION_RELOCS(sec, relocs, n)	nds32_set_section_relocs (sec, relocs, n)
+#define GAS_SORT_RELOCS				1
 /* Values passed to md_apply_fix don't include the symbol value.  */
 #define MD_APPLY_SYM_VALUE(FIX)			0
 #define HANDLE_ALIGN(f)				nds32_handle_align (f)
@@ -134,7 +133,7 @@ extern void nds32_macro_info (void *);
 extern void nds32_start_line_hook (void);
 extern void nds32_elf_section_change_hook (void);
 extern void md_begin (void);
-extern void md_end (void);
+extern void md_finish (void);
 extern int nds32_start_label (int, int);
 extern void nds32_cleanup (void);
 extern void nds32_flush_pending_output (void);
@@ -151,7 +150,7 @@ extern void nds32_do_align (int);
   (NEXT_CHAR == ':' && nds32_start_label (0, 0))
 #define tc_check_label(label)			nds32_check_label (label)
 #define tc_frob_label(label)			nds32_frob_label (label)
-#define md_end					md_end
+#define md_finish					md_finish
 #define md_start_line_hook()			nds32_start_line_hook ()
 #define md_cons_align(n)			nds32_cons_align (n)
 /* COLE: TODO: Review md_do_align.  */

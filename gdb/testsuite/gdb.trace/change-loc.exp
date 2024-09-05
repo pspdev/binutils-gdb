@@ -1,4 +1,4 @@
-# Copyright 2011-2021 Free Software Foundation, Inc.
+# Copyright 2011-2024 Free Software Foundation, Inc.
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 3 of the License, or
@@ -14,14 +14,9 @@
 
 load_lib "trace-support.exp"
 
-if {[skip_shlib_tests]} {
-    return 0
-}
+require allow_shlib_tests
 
-if ![gdb_trace_common_supports_arch] {
-    unsupported "no trace-common.h support for arch"
-    return -1
-}
+require gdb_trace_common_supports_arch
 
 standard_testfile
 set libfile1 "change-loc-1"
@@ -33,10 +28,6 @@ set lib_sl1 [standard_output_file $libfile1.sl]
 set lib_sl2 [standard_output_file $libfile2.sl]
 
 set lib_opts debug
-
-if [get_compiler_info] {
-    return -1
-}
 
 # Some targets have leading underscores on assembly symbols.
 set additional_flags [list debug shlib=$lib_sl1 shlib_load [gdb_target_symbol_prefix_flags]]
@@ -54,11 +45,10 @@ gdb_load_shlib $lib_sl1
 gdb_load_shlib $lib_sl2
 
 if ![runto_main] {
-    fail "can't run to main to check for trace support"
     return -1
 }
 
-if { ![gdb_target_supports_trace] } then {
+if {![gdb_target_supports_trace]} {
     unsupported "current target does not support trace"
     return -1
 }
@@ -75,7 +65,6 @@ proc tracepoint_change_loc_1 { trace_type } {
 
 	clean_restart ${testfile}
 	if ![runto_main] {
-	    fail "can't run to main"
 	    return -1
 	}
 	gdb_test_no_output "delete break 1"
@@ -186,9 +175,7 @@ proc tracepoint_change_loc_2 { trace_type } {
 	global binfile
 	global gdb_prompt
 
-	gdb_exit
-	gdb_start
-	gdb_reinitialize_dir $srcdir/$subdir
+	clean_restart
 
 	gdb_test_multiple "${trace_type} set_tracepoint" "set pending tracepoint" {
 	    -re ".*Make \(|fast \)tracepoint pending.*y or \\\[n\\\]. $" {
@@ -203,7 +190,7 @@ proc tracepoint_change_loc_2 { trace_type } {
 	# else is displayed.
 	gdb_test "info trace" \
 	    "Num     Type\[ \]+Disp Enb Address\[ \]+What.*
-\[0-9\]+\[\t \]+\(|fast \)tracepoint\[ \]+keep y.*PENDING.*set_tracepoint\r\n\[\t \]+collect \\$$pcreg\r" \
+\[0-9\]+\[\t \]+\(|fast \)tracepoint\[ \]+keep y.*PENDING.*set_tracepoint\r\n\[\t \]+collect \\$$pcreg" \
 	    "single pending tracepoint info (without symbols)"
 
 	gdb_load ${binfile}
@@ -301,15 +288,14 @@ proc tracepoint_install_in_trace_disabled { trace_type } {
 	global pcreg
 	global gdb_prompt
 
-	clean_restart ${testfile}
-	if ![runto_main] {
-	    fail "can't run to main"
-	    return -1
+	# This test only makes sense with remote targets.
+	if ![gdb_protocol_is_remote] {
+	    return
 	}
 
-	# This test only makes sense with the remote target.
-	if ![gdb_is_target_remote] {
-	    return
+	clean_restart ${testfile}
+	if ![runto_main] {
+	    return -1
 	}
 
 	gdb_test_no_output "delete break 1"
@@ -327,7 +313,9 @@ proc tracepoint_install_in_trace_disabled { trace_type } {
 	gdb_test_no_output "tstart"
 
 	# Force-disable the InstallInTrace RSP feature.
-	gdb_test_no_output "set remote install-in-trace-packet off"
+	gdb_test \
+	    "set remote install-in-trace-packet off" \
+	    "Support for the 'InstallInTrace' packet on the current remote target is set to \"off\"."
 
 	# Set a tracepoint while a trace experiment is ongoing.
 	gdb_test "${trace_type} set_tracepoint" \

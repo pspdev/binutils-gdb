@@ -1,4 +1,4 @@
-# Copyright 2009-2021 Free Software Foundation, Inc.
+# Copyright 2009-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,9 +19,7 @@
 set testfile "multi-arch-exec"
 
 # The plain remote target can't do multiple inferiors.
-if [use_gdb_stub] {
-    return
-}
+require !use_gdb_stub
 
 # The 64-bit compile may succeed for i386-linux, but gdb won't be able
 # to load the file.
@@ -62,8 +60,8 @@ proc append_arch2_options {options_var} {
     upvar 1 $options_var options
 
     if { [istarget "aarch64*-*-*"] } {
-	if {[info exists ARM_CC_FOR_TARGET]} {
-	    lappend options "compiler=${ARM_CC_FOR_TARGET}"
+	if {[arm_cc_for_target] != ""} {
+	    lappend options "compiler=[arm_cc_for_target]"
 	    return 1
 	} else {
 	    unsupported "ARM compiler is not known"
@@ -71,7 +69,9 @@ proc append_arch2_options {options_var} {
 	}
     }
 
-    if [istarget "s390*-*-*"] {
+    if [istarget "powerpc64*-*-*"] {
+	set march "-m64"
+    } elseif [istarget "s390*-*-*"] {
 	set march "-m31"
     } else {
 	set march "-m32"
@@ -146,11 +146,11 @@ proc build_executables { first_arch } {
 }
 
 proc do_test { first_arch mode selected_thread } {
+        global bkptno_numopt_re
 	set from_exec "$first_arch-multi-arch-exec"
 
 	clean_restart ${from_exec}
-	if ![runto all_started] then {
-	    fail "couldn't run to all_started"
+	if {![runto all_started]} {
 	    return -1
 	}
 
@@ -166,9 +166,9 @@ proc do_test { first_arch mode selected_thread } {
 
 	gdb_test_no_output "set follow-exec-mode $mode"
 
-	# Test that GDB updates the target description / arch successfuly
+	# Test that GDB updates the target description / arch successfully
 	# after the exec.
-	gdb_test "continue" "Breakpoint 2, main.*" "continue across exec that changes architecture"
+	gdb_test "continue" "Breakpoint $bkptno_numopt_re, main.*" "continue across exec that changes architecture"
 }
 
 # Test both arch1=>arch2 and arch2=>arch1.

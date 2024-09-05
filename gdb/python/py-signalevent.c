@@ -1,6 +1,6 @@
 /* Python interface to inferior signal stop events.
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,21 +17,21 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "py-stopevent.h"
 
 gdbpy_ref<>
-create_signal_event_object (enum gdb_signal stop_signal)
+create_signal_event_object (const gdbpy_ref<> &dict,
+			    enum gdb_signal stop_signal)
 {
   gdbpy_ref<> signal_event_obj
-    = create_stop_event_object (&signal_event_object_type);
+    = create_stop_event_object (&signal_event_object_type, dict);
 
   if (signal_event_obj == NULL)
     return NULL;
 
   const char *signal_name = gdb_signal_to_name (stop_signal);
 
-  gdbpy_ref<> signal_name_obj (PyString_FromString (signal_name));
+  gdbpy_ref<> signal_name_obj (PyUnicode_FromString (signal_name));
   if (signal_name_obj == NULL)
     return NULL;
   if (evpy_add_attribute (signal_event_obj.get (),

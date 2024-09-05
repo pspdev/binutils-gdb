@@ -1,6 +1,6 @@
 /* Work with executable files, for GDB. 
 
-   Copyright (C) 1988-2021 Free Software Foundation, Inc.
+   Copyright (C) 1988-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,11 +17,10 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "frame.h"
 #include "inferior.h"
 #include "target.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "language.h"
 #include "filenames.h"
 #include "symfile.h"
@@ -49,6 +48,7 @@
 #include <algorithm>
 #include "gdbsupport/pathstuff.h"
 #include "cli/cli-style.h"
+#include "gdbsupport/buildargv.h"
 
 void (*deprecated_file_changed_hook) (const char *);
 
@@ -102,9 +102,9 @@ static void
 show_exec_file_mismatch_command (struct ui_file *file, int from_tty,
 				 struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (gdb_stdout,
-		    _("exec-file-mismatch handling is currently \"%s\".\n"),
-		    exec_file_mismatch_names[exec_file_mismatch_mode]);
+  gdb_printf (file,
+	      _("exec-file-mismatch handling is currently \"%s\".\n"),
+	      exec_file_mismatch_names[exec_file_mismatch_mode]);
 }
 
 /* Set command.  Change the setting for range checking.  */
@@ -122,8 +122,7 @@ set_exec_file_mismatch_command (const char *ignore,
 	  return;
 	}
       if (mode == exec_file_mismatch_off)
-	internal_error (__FILE__, __LINE__,
-			_("Unrecognized exec-file-mismatch setting: \"%s\""),
+	internal_error (_("Unrecognized exec-file-mismatch setting: \"%s\""),
 			exec_file_mismatch);
     }
 }
@@ -135,8 +134,8 @@ static void
 show_write_files (struct ui_file *file, int from_tty,
 		  struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Writing into executable and core files is %s.\n"),
-		    value);
+  gdb_printf (file, _("Writing into executable and core files is %s.\n"),
+	      value);
 }
 
 
@@ -201,7 +200,7 @@ try_open_exec_file (const char *exec_file_host, struct inferior *inf,
 	}
       catch (const gdb_exception_error &err)
 	{
-	  if (!exception_print_same (prev_err, err))
+	  if (prev_err != err)
 	    warning ("%s", err.what ());
 	}
     }
@@ -216,7 +215,7 @@ validate_exec_file (int from_tty)
   if (exec_file_mismatch_mode == exec_file_mismatch_off)
     return;
 
-  const char *current_exec_file = get_exec_file (0);
+  const char *current_exec_file = current_program_space->exec_filename ();
   struct inferior *inf = current_inferior ();
   /* Try to determine a filename from the process itself.  */
   const char *pid_exec_file = target_pid_to_exec_file (inf->pid);
@@ -234,7 +233,7 @@ validate_exec_file (int from_tty)
      did not change).  If exec file changed, reopen_exec_file has
      allocated another file name, so get_exec_file again.  */
   reopen_exec_file ();
-  current_exec_file = get_exec_file (0);
+  current_exec_file = current_program_space->exec_filename ();
 
   const bfd_build_id *exec_file_build_id
     = build_id_bfd_get (current_program_space->exec_bfd ());
@@ -254,10 +253,8 @@ validate_exec_file (int from_tty)
 
 	  if (target_exec_file_build_id != nullptr)
 	    {
-	      if (exec_file_build_id->size == target_exec_file_build_id->size
-		  && memcmp (exec_file_build_id->data,
-			     target_exec_file_build_id->data,
-			     exec_file_build_id->size) == 0)
+	      if (build_id_equal (exec_file_build_id,
+				  target_exec_file_build_id))
 		{
 		  /* Match.  */
 		  return;
@@ -297,7 +294,7 @@ validate_exec_file (int from_tty)
 	      symbol_file_add_main (exec_file_target.c_str (), add_flags);
 	      exec_file_attach (exec_file_target.c_str (), from_tty);
 	    }
-	  catch (gdb_exception_error &err)
+	  catch (const gdb_exception_error &err)
 	    {
 	      warning (_("loading %ps %s"),
 		       styled_string (file_name_style.style (),
@@ -313,11 +310,11 @@ validate_exec_file (int from_tty)
 void
 exec_file_locate_attach (int pid, int defer_bp_reset, int from_tty)
 {
-  char *exec_file_target;
+  const char *exec_file_target;
   symfile_add_flags add_flags = 0;
 
   /* Do nothing if we already have an executable filename.  */
-  if (get_exec_file (0) != NULL)
+  if (current_program_space->exec_filename () != nullptr)
     return;
 
   /* Try to determine a filename from the process itself.  */
@@ -378,7 +375,7 @@ exec_file_attach (const char *filename, int from_tty)
   if (!filename)
     {
       if (from_tty)
-	printf_unfiltered (_("No executable file now.\n"));
+	gdb_printf (_("No executable file now.\n"));
 
       set_gdbarch_from_file (NULL);
     }
@@ -453,21 +450,21 @@ exec_file_attach (const char *filename, int from_tty)
 
       if (!current_program_space->exec_bfd ())
 	{
-	  error (_("\"%ps\": could not open as an executable file: %s."),
-		 styled_string (file_name_style.style (), scratch_pathname),
-		 bfd_errmsg (bfd_get_error ()));
+	  error (_("\"%s\": could not open as an executable file: %s."),
+		 scratch_pathname, bfd_errmsg (bfd_get_error ()));
 	}
 
       /* gdb_realpath_keepfile resolves symlinks on the local
 	 filesystem and so cannot be used for "target:" files.  */
-      gdb_assert (current_program_space->exec_filename == nullptr);
+      gdb_assert (current_program_space->exec_filename () == nullptr);
       if (load_via_target)
-	current_program_space->exec_filename
-	  = (make_unique_xstrdup
+	current_program_space->set_exec_filename
+	  (make_unique_xstrdup
 	     (bfd_get_filename (current_program_space->exec_bfd ())));
       else
-	current_program_space->exec_filename
-	  = gdb_realpath_keepfile (scratch_pathname);
+	current_program_space->set_exec_filename
+	  (make_unique_xstrdup (gdb_realpath_keepfile
+				  (scratch_pathname).c_str ()));
 
       if (!bfd_check_format_matches (current_program_space->exec_bfd (),
 				     bfd_object, &matching))
@@ -475,13 +472,12 @@ exec_file_attach (const char *filename, int from_tty)
 	  /* Make sure to close exec_bfd, or else "run" might try to use
 	     it.  */
 	  current_program_space->exec_close ();
-	  error (_("\"%ps\": not in executable format: %s"),
-		 styled_string (file_name_style.style (), scratch_pathname),
+	  error (_("\"%s\": not in executable format: %s"), scratch_pathname,
 		 gdb_bfd_errmsg (bfd_get_error (), matching).c_str ());
 	}
 
-	  target_section_table sections
-	  = build_section_table (current_program_space->exec_bfd ());
+      std::vector<target_section> sections
+	= build_section_table (current_program_space->exec_bfd ());
 
       current_program_space->ebfd_mtime
 	= bfd_get_mtime (current_program_space->exec_bfd ());
@@ -493,16 +489,28 @@ exec_file_attach (const char *filename, int from_tty)
       /* Add the executable's sections to the current address spaces'
 	 list of sections.  This possibly pushes the exec_ops
 	 target.  */
-      current_program_space->add_target_sections (&current_program_space->ebfd,
-						  sections);
-
-      /* Tell display code (if any) about the changed file name.  */
-      if (deprecated_exec_file_display_hook)
-	(*deprecated_exec_file_display_hook) (filename);
+      current_program_space->add_target_sections
+	(current_program_space->ebfd.get (), sections);
     }
 
-  bfd_cache_close_all ();
-  gdb::observers::executable_changed.notify ();
+  /* Are are loading the same executable?  */
+  bfd *prev_bfd = exec_bfd_holder.get ();
+  bfd *curr_bfd = current_program_space->exec_bfd ();
+  bool reload_p = (((prev_bfd != nullptr) == (curr_bfd != nullptr))
+		   && (prev_bfd == nullptr
+		       || (strcmp (bfd_get_filename (prev_bfd),
+				   bfd_get_filename (curr_bfd)) == 0)));
+
+  gdb::observers::executable_changed.notify (current_program_space, reload_p);
+}
+
+/* See exec.h.  */
+
+void
+no_executable_specified_error ()
+{
+  error (_("No executable file specified.\n\
+Use the \"file\" or \"exec-file\" command."));
 }
 
 /*  Process the first arg in ARGS as the new exec file.
@@ -560,10 +568,10 @@ file_command (const char *arg, int from_tty)
 
 /* Builds a section table, given args BFD, TABLE.  */
 
-target_section_table
+std::vector<target_section>
 build_section_table (struct bfd *some_bfd)
 {
-  target_section_table table;
+  std::vector<target_section> table;
 
   for (asection *asect : gdb_bfd_sections (some_bfd))
     {
@@ -591,8 +599,8 @@ build_section_table (struct bfd *some_bfd)
    current set of target sections.  */
 
 void
-program_space::add_target_sections (void *owner,
-				    const target_section_table &sections)
+program_space::add_target_sections
+  (target_section_owner owner, const std::vector<target_section> &sections)
 {
   if (!sections.empty ())
     {
@@ -626,18 +634,16 @@ program_space::add_target_sections (void *owner,
 void
 program_space::add_target_sections (struct objfile *objfile)
 {
-  struct obj_section *osect;
-
   gdb_assert (objfile != nullptr);
 
   /* Compute the number of sections to add.  */
-  ALL_OBJFILE_OSECTIONS (objfile, osect)
+  for (obj_section *osect : objfile->sections ())
     {
       if (bfd_section_size (osect->the_bfd_section) == 0)
 	continue;
 
       m_target_sections.emplace_back (osect->addr (), osect->endaddr (),
-				      osect->the_bfd_section, (void *) objfile);
+				      osect->the_bfd_section, objfile);
     }
 }
 
@@ -645,15 +651,15 @@ program_space::add_target_sections (struct objfile *objfile)
    OWNER must be the same value passed to add_target_sections.  */
 
 void
-program_space::remove_target_sections (void *owner)
+program_space::remove_target_sections (target_section_owner owner)
 {
-  gdb_assert (owner != NULL);
+  gdb_assert (owner.v () != nullptr);
 
   auto it = std::remove_if (m_target_sections.begin (),
 			    m_target_sections.end (),
 			    [&] (target_section &sect)
 			    {
-			      return sect.owner == owner;
+			      return sect.owner.v () == owner.v ();
 			    });
   m_target_sections.erase (it, m_target_sections.end ());
 
@@ -678,10 +684,10 @@ program_space::remove_target_sections (void *owner)
 /* See exec.h.  */
 
 void
-exec_on_vfork ()
+exec_on_vfork (inferior *vfork_child)
 {
-  if (!current_program_space->target_sections ().empty ())
-    current_inferior ()->push_target (&exec_ops);
+  if (!vfork_child->pspace->target_sections ().empty ())
+    vfork_child->push_target (&exec_ops);
 }
 
 
@@ -739,7 +745,7 @@ exec_read_partial_read_only (gdb_byte *readbuf, ULONGEST offset,
 
 static std::vector<mem_range>
 section_table_available_memory (CORE_ADDR memaddr, ULONGEST len,
-				const target_section_table &sections)
+				const std::vector<target_section> &sections)
 {
   std::vector<mem_range> memory;
 
@@ -773,7 +779,7 @@ enum target_xfer_status
 section_table_read_available_memory (gdb_byte *readbuf, ULONGEST offset,
 				     ULONGEST len, ULONGEST *xfered_len)
 {
-  const target_section_table *table
+  const std::vector<target_section> *table
     = target_get_section_table (current_inferior ()->top_target ());
   std::vector<mem_range> available_memory
     = section_table_available_memory (offset, len, *table);
@@ -813,7 +819,7 @@ enum target_xfer_status
 section_table_xfer_memory_partial (gdb_byte *readbuf, const gdb_byte *writebuf,
 				   ULONGEST offset, ULONGEST len,
 				   ULONGEST *xfered_len,
-				   const target_section_table &sections,
+				   const std::vector<target_section> &sections,
 				   gdb::function_view<bool
 				     (const struct target_section *)> match_cb)
 {
@@ -889,7 +895,7 @@ exec_target::xfer_partial (enum target_object object,
 			   const gdb_byte *writebuf,
 			   ULONGEST offset, ULONGEST len, ULONGEST *xfered_len)
 {
-  const target_section_table *table = target_get_section_table (this);
+  const std::vector<target_section> *table = target_get_section_table (this);
 
   if (object == TARGET_OBJECT_MEMORY)
     return section_table_xfer_memory_partial (readbuf, writebuf,
@@ -901,17 +907,17 @@ exec_target::xfer_partial (enum target_object object,
 
 
 void
-print_section_info (const target_section_table *t, bfd *abfd)
+print_section_info (const std::vector<target_section> *t, bfd *abfd)
 {
   struct gdbarch *gdbarch = gdbarch_from_bfd (abfd);
   /* FIXME: 16 is not wide enough when gdbarch_addr_bit > 64.  */
   int wid = gdbarch_addr_bit (gdbarch) <= 32 ? 8 : 16;
 
-  printf_filtered ("\t`%ps', ",
-		   styled_string (file_name_style.style (),
-				  bfd_get_filename (abfd)));
-  wrap_here ("        ");
-  printf_filtered (_("file type %s.\n"), bfd_get_target (abfd));
+  gdb_printf ("\t`%ps', ",
+	      styled_string (file_name_style.style (),
+			     bfd_get_filename (abfd)));
+  gdb_stdout->wrap_here (8);
+  gdb_printf (_("file type %s.\n"), bfd_get_target (abfd));
   if (abfd == current_program_space->exec_bfd ())
     {
       /* gcc-3.4 does not like the initialization in
@@ -945,16 +951,16 @@ print_section_info (const target_section_table *t, bfd *abfd)
       entry_point = gdbarch_addr_bits_remove (gdbarch, 
 					      bfd_get_start_address (abfd) 
 						+ displacement);
-      printf_filtered (_("\tEntry point: %s\n"),
-		       paddress (gdbarch, entry_point));
+      gdb_printf (_("\tEntry point: %s\n"),
+		  paddress (gdbarch, entry_point));
     }
   for (const target_section &p : *t)
     {
       struct bfd_section *psect = p.the_bfd_section;
       bfd *pbfd = psect->owner;
 
-      printf_filtered ("\t%s", hex_string_custom (p.addr, wid));
-      printf_filtered (" - %s", hex_string_custom (p.endaddr, wid));
+      gdb_printf ("\t%s", hex_string_custom (p.addr, wid));
+      gdb_printf (" - %s", hex_string_custom (p.endaddr, wid));
 
       /* FIXME: A format of "08l" is not wide enough for file offsets
 	 larger than 4GB.  OTOH, making it "016l" isn't desirable either
@@ -963,14 +969,14 @@ print_section_info (const target_section_table *t, bfd *abfd)
 	 format string accordingly.  */
       /* FIXME: i18n: Need to rewrite this sentence.  */
       if (info_verbose)
-	printf_filtered (" @ %s",
-			 hex_string_custom (psect->filepos, 8));
-      printf_filtered (" is %s", bfd_section_name (psect));
+	gdb_printf (" @ %s",
+		    hex_string_custom (psect->filepos, 8));
+      gdb_printf (" is %s", bfd_section_name (psect));
       if (pbfd != abfd)
-	printf_filtered (" in %ps",
-			 styled_string (file_name_style.style (),
-					bfd_get_filename (pbfd)));
-      printf_filtered ("\n");
+	gdb_printf (" in %ps",
+		    styled_string (file_name_style.style (),
+				   bfd_get_filename (pbfd)));
+      gdb_printf ("\n");
     }
 }
 
@@ -981,7 +987,7 @@ exec_target::files_info ()
     print_section_info (&current_program_space->target_sections (),
 			current_program_space->exec_bfd ());
   else
-    puts_filtered (_("\t<no file loaded>\n"));
+    gdb_puts (_("\t<no file loaded>\n"));
 }
 
 static void
@@ -1061,17 +1067,14 @@ _initialize_exec ()
 {
   struct cmd_list_element *c;
 
-  if (!dbx_commands)
-    {
-      c = add_cmd ("file", class_files, file_command, _("\
+  c = add_cmd ("file", class_files, file_command, _("\
 Use FILE as program to be debugged.\n\
 It is read for its symbols, for getting the contents of pure memory,\n\
 and it is the program executed when you use the `run' command.\n\
 If FILE cannot be found as specified, your execution directory path\n\
 ($PATH) is searched for a command of that name.\n\
 No arg means to have no executable file and no symbols."), &cmdlist);
-      set_cmd_completer (c, filename_completer);
-    }
+  set_cmd_completer (c, filename_completer);
 
   c = add_cmd ("exec-file", class_files, exec_file_command, _("\
 Use FILE as program for getting contents of pure memory.\n\

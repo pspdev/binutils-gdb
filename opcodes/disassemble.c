@@ -1,5 +1,5 @@
 /* Select disassembly routine for specified architecture.
-   Copyright (C) 1994-2021 Free Software Foundation, Inc.
+   Copyright (C) 1994-2024 Free Software Foundation, Inc.
 
    This file is part of the GNU opcodes library.
 
@@ -24,8 +24,19 @@
 #include "opintl.h"
 
 #ifdef ARCH_all
+#ifdef BFD64
 #define ARCH_aarch64
 #define ARCH_alpha
+#define ARCH_bpf
+#define ARCH_ia64
+#define ARCH_loongarch
+#define ARCH_mips
+#define ARCH_mmix
+#define ARCH_nfp
+#define ARCH_riscv
+#define ARCH_score
+#define ARCH_tilegx
+#endif
 #define ARCH_arc
 #define ARCH_arm
 #define ARCH_avr
@@ -37,7 +48,6 @@
 #define ARCH_d10v
 #define ARCH_d30v
 #define ARCH_dlx
-#define ARCH_bpf
 #define ARCH_epiphany
 #define ARCH_fr30
 #define ARCH_frv
@@ -45,9 +55,9 @@
 #define ARCH_h8300
 #define ARCH_hppa
 #define ARCH_i386
-#define ARCH_ia64
 #define ARCH_ip2k
 #define ARCH_iq2000
+#define ARCH_kvx
 #define ARCH_lm32
 #define ARCH_m32c
 #define ARCH_m32r
@@ -58,15 +68,12 @@
 #define ARCH_mep
 #define ARCH_metag
 #define ARCH_microblaze
-#define ARCH_mips
-#define ARCH_mmix
 #define ARCH_mn10200
 #define ARCH_mn10300
 #define ARCH_moxie
 #define ARCH_mt
 #define ARCH_msp430
 #define ARCH_nds32
-#define ARCH_nfp
 #define ARCH_nios2
 #define ARCH_ns32k
 #define ARCH_or1k
@@ -74,13 +81,11 @@
 #define ARCH_pj
 #define ARCH_powerpc
 #define ARCH_pru
-#define ARCH_riscv
 #define ARCH_rs6000
 #define ARCH_rl78
 #define ARCH_rx
 #define ARCH_s12z
 #define ARCH_s390
-#define ARCH_score
 #define ARCH_sh
 #define ARCH_sparc
 #define ARCH_spu
@@ -88,14 +93,12 @@
 #define ARCH_tic4x
 #define ARCH_tic54x
 #define ARCH_tic6x
-#define ARCH_tilegx
 #define ARCH_tilepro
 #define ARCH_v850
 #define ARCH_vax
 #define ARCH_visium
 #define ARCH_wasm32
 #define ARCH_xstormy16
-#define ARCH_xc16x
 #define ARCH_xgate
 #define ARCH_xtensa
 #define ARCH_z80
@@ -105,23 +108,6 @@
 #ifdef ARCH_m32c
 #include "m32c-desc.h"
 #endif
-
-#ifdef ARCH_bpf
-/* XXX this should be including bpf-desc.h instead of this hackery,
-   but at the moment it is not possible to include several CGEN
-   generated *-desc.h files simultaneously.  To be fixed in
-   CGEN...  */
-
-# ifdef ARCH_m32c
-enum epbf_isa_attr
-{
-  ISA_EBPFLE, ISA_EBPFBE, ISA_XBPFLE, ISA_XBPFBE, ISA_EBPFMAX
-};
-# else
-#  include "bpf-desc.h"
-#  define ISA_EBPFMAX ISA_MAX
-# endif
-#endif /* ARCH_bpf */
 
 disassembler_ftype
 disassembler (enum bfd_architecture a,
@@ -226,8 +212,6 @@ disassembler (enum bfd_architecture a,
 #ifdef ARCH_i386
     case bfd_arch_i386:
     case bfd_arch_iamcu:
-    case bfd_arch_l1om:
-    case bfd_arch_k1om:
       disassemble = print_insn_i386;
       break;
 #endif
@@ -254,6 +238,11 @@ disassembler (enum bfd_architecture a,
 #ifdef ARCH_fr30
     case bfd_arch_fr30:
       disassemble = print_insn_fr30;
+      break;
+#endif
+#ifdef ARCH_kvx
+    case bfd_arch_kvx:
+      disassemble = print_insn_kvx;
       break;
 #endif
 #ifdef ARCH_lm32
@@ -489,11 +478,6 @@ disassembler (enum bfd_architecture a,
       disassemble = print_insn_xstormy16;
       break;
 #endif
-#ifdef ARCH_xc16x
-    case bfd_arch_xc16x:
-      disassemble = print_insn_xc16x;
-      break;
-#endif
 #ifdef ARCH_xtensa
     case bfd_arch_xtensa:
       disassemble = print_insn_xtensa;
@@ -552,6 +536,11 @@ disassembler (enum bfd_architecture a,
       disassemble = print_insn_tilepro;
       break;
 #endif
+#ifdef ARCH_loongarch
+    case bfd_arch_loongarch:
+      disassemble = print_insn_loongarch;
+      break;
+#endif
     default:
       return 0;
     }
@@ -585,13 +574,21 @@ disassembler_usage (FILE *stream ATTRIBUTE_UNUSED)
 #ifdef ARCH_i386
   print_i386_disassembler_options (stream);
 #endif
+#ifdef ARCH_kvx
+  print_kvx_disassembler_options (stream);
+#endif
 #ifdef ARCH_s390
   print_s390_disassembler_options (stream);
 #endif
 #ifdef ARCH_wasm32
   print_wasm32_disassembler_options (stream);
 #endif
-
+#ifdef ARCH_loongarch
+  print_loongarch_disassembler_options (stream);
+#endif
+#ifdef ARCH_bpf
+  print_bpf_disassembler_options (stream);
+#endif
   return;
 }
 
@@ -607,12 +604,24 @@ disassemble_init_for_target (struct disassemble_info * info)
     case bfd_arch_aarch64:
       info->symbol_is_valid = aarch64_symbol_is_valid;
       info->disassembler_needs_relocs = true;
+      info->created_styled_output = true;
+      break;
+#endif
+#ifdef ARCH_arc
+    case bfd_arch_arc:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_arm
     case bfd_arch_arm:
       info->symbol_is_valid = arm_symbol_is_valid;
       info->disassembler_needs_relocs = true;
+      info->created_styled_output = true;
+      break;
+#endif
+#ifdef ARCH_avr
+    case bfd_arch_avr:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_csky
@@ -621,15 +630,30 @@ disassemble_init_for_target (struct disassemble_info * info)
       info->disassembler_needs_relocs = true;
       break;
 #endif
-
+#ifdef ARCH_i386
+    case bfd_arch_i386:
+    case bfd_arch_iamcu:
+      info->created_styled_output = true;
+      break;
+#endif
 #ifdef ARCH_ia64
     case bfd_arch_ia64:
       info->skip_zeroes = 16;
       break;
 #endif
+#ifdef ARCH_loongarch
+    case bfd_arch_loongarch:
+      info->created_styled_output = true;
+      break;
+#endif
 #ifdef ARCH_tic4x
     case bfd_arch_tic4x:
       info->skip_zeroes = 32;
+      break;
+#endif
+#ifdef ARCH_m68k
+    case bfd_arch_m68k:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_mep
@@ -641,6 +665,11 @@ disassemble_init_for_target (struct disassemble_info * info)
 #ifdef ARCH_metag
     case bfd_arch_metag:
       info->disassembler_needs_relocs = true;
+      break;
+#endif
+#ifdef ARCH_mips
+    case bfd_arch_mips:
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_m32c
@@ -660,23 +689,7 @@ disassemble_init_for_target (struct disassemble_info * info)
 #endif
 #ifdef ARCH_bpf
     case bfd_arch_bpf:
-      info->endian_code = BFD_ENDIAN_LITTLE;
-      if (!info->private_data)
-	{
-	  info->private_data = cgen_bitset_create (ISA_MAX);
-	  if (info->endian == BFD_ENDIAN_BIG)
-	    {
-	      cgen_bitset_set (info->private_data, ISA_EBPFBE);
-	      if (info->mach == bfd_mach_xbpf)
-		cgen_bitset_set (info->private_data, ISA_XBPFBE);
-	    }
-	  else
-	    {
-	      cgen_bitset_set (info->private_data, ISA_EBPFLE);
-	      if (info->mach == bfd_mach_xbpf)
-		cgen_bitset_set (info->private_data, ISA_XBPFLE);
-	    }
-	}
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_pru
@@ -692,11 +705,13 @@ disassemble_init_for_target (struct disassemble_info * info)
 #endif
 #if defined (ARCH_powerpc) || defined (ARCH_rs6000)
       disassemble_init_powerpc (info);
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_riscv
     case bfd_arch_riscv:
       info->symbol_is_valid = riscv_symbol_is_valid;
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_wasm32
@@ -707,6 +722,7 @@ disassemble_init_for_target (struct disassemble_info * info)
 #ifdef ARCH_s390
     case bfd_arch_s390:
       disassemble_init_s390 (info);
+      info->created_styled_output = true;
       break;
 #endif
 #ifdef ARCH_nds32
@@ -730,13 +746,10 @@ disassemble_free_target (struct disassemble_info *info)
     default:
       return;
 
-#ifdef ARCH_bpf
-    case bfd_arch_bpf:
-#endif
 #ifdef ARCH_m32c
     case bfd_arch_m32c:
 #endif
-#if defined ARCH_bpf || defined ARCH_m32c
+#if defined ARCH_m32c
       if (info->private_data)
 	{
 	  CGEN_BITSET *mask = info->private_data;
@@ -767,6 +780,7 @@ disassemble_free_target (struct disassemble_info *info)
 #endif
 #ifdef ARCH_riscv
     case bfd_arch_riscv:
+      disassemble_free_riscv (info);
       break;
 #endif
 #ifdef ARCH_rs6000
@@ -848,4 +862,17 @@ opcodes_assert (const char *file, int line)
   opcodes_error_handler (_("assertion fail %s:%d"), file, line);
   opcodes_error_handler (_("Please report this bug"));
   abort ();
+}
+
+/* Set the stream, and the styled and unstyled printf functions within
+   INFO.  */
+
+void
+disassemble_set_printf (struct disassemble_info *info, void *stream,
+			fprintf_ftype unstyled_printf,
+			fprintf_styled_ftype styled_printf)
+{
+  info->stream = stream;
+  info->fprintf_func = unstyled_printf;
+  info->fprintf_styled_func = styled_printf;
 }

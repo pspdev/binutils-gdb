@@ -1,5 +1,5 @@
 /* ldemul.c -- clearing house for ld emulation states
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -57,6 +57,13 @@ void
 ldemul_before_parse (void)
 {
   ld_emulation->before_parse ();
+}
+
+void
+ldemul_before_plugin_all_symbols_read (void)
+{
+  if (ld_emulation->before_plugin_all_symbols_read)
+    ld_emulation->before_plugin_all_symbols_read ();
 }
 
 void
@@ -235,8 +242,7 @@ after_parse_default (void)
   if (link_info.maxpagesize == 0)
     link_info.maxpagesize = bfd_emul_get_maxpagesize (default_target);
   if (link_info.commonpagesize == 0)
-    link_info.commonpagesize = bfd_emul_get_commonpagesize (default_target,
-							    link_info.relro);
+    link_info.commonpagesize = bfd_emul_get_commonpagesize (default_target);
 }
 
 void

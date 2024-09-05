@@ -22,9 +22,11 @@
 #include "lf.h"
 #include "table.h"
 #include "filter.h"
+#include "filter-ppc.h"
 #include "ld-decode.h"
 #include "ld-cache.h"
 #include "ld-insn.h"
+#include "dumpf.h"
 
 #include "igen.h"
 
@@ -77,9 +79,9 @@ insn_table_depth(insn_table *table)
 
 static insn_fields *
 parse_insn_format(table_entry *entry,
-		  char *format)
+		  const char *format)
 {
-  char *chp;
+  const char *chp;
   insn_fields *fields = ZALLOC(insn_fields);
 
   /* create a leading sentinal */
@@ -102,15 +104,15 @@ parse_insn_format(table_entry *entry,
   chp = format;
 
   while (*chp != '\0') {
-    char *start_pos;
-    char *start_val;
+    const char *start_pos;
+    const char *start_val;
     int strlen_val;
     int strlen_pos;
     insn_field *new_field;
 
     /* sanity check */
     if (!isdigit(*chp)) {
-      error("%s:%d: missing position field at `%s'\n",
+      ERROR("%s:%d: missing position field at `%s'\n",
 	    entry->file_name, entry->line_nr, chp);
     }
 
@@ -122,7 +124,7 @@ parse_insn_format(table_entry *entry,
     if (*chp == '.' && strlen_pos > 0)
       chp++;
     else {
-      error("%s:%d: missing field value at %s\n",
+      ERROR("%s:%d: missing field value at %s\n",
 	    entry->file_name, entry->line_nr, chp);
       break;
     }
@@ -137,7 +139,7 @@ parse_insn_format(table_entry *entry,
     if (*chp == ',')
       chp++;
     else if (*chp != '\0' || strlen_val == 0) {
-      error("%s:%d: missing field terminator at %s\n",
+      ERROR("%s:%d: missing field terminator at %s\n",
 	    entry->file_name, entry->line_nr, chp);
       break;
     }
@@ -208,7 +210,7 @@ parse_insn_format(table_entry *entry,
 }
 
 
-void
+static void
 parse_include_entry (table *file,
                      table_entry *file_entry,
 		     filter *filters,
@@ -216,9 +218,9 @@ parse_include_entry (table *file,
 {
   /* parse the include file_entry */
   if (file_entry->nr_fields < 4)
-    error ("Incorrect nr fields for include record\n");
+    ERROR ("Incorrect nr fields for include record\n");
   /* process it */
-  if (!is_filtered_out(file_entry->fields[include_flags], filters))
+  if (!is_filtered_out(filters, file_entry->fields[include_flags]))
     {
       table_push (file, includes,
                 file_entry->fields[include_path],
@@ -304,7 +306,7 @@ insn_table_insert_insn(insn_table *table,
   /* Check out any model information returned to make sure the model
      is correct.  */
   for(insn_model_ptr = file_entry->model_first; insn_model_ptr; insn_model_ptr = insn_model_ptr->next) {
-    char *name = insn_model_ptr->fields[insn_model_name];
+    const char *name = insn_model_ptr->fields[insn_model_name];
     int len = strlen (insn_model_ptr->fields[insn_model_fields]);
 
     while (len > 0 && isspace(*insn_model_ptr->fields[insn_model_fields])) {
@@ -326,7 +328,7 @@ insn_table_insert_insn(insn_table *table,
     }
 
     if (!model_ptr)
-      error("%s:%d: machine model `%s' was not known about\n",
+      ERROR("%s:%d: machine model `%s' was not known about\n",
 	    file_entry->file_name, file_entry->line_nr, name);
   }
 
@@ -364,7 +366,7 @@ load_insn_table(const char *file_name,
     }
     else if ((it_is("function", file_entry->fields[insn_form])
 	      || it_is("internal", file_entry->fields[insn_form]))
-	     && !is_filtered_out(file_entry->fields[insn_flags], filters)) {
+	     && !is_filtered_out(filters, file_entry->fields[insn_flags])) {
       /* Ok, this is evil.  Need to convert a new style function into
          an old style function.  Construct an old style table and then
          copy it back.  */
@@ -408,13 +410,13 @@ load_insn_table(const char *file_name,
       model_table_insert_specific(table, file_entry, &model_data, &last_model_data);
     }
     else if (it_is("include", file_entry->fields[insn_form])
-             && !is_filtered_out(file_entry->fields[insn_flags], filters)) {
+             && !is_filtered_out(filters, file_entry->fields[insn_flags])) {
       parse_include_entry (file, file_entry, filters, includes);
     }
     else if ((it_is("cache", file_entry->fields[insn_form])
 	      || it_is("compute", file_entry->fields[insn_form])
 	      || it_is("scratch", file_entry->fields[insn_form]))
-	     && !is_filtered_out(file_entry->fields[insn_flags], filters)) {
+	     && !is_filtered_out(filters, file_entry->fields[insn_flags])) {
       append_cache_rule (cache_rules,
 			 file_entry->fields[insn_form], /* type */
 			 file_entry->fields[cache_name],
@@ -426,7 +428,7 @@ load_insn_table(const char *file_name,
     else {
       insn_fields *fields;
       /* skip instructions that aren't relevant to the mode */
-      if (is_filtered_out(file_entry->fields[insn_flags], filters)) {
+      if (is_filtered_out(filters, file_entry->fields[insn_flags])) {
 	fprintf(stderr, "Dropping %s - %s\n",
 		file_entry->fields[insn_name],
 		file_entry->fields[insn_flags]);
@@ -544,10 +546,10 @@ insn_field_is_constant(insn_field *field,
     return field_constant_slash;
   /* field, though variable is on the list */
   if (field->is_string && rule->force_expansion != NULL) {
-    char *forced_fields = rule->force_expansion;
+    const char *forced_fields = rule->force_expansion;
     while (*forced_fields != '\0') {
       int field_len;
-      char *end = strchr(forced_fields, ',');
+      const char *end = strchr(forced_fields, ',');
       if (end == NULL)
 	field_len = strlen(forced_fields);
       else
@@ -663,7 +665,7 @@ insn_table_find_opcode_field(insn *insns,
     curr_opcode->boolean_constant = rule->special_constant;
     break;
   default:
-    error("Something is going wrong\n");
+    ERROR("Something is going wrong\n");
   }
 
   return curr_opcode;
@@ -827,29 +829,18 @@ static void
 dump_insn_field(insn_field *field,
 		int indent)
 {
-
-  printf("(insn_field*)0x%lx\n", (unsigned long)field);
-
-  dumpf(indent, "(first %d)\n", field->first);
-
-  dumpf(indent, "(last %d)\n", field->last);
-
-  dumpf(indent, "(width %d)\n", field->width);
-
+  printf ("(insn_field*)%p\n", field);
+  dumpf (indent, "(first %d)\n", field->first);
+  dumpf (indent, "(last %d)\n", field->last);
+  dumpf (indent, "(width %d)\n", field->width);
   if (field->is_int)
-    dumpf(indent, "(is_int %d)\n", field->val_int);
-
+    dumpf (indent, "(is_int %d)\n", field->val_int);
   if (field->is_slash)
-    dumpf(indent, "(is_slash)\n");
-
+    dumpf (indent, "(is_slash)\n");
   if (field->is_string)
-    dumpf(indent, "(is_string `%s')\n", field->val_string);
-  
-  dumpf(indent, "(next 0x%x)\n", field->next);
-  
-  dumpf(indent, "(prev 0x%x)\n", field->prev);
-  
-
+    dumpf (indent, "(is_string `%s')\n", field->val_string);
+  dumpf (indent, "(next %p)\n", field->next);
+  dumpf (indent, "(prev %p)\n", field->prev);
 }
 
 static void
@@ -860,13 +851,13 @@ dump_insn_fields(insn_fields *fields,
 
   printf("(insn_fields*)%p\n", fields);
 
-  dumpf(indent, "(first 0x%x)\n", fields->first);
-  dumpf(indent, "(last 0x%x)\n", fields->last);
+  dumpf(indent, "(first %p)\n", fields->first);
+  dumpf(indent, "(last %p)\n", fields->last);
 
   dumpf(indent, "(value 0x%x)\n", fields->value);
 
   for (i = 0; i < insn_bit_size; i++) {
-    dumpf(indent, "(bits[%d] ", i, fields->bits[i]);
+    dumpf(indent, "(bits[%d]", i);
     dump_insn_field(fields->bits[i], indent+1);
     dumpf(indent, " )\n");
   }
@@ -961,23 +952,23 @@ dump_insn_table(insn_table *table,
     dump_opcode_field(table->opcode, indent+1, 1);
     dumpf(indent, " )\n");
 
-    dumpf(indent, "(nr_entries %d)\n", table->entries);
+    dumpf(indent, "(nr_entries %d)\n", table->nr_entries);
     dumpf(indent, "(entries ");
     dump_insn_table(table->entries, indent+1, table->nr_entries);
     dumpf(indent, " )\n");
 
-    dumpf(indent, "(sibling ", table->sibling);
+    dumpf(indent, "(sibling ");
     dump_insn_table(table->sibling, indent+1, levels-1);
     dumpf(indent, " )\n");
 
-    dumpf(indent, "(parent ", table->parent);
+    dumpf(indent, "(parent ");
     dump_insn_table(table->parent, indent+1, 0);
     dumpf(indent, " )\n");
 
   }
 }
 
-int insn_bit_size = max_insn_bit_size;
+int insn_bit_size = ppc_max_insn_bit_size;
 int hi_bit_nr;
 int generate_expanded_instructions;
 
@@ -990,9 +981,9 @@ main(int argc, char **argv)
   cache_table *cache_rules = NULL;
 
   if (argc != 5)
-    error("Usage: insn <filter> <hi-bit-nr> <decode-table> <insn-table>\n");
+    ERROR("Usage: insn <filter> <hi-bit-nr> <decode-table> <insn-table>\n");
 
-  filters = new_filter(argv[1], filters);
+  filter_parse(&filters, argv[1]);
   hi_bit_nr = a2i(argv[2]);
   ASSERT(hi_bit_nr < insn_bit_size);
   decode_rules = load_decode_table(argv[3], hi_bit_nr);

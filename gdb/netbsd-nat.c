@@ -1,6 +1,6 @@
 /* Native-dependent code for NetBSD.
 
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 
 #include "netbsd-nat.h"
 #include "nat/netbsd-nat.h"
@@ -25,6 +24,7 @@
 #include "netbsd-tdep.h"
 #include "inferior.h"
 #include "gdbarch.h"
+#include "gdbsupport/buildargv.h"
 
 #include <sys/types.h>
 #include <sys/ptrace.h>
@@ -34,10 +34,10 @@
 /* Return the name of a file that can be opened to get the symbols for
    the child process identified by PID.  */
 
-char *
+const char *
 nbsd_nat_target::pid_to_exec_file (int pid)
 {
-  return const_cast<char *> (netbsd_nat::pid_to_exec_file (pid));
+  return netbsd_nat::pid_to_exec_file (pid);
 }
 
 /* Return the current directory for the process identified by PID.  */
@@ -132,7 +132,7 @@ nbsd_add_threads (nbsd_nat_target *target, pid_t pid)
   netbsd_nat::for_each_thread (pid, fn);
 }
 
-/* Implement the "post_startup_inferior" target_ops method.  */
+/* Implement the virtual inf_ptrace_target::post_startup_inferior method.  */
 
 void
 nbsd_nat_target::post_startup_inferior (ptid_t ptid)
@@ -221,7 +221,7 @@ nbsd_nat_target::find_memory_regions (find_memory_region_ftype func,
   gdb::unique_xmalloc_ptr<struct kinfo_vmentry[]> vmentl
     = nbsd_kinfo_get_vmmap (pid, &nitems);
   if (vmentl == NULL)
-    perror_with_name (_("Couldn't fetch VM map entries."));
+    perror_with_name (_("Couldn't fetch VM map entries"));
 
   for (size_t i = 0; i < nitems; i++)
     {
@@ -247,20 +247,19 @@ nbsd_nat_target::find_memory_regions (find_memory_region_ftype func,
       size_t size = kve->kve_end - kve->kve_start;
       if (info_verbose)
 	{
-	  fprintf_filtered (gdb_stdout,
-			    "Save segment, %ld bytes at %s (%c%c%c)\n",
-			    (long) size,
-			    paddress (target_gdbarch (), kve->kve_start),
-			    kve->kve_protection & KVME_PROT_READ ? 'r' : '-',
-			    kve->kve_protection & KVME_PROT_WRITE ? 'w' : '-',
-			    kve->kve_protection & KVME_PROT_EXEC ? 'x' : '-');
+	  gdb_printf ("Save segment, %ld bytes at %s (%c%c%c)\n",
+		      (long) size,
+		      paddress (current_inferior ()->arch  (), kve->kve_start),
+		      kve->kve_protection & KVME_PROT_READ ? 'r' : '-',
+		      kve->kve_protection & KVME_PROT_WRITE ? 'w' : '-',
+		      kve->kve_protection & KVME_PROT_EXEC ? 'x' : '-');
 	}
 
       /* Invoke the callback function to create the corefile segment.
 	 Pass MODIFIED as true, we do not know the real modification state.  */
       func (kve->kve_start, size, kve->kve_protection & KVME_PROT_READ,
 	    kve->kve_protection & KVME_PROT_WRITE,
-	    kve->kve_protection & KVME_PROT_EXEC, 1, data);
+	    kve->kve_protection & KVME_PROT_EXEC, 1, false, data);
     }
   return 0;
 }
@@ -323,13 +322,13 @@ nbsd_nat_target::info_proc (const char *args, enum info_proc_what what)
   else
     error (_("Invalid arguments."));
 
-  printf_filtered (_("process %d\n"), pid);
+  gdb_printf (_("process %d\n"), pid);
 
   if (do_cmdline)
     {
       gdb::unique_xmalloc_ptr<char[]> cmdline = nbsd_pid_to_cmdline (pid);
       if (cmdline != nullptr)
-	printf_filtered ("cmdline = '%s'\n", cmdline.get ());
+	gdb_printf ("cmdline = '%s'\n", cmdline.get ());
       else
 	warning (_("unable to fetch command line"));
     }
@@ -337,7 +336,7 @@ nbsd_nat_target::info_proc (const char *args, enum info_proc_what what)
     {
       std::string cwd = nbsd_pid_to_cwd (pid);
       if (cwd != "")
-	printf_filtered ("cwd = '%s'\n", cwd.c_str ());
+	gdb_printf ("cwd = '%s'\n", cwd.c_str ());
       else
 	warning (_("unable to fetch current working directory"));
     }
@@ -345,7 +344,7 @@ nbsd_nat_target::info_proc (const char *args, enum info_proc_what what)
     {
       const char *exe = pid_to_exec_file (pid);
       if (exe != nullptr)
-	printf_filtered ("exe = '%s'\n", exe);
+	gdb_printf ("exe = '%s'\n", exe);
       else
 	warning (_("unable to fetch executable path name"));
     }
@@ -399,59 +398,59 @@ nbsd_nat_target::info_proc (const char *args, enum info_proc_what what)
 		  }
 	      };
 
-	  printf_filtered ("Name: %s\n", kp.p_comm);
-	  printf_filtered ("State: %s\n", process_status(kp.p_realstat));
-	  printf_filtered ("Parent process: %" PRId32 "\n", kp.p_ppid);
-	  printf_filtered ("Process group: %" PRId32 "\n", kp.p__pgid);
-	  printf_filtered ("Session id: %" PRId32 "\n", kp.p_sid);
-	  printf_filtered ("TTY: %" PRId32 "\n", kp.p_tdev);
-	  printf_filtered ("TTY owner process group: %" PRId32 "\n", kp.p_tpgid);
-	  printf_filtered ("User IDs (real, effective, saved): "
-			   "%" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
-			   kp.p_ruid, kp.p_uid, kp.p_svuid);
-	  printf_filtered ("Group IDs (real, effective, saved): "
-			   "%" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
-			   kp.p_rgid, kp.p_gid, kp.p_svgid);
+	  gdb_printf ("Name: %s\n", kp.p_comm);
+	  gdb_printf ("State: %s\n", process_status(kp.p_realstat));
+	  gdb_printf ("Parent process: %" PRId32 "\n", kp.p_ppid);
+	  gdb_printf ("Process group: %" PRId32 "\n", kp.p__pgid);
+	  gdb_printf ("Session id: %" PRId32 "\n", kp.p_sid);
+	  gdb_printf ("TTY: %" PRId32 "\n", kp.p_tdev);
+	  gdb_printf ("TTY owner process group: %" PRId32 "\n", kp.p_tpgid);
+	  gdb_printf ("User IDs (real, effective, saved): "
+		      "%" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
+		      kp.p_ruid, kp.p_uid, kp.p_svuid);
+	  gdb_printf ("Group IDs (real, effective, saved): "
+		      "%" PRIu32 " %" PRIu32 " %" PRIu32 "\n",
+		      kp.p_rgid, kp.p_gid, kp.p_svgid);
 
-	  printf_filtered ("Groups:");
+	  gdb_printf ("Groups:");
 	  for (int i = 0; i < kp.p_ngroups; i++)
-	    printf_filtered (" %" PRIu32, kp.p_groups[i]);
-	  printf_filtered ("\n");
-	  printf_filtered ("Minor faults (no memory page): %" PRIu64 "\n",
-			   kp.p_uru_minflt);
-	  printf_filtered ("Major faults (memory page faults): %" PRIu64 "\n",
-			   kp.p_uru_majflt);
-	  printf_filtered ("utime: %" PRIu32 ".%06" PRIu32 "\n",
-			   kp.p_uutime_sec, kp.p_uutime_usec);
-	  printf_filtered ("stime: %" PRIu32 ".%06" PRIu32 "\n",
-			   kp.p_ustime_sec, kp.p_ustime_usec);
-	  printf_filtered ("utime+stime, children: %" PRIu32 ".%06" PRIu32 "\n",
-			   kp.p_uctime_sec, kp.p_uctime_usec);
-	  printf_filtered ("'nice' value: %" PRIu8 "\n", kp.p_nice);
-	  printf_filtered ("Start time: %" PRIu32 ".%06" PRIu32 "\n",
-			   kp.p_ustart_sec, kp.p_ustart_usec);
+	    gdb_printf (" %" PRIu32, kp.p_groups[i]);
+	  gdb_printf ("\n");
+	  gdb_printf ("Minor faults (no memory page): %" PRIu64 "\n",
+		      kp.p_uru_minflt);
+	  gdb_printf ("Major faults (memory page faults): %" PRIu64 "\n",
+		      kp.p_uru_majflt);
+	  gdb_printf ("utime: %" PRIu32 ".%06" PRIu32 "\n",
+		      kp.p_uutime_sec, kp.p_uutime_usec);
+	  gdb_printf ("stime: %" PRIu32 ".%06" PRIu32 "\n",
+		      kp.p_ustime_sec, kp.p_ustime_usec);
+	  gdb_printf ("utime+stime, children: %" PRIu32 ".%06" PRIu32 "\n",
+		      kp.p_uctime_sec, kp.p_uctime_usec);
+	  gdb_printf ("'nice' value: %" PRIu8 "\n", kp.p_nice);
+	  gdb_printf ("Start time: %" PRIu32 ".%06" PRIu32 "\n",
+		      kp.p_ustart_sec, kp.p_ustart_usec);
 	  int pgtok = getpagesize () / 1024;
-	  printf_filtered ("Data size: %" PRIuMAX " kB\n",
-			   (uintmax_t) kp.p_vm_dsize * pgtok);
-	  printf_filtered ("Stack size: %" PRIuMAX " kB\n",
-			   (uintmax_t) kp.p_vm_ssize * pgtok);
-	  printf_filtered ("Text size: %" PRIuMAX " kB\n",
-			   (uintmax_t) kp.p_vm_tsize * pgtok);
-	  printf_filtered ("Resident set size: %" PRIuMAX " kB\n",
-			   (uintmax_t) kp.p_vm_rssize * pgtok);
-	  printf_filtered ("Maximum RSS: %" PRIu64 " kB\n", kp.p_uru_maxrss);
-	  printf_filtered ("Pending Signals:");
+	  gdb_printf ("Data size: %" PRIuMAX " kB\n",
+		      (uintmax_t) kp.p_vm_dsize * pgtok);
+	  gdb_printf ("Stack size: %" PRIuMAX " kB\n",
+		      (uintmax_t) kp.p_vm_ssize * pgtok);
+	  gdb_printf ("Text size: %" PRIuMAX " kB\n",
+		      (uintmax_t) kp.p_vm_tsize * pgtok);
+	  gdb_printf ("Resident set size: %" PRIuMAX " kB\n",
+		      (uintmax_t) kp.p_vm_rssize * pgtok);
+	  gdb_printf ("Maximum RSS: %" PRIu64 " kB\n", kp.p_uru_maxrss);
+	  gdb_printf ("Pending Signals:");
 	  for (size_t i = 0; i < ARRAY_SIZE (kp.p_siglist.__bits); i++)
-	    printf_filtered (" %08" PRIx32, kp.p_siglist.__bits[i]);
-	  printf_filtered ("\n");
-	  printf_filtered ("Ignored Signals:");
+	    gdb_printf (" %08" PRIx32, kp.p_siglist.__bits[i]);
+	  gdb_printf ("\n");
+	  gdb_printf ("Ignored Signals:");
 	  for (size_t i = 0; i < ARRAY_SIZE (kp.p_sigignore.__bits); i++)
-	    printf_filtered (" %08" PRIx32, kp.p_sigignore.__bits[i]);
-	  printf_filtered ("\n");
-	  printf_filtered ("Caught Signals:");
+	    gdb_printf (" %08" PRIx32, kp.p_sigignore.__bits[i]);
+	  gdb_printf ("\n");
+	  gdb_printf ("Caught Signals:");
 	  for (size_t i = 0; i < ARRAY_SIZE (kp.p_sigcatch.__bits); i++)
-	    printf_filtered (" %08" PRIx32, kp.p_sigcatch.__bits[i]);
-	  printf_filtered ("\n");
+	    gdb_printf (" %08" PRIx32, kp.p_sigcatch.__bits[i]);
+	  gdb_printf ("\n");
 	}
     }
 
@@ -509,7 +508,7 @@ nbsd_resume(nbsd_nat_target *target, ptid_t ptid, int step,
 	  perror_with_name (("ptrace"));
     }
 
-  if (catch_syscall_enabled () > 0)
+  if (catch_syscall_enabled ())
     request = PT_SYSCALL;
   else
     request = PT_CONTINUE;
@@ -560,7 +559,7 @@ nbsd_wait (ptid_t ptid, struct target_waitstatus *ourstatus,
   if (pid == -1)
     perror_with_name (_("Child process unexpectedly missing"));
 
-  store_waitstatus (ourstatus, status);
+  *ourstatus = host_status_to_waitstatus (status);
   return pid;
 }
 
@@ -576,7 +575,7 @@ nbsd_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
   ptid_t wptid = ptid_t (pid);
 
   /* If the child stopped, keep investigating its status.  */
-  if (ourstatus->kind != TARGET_WAITKIND_STOPPED)
+  if (ourstatus->kind () != TARGET_WAITKIND_STOPPED)
     return wptid;
 
   /* Extract the event and thread that received a signal.  */
@@ -618,18 +617,14 @@ nbsd_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	 threads might be skipped during post_attach that
 	 have not yet reported their PTRACE_LWP_EXIT event.
 	 Ignore exited events for an unknown LWP.  */
-      thread_info *thr = find_thread_ptid (this, wptid);
+      thread_info *thr = this->find_thread (wptid);
       if (thr == nullptr)
-	  ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
+	  ourstatus->set_spurious ();
       else
 	{
-	  ourstatus->kind = TARGET_WAITKIND_THREAD_EXITED;
 	  /* NetBSD does not store an LWP exit status.  */
-	  ourstatus->value.integer = 0;
+	  ourstatus->set_thread_exited (0);
 
-	  if (print_thread_events)
-	    printf_unfiltered (_("[%s exited]\n"),
-			       target_pid_to_str (wptid).c_str ());
 	  delete_thread (thr);
 	}
 
@@ -650,19 +645,18 @@ nbsd_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	 not yet reported their PTRACE_LWP_CREATE event.  Ignore
 	 born events for an already-known LWP.  */
       if (in_thread_list (this, wptid))
-	  ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
+	  ourstatus->set_spurious ();
       else
 	{
 	  add_thread (this, wptid);
-	  ourstatus->kind = TARGET_WAITKIND_THREAD_CREATED;
+	  ourstatus->set_thread_created ();
 	}
       return wptid;
     }
 
   if (code == TRAP_EXEC)
     {
-      ourstatus->kind = TARGET_WAITKIND_EXECD;
-      ourstatus->value.execd_pathname = xstrdup (pid_to_exec_file (pid));
+      ourstatus->set_execd (make_unique_xstrdup (pid_to_exec_file (pid)));
       return wptid;
     }
 
@@ -679,14 +673,14 @@ nbsd_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
       if (!catch_syscall_enabled () || !catching_syscall_number (sysnum))
 	{
 	  /* If the core isn't interested in this event, ignore it.  */
-	  ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
+	  ourstatus->set_spurious ();
 	  return wptid;
 	}
 
-      ourstatus->kind =
-	(code == TRAP_SCE) ? TARGET_WAITKIND_SYSCALL_ENTRY :
-	TARGET_WAITKIND_SYSCALL_RETURN;
-      ourstatus->value.syscall_number = sysnum;
+      if (code == TRAP_SCE)
+	ourstatus->set_syscall_entry (sysnum);
+      else
+	ourstatus->set_syscall_return (sysnum);
       return wptid;
     }
 
@@ -697,7 +691,7 @@ nbsd_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
     }
 
   /* Unclassified SIGTRAP event.  */
-  ourstatus->kind = TARGET_WAITKIND_SPURIOUS;
+  ourstatus->set_spurious ();
   return wptid;
 }
 
@@ -775,11 +769,11 @@ nbsd_nat_target::xfer_partial (enum target_object object,
 	if (res != 0)
 	  {
 	    if (res == EACCES)
-	      fprintf_unfiltered (gdb_stderr, "Cannot %s process at %s (%s). "
-				  "Is PaX MPROTECT active? See security(7), "
-				  "sysctl(7), paxctl(8)\n",
-				  (writebuf ? "write to" : "read from"),
-				  pulongest (offset), safe_strerror (errno));
+	      gdb_printf (gdb_stderr, "Cannot %s process at %s (%s). "
+			  "Is PaX MPROTECT active? See security(7), "
+			  "sysctl(7), paxctl(8)\n",
+			  (writebuf ? "write to" : "read from"),
+			  pulongest (offset), safe_strerror (errno));
 	    return TARGET_XFER_E_IO;
 	  }
 	if (xfered == 0)

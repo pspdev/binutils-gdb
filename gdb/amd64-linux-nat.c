@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux x86-64.
 
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2024 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
    This file is part of GDB.
@@ -18,7 +18,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "inferior.h"
 #include "regcache.h"
 #include "elf/common.h"
@@ -210,6 +209,7 @@ void
 amd64_linux_nat_target::fetch_registers (struct regcache *regcache, int regnum)
 {
   struct gdbarch *gdbarch = regcache->arch ();
+  const i386_gdbarch_tdep *tdep = gdbarch_tdep<i386_gdbarch_tdep> (gdbarch);
   int tid;
 
   /* GNU/Linux LWP ID's are process ID's.  */
@@ -235,22 +235,21 @@ amd64_linux_nat_target::fetch_registers (struct regcache *regcache, int regnum)
 
       if (have_ptrace_getregset == TRIBOOL_TRUE)
 	{
-	  char xstateregs[X86_XSTATE_MAX_SIZE];
-	  struct iovec iov;
-
 	  /* Pre-4.14 kernels have a bug (fixed by commit 0852b374173b
 	     "x86/fpu: Add FPU state copying quirk to handle XRSTOR failure on
 	     Intel Skylake CPUs") that sometimes causes the mxcsr location in
 	     xstateregs not to be copied by PTRACE_GETREGSET.  Make sure that
 	     the location is at least initialized with a defined value.  */
-	  memset (xstateregs, 0, sizeof (xstateregs));
-	  iov.iov_base = xstateregs;
-	  iov.iov_len = sizeof (xstateregs);
+	  gdb::byte_vector xstateregs (tdep->xsave_layout.sizeof_xsave, 0);
+	  struct iovec iov;
+
+	  iov.iov_base = xstateregs.data ();
+	  iov.iov_len = xstateregs.size ();
 	  if (ptrace (PTRACE_GETREGSET, tid,
 		      (unsigned int) NT_X86_XSTATE, (long) &iov) < 0)
 	    perror_with_name (_("Couldn't get extended state status"));
 
-	  amd64_supply_xsave (regcache, -1, xstateregs);
+	  amd64_supply_xsave (regcache, -1, xstateregs.data ());
 	}
       else
 	{
@@ -270,6 +269,7 @@ void
 amd64_linux_nat_target::store_registers (struct regcache *regcache, int regnum)
 {
   struct gdbarch *gdbarch = regcache->arch ();
+  const i386_gdbarch_tdep *tdep = gdbarch_tdep<i386_gdbarch_tdep> (gdbarch);
   int tid;
 
   /* GNU/Linux LWP ID's are process ID's.  */
@@ -299,16 +299,16 @@ amd64_linux_nat_target::store_registers (struct regcache *regcache, int regnum)
 
       if (have_ptrace_getregset == TRIBOOL_TRUE)
 	{
-	  char xstateregs[X86_XSTATE_MAX_SIZE];
+	  gdb::byte_vector xstateregs (tdep->xsave_layout.sizeof_xsave);
 	  struct iovec iov;
 
-	  iov.iov_base = xstateregs;
-	  iov.iov_len = sizeof (xstateregs);
+	  iov.iov_base = xstateregs.data ();
+	  iov.iov_len = xstateregs.size ();
 	  if (ptrace (PTRACE_GETREGSET, tid,
 		      (unsigned int) NT_X86_XSTATE, (long) &iov) < 0)
 	    perror_with_name (_("Couldn't get extended state status"));
 
-	  amd64_collect_xsave (regcache, regnum, xstateregs, 0);
+	  amd64_collect_xsave (regcache, regnum, xstateregs.data (), 0);
 
 	  if (ptrace (PTRACE_SETREGSET, tid,
 		      (unsigned int) NT_X86_XSTATE, (long) &iov) < 0)
@@ -335,7 +335,7 @@ ps_err_e
 ps_get_thread_area (struct ps_prochandle *ph,
 		    lwpid_t lwpid, int idx, void **base)
 {
-  if (gdbarch_bfd_arch_info (ph->thread->inf->gdbarch)->bits_per_word == 32)
+  if (gdbarch_bfd_arch_info (ph->thread->inf->arch ())->bits_per_word == 32)
     {
       unsigned int base_addr;
       ps_err_e result;

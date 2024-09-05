@@ -1,6 +1,6 @@
 /* Python interface to inferior thread event registries.
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "command.h"
 #include "py-events.h"
 
@@ -102,7 +101,7 @@ evregpy_dealloc (PyObject *self)
 
 /* Initialize the Python event registry code.  */
 
-int
+static int CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION
 gdbpy_initialize_eventregistry (void)
 {
   if (PyType_Ready (&eventregistry_object_type) < 0)
@@ -115,11 +114,15 @@ gdbpy_initialize_eventregistry (void)
 /* Return the number of listeners currently connected to this
    registry.  */
 
-int
+bool
 evregpy_no_listeners_p (eventregistry_object *registry)
 {
-  return PyList_Size (registry->callbacks) == 0;
+  /* REGISTRY can be nullptr if gdb failed to find the data directory
+     at startup.  */
+  return registry == nullptr || PyList_Size (registry->callbacks) == 0;
 }
+
+GDBPY_INITIALIZE_FILE (gdbpy_initialize_eventregistry);
 
 static PyMethodDef eventregistry_object_methods[] =
 {

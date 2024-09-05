@@ -1,5 +1,5 @@
 # Extended prompt.
-# Copyright (C) 2011-2021 Free Software Foundation, Inc.
+# Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,19 +21,17 @@ import gdb.prompt
 
 
 class _ExtendedPrompt(gdb.Parameter):
-
     """Set the extended prompt.
 
     Usage: set extended-prompt VALUE
 
     Substitutions are applied to VALUE to compute the real prompt.
 
-    The currently defined substitutions are:
-    """
+    The currently defined substitutions are:"""
 
     # Add the prompt library's dynamically generated help to the
     # __doc__ string.
-    __doc__ = __doc__ + gdb.prompt.prompt_help()
+    __doc__ = __doc__ + "\n" + gdb.prompt.prompt_help()
 
     set_doc = "Set the extended prompt."
     show_doc = "Show the extended prompt."
@@ -52,7 +50,7 @@ class _ExtendedPrompt(gdb.Parameter):
             return "The extended prompt is not set."
 
     def get_set_string(self):
-        if self.hook_set == False:
+        if self.hook_set is False:
             gdb.prompt_hook = self.before_prompt_hook
             self.hook_set = True
         return ""

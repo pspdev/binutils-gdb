@@ -1,6 +1,6 @@
 /* Declarations for value printing routines for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,6 +21,17 @@
 #define VALPRINT_H
 
 #include "cli/cli-option.h"
+
+/* Possibilities for prettyformat parameters to routines which print
+   things.  */
+
+enum val_prettyformat
+  {
+    Val_no_prettyformat = 0,
+    Val_prettyformat,
+    /* * Use the default setting which the user has specified.  */
+    Val_prettyformat_default
+  };
 
 /* This is used to pass formatting options to various value-printing
    functions.  */
@@ -44,15 +55,21 @@ struct value_print_options
   /* Controls printing of addresses.  */
   bool addressprint;
 
+  /* Controls printing of nibbles.  */
+  bool nibblesprint;
+
   /* Controls looking up an object's derived type using what we find
      in its vtables.  */
   bool objectprint;
 
-  /* Maximum number of chars to print for a string pointer value or vector
-     contents, or UINT_MAX for no limit.  Note that "set print elements 0"
-     stores UINT_MAX in print_max, which displays in a show command as
-     "unlimited".  */
+  /* Maximum number of elements to print for vector contents, or UINT_MAX
+     for no limit.  Note that "set print elements 0" stores UINT_MAX in
+     print_max, which displays in a show command as "unlimited".  */
   unsigned int print_max;
+
+  /* Maximum number of string chars to print for a string pointer value,
+     zero if to follow the value of print_max, or UINT_MAX for no limit.  */
+  unsigned int print_max_chars;
 
   /* Print repeat counts if there are more than this many repetitions
      of an element in an array.  */
@@ -100,10 +117,22 @@ struct value_print_options
 
   /* Maximum print depth when printing nested aggregates.  */
   int max_depth;
-
-  /* Whether "finish" should print the value.  */
-  bool finish_print;
 };
+
+/* The value to use for `print_max_chars' to follow `print_max'.  */
+#define PRINT_MAX_CHARS_ELEMENTS 0
+
+/* The value to use for `print_max_chars' for no limit.  */
+#define PRINT_MAX_CHARS_UNLIMITED UINT_MAX
+
+/* Return the character count limit for printing strings.  */
+
+static inline unsigned int
+get_print_max_chars (const struct value_print_options *options)
+{
+  return (options->print_max_chars != PRINT_MAX_CHARS_ELEMENTS
+	  ? options->print_max_chars : options->print_max);
+}
 
 /* Create an option_def_group for the value_print options, with OPTS
    as context.  */
@@ -149,7 +178,8 @@ extern void value_print_scalar_formatted
    int size, struct ui_file *stream);
 
 extern void print_binary_chars (struct ui_file *, const gdb_byte *,
-				unsigned int, enum bfd_endian, bool);
+				unsigned int, enum bfd_endian, bool,
+				const struct value_print_options *options);
 
 extern void print_octal_chars (struct ui_file *, const gdb_byte *,
 			       unsigned int, enum bfd_endian);
@@ -165,18 +195,12 @@ extern void print_function_pointer_address (const struct value_print_options *op
 					    CORE_ADDR address,
 					    struct ui_file *stream);
 
-extern int read_string (CORE_ADDR addr, int len, int width,
-			unsigned int fetchlimit,
-			enum bfd_endian byte_order,
-			gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
-			int *bytes_read);
-
 /* Helper function to check the validity of some bits of a value.
 
    If TYPE represents some aggregate type (e.g., a structure), return 1.
 
    Otherwise, any of the bytes starting at OFFSET and extending for
-   TYPE_LENGTH(TYPE) bytes are invalid, print a message to STREAM and
+   TYPE->length () bytes are invalid, print a message to STREAM and
    return 0.  The checking is done using FUNCS.
 
    Otherwise, return 1.  */

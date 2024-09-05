@@ -1,4 +1,4 @@
-# Copyright 2019-2021 Free Software Foundation, Inc.
+# Copyright 2019-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -34,9 +34,10 @@ proc run_test { lang } {
     }
 
     if ![runto_main] then {
-	fail "can't run to main"
 	return 0
     }
+
+    gdb_test_no_output "nosharedlibrary"
 
     set file_re "File .*[string_to_regexp $srcfile]:"
 

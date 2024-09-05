@@ -1,6 +1,6 @@
 /* Interface between gdb and its extension languages.
 
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,7 +20,6 @@
 /* Note: With few exceptions, external functions and variables in this file
    have "ext_lang" in the name, and no other symbol in gdb does.  */
 
-#include "defs.h"
 #include <signal.h>
 #include "target.h"
 #include "auto-load.h"
@@ -33,6 +32,7 @@
 #include "python/python.h"
 #include "guile/guile.h"
 #include <array>
+#include "inferior.h"
 
 static script_sourcer_func source_gdb_script;
 static objfile_script_sourcer_func source_gdb_objfile_script;
@@ -340,6 +340,18 @@ ext_lang_initialization (void)
     }
 }
 
+/* See extension.h.  */
+
+void
+ext_lang_shutdown ()
+{
+  for (const struct extension_language_defn *extlang : extension_languages)
+    {
+      if (extlang->ops != nullptr && extlang->ops->shutdown != nullptr)
+	extlang->ops->shutdown (extlang);
+    }
+}
+
 /* Invoke the appropriate extension_language_ops.eval_from_control_command
    method to perform CMD, which is a list of commands in an extension language.
 
@@ -417,13 +429,13 @@ ext_lang_type_printers::ext_lang_type_printers ()
    returning the result of the first one that succeeds.
    If there was an error, or if no printer succeeds, then NULL is returned.  */
 
-char *
+gdb::unique_xmalloc_ptr<char>
 apply_ext_lang_type_printers (struct ext_lang_type_printers *printers,
 			      struct type *type)
 {
   for (const struct extension_language_defn *extlang : extension_languages)
     {
-      char *result = NULL;
+      gdb::unique_xmalloc_ptr<char> result;
       enum ext_lang_rc rc;
 
       if (extlang->ops == nullptr
@@ -434,7 +446,7 @@ apply_ext_lang_type_printers (struct ext_lang_type_printers *printers,
       switch (rc)
 	{
 	case EXT_LANG_RC_OK:
-	  gdb_assert (result != NULL);
+	  gdb_assert (result != nullptr);
 	  return result;
 	case EXT_LANG_RC_ERROR:
 	  return NULL;
@@ -524,7 +536,7 @@ apply_ext_lang_val_pretty_printer (struct value *val,
    rather than trying filters in other extension languages.  */
 
 enum ext_lang_bt_status
-apply_ext_lang_frame_filter (struct frame_info *frame,
+apply_ext_lang_frame_filter (const frame_info_ptr &frame,
 			     frame_filter_flags flags,
 			     enum ext_lang_frame_args args_type,
 			     struct ui_out *out,
@@ -548,6 +560,19 @@ apply_ext_lang_frame_filter (struct frame_info *frame,
     }
 
   return EXT_LANG_BT_NO_FILTERS;
+}
+
+/* Used for registering the ptwrite filter to the current thread.  */
+
+void
+apply_ext_lang_ptwrite_filter (btrace_thread_info *btinfo)
+{
+  for (const struct extension_language_defn *extlang : extension_languages)
+    {
+      if (extlang->ops != nullptr
+	  && extlang->ops->apply_ptwrite_filter != nullptr)
+	extlang->ops->apply_ptwrite_filter (extlang, btinfo);
+    }
 }
 
 /* Update values held by the extension language when OBJFILE is discarded.
@@ -597,7 +622,7 @@ get_breakpoint_cond_ext_lang (struct breakpoint *b,
 /* Return whether a stop condition for breakpoint B says to stop.
    True is also returned if there is no stop condition for B.  */
 
-int
+bool
 breakpoint_ext_lang_cond_says_stop (struct breakpoint *b)
 {
   enum ext_lang_bp_stop stop = EXT_LANG_BP_STOP_UNSET;
@@ -626,17 +651,32 @@ breakpoint_ext_lang_cond_says_stop (struct breakpoint *b)
 	}
     }
 
-  return stop == EXT_LANG_BP_STOP_NO ? 0 : 1;
+  return stop != EXT_LANG_BP_STOP_NO;
 }
 
 /* ^C/SIGINT support.
    This requires cooperation with the extension languages so the support
    is defined here.  */
 
+#if CXX_STD_THREAD
+
+#include <mutex>
+
+/* DAP needs a way to interrupt the main thread, so we added
+   gdb.interrupt.  However, as this can run from any thread, we need
+   locking for the current extension language.  If threading is not
+   available, DAP will not start.
+
+   This lock is held for accesses to quit_flag, active_ext_lang, and
+   cooperative_sigint_handling_disabled.  */
+static std::recursive_mutex ext_lang_mutex;
+
+#endif /* CXX_STD_THREAD */
+
 /* This flag tracks quit requests when we haven't called out to an
    extension language.  it also holds quit requests when we transition to
    an extension language that doesn't have cooperative SIGINT handling.  */
-static int quit_flag;
+static bool quit_flag;
 
 /* The current extension language we've called out to, or
    extension_language_gdb if there isn't one.
@@ -646,22 +686,14 @@ static int quit_flag;
 static const struct extension_language_defn *active_ext_lang
   = &extension_language_gdb;
 
-/* Return the currently active extension language.  */
-
-const struct extension_language_defn *
-get_active_ext_lang (void)
-{
-  return active_ext_lang;
-}
-
 /* Install a SIGINT handler.  */
 
 static void
-install_sigint_handler (const struct signal_handler *handler_state)
+install_ext_sigint_handler (const struct signal_handler *handler_state)
 {
   gdb_assert (handler_state->handler_saved);
 
-  signal (SIGINT, handler_state->handler);
+  install_sigint_handler (handler_state->handler);
 }
 
 /* Install GDB's SIGINT handler, storing the previous version in *PREVIOUS.
@@ -675,11 +707,54 @@ install_gdb_sigint_handler (struct signal_handler *previous)
   /* Save here to simplify comparison.  */
   sighandler_t handle_sigint_for_compare = handle_sigint;
 
-  previous->handler = signal (SIGINT, handle_sigint);
+  previous->handler = install_sigint_handler (handle_sigint);
   if (previous->handler != handle_sigint_for_compare)
     previous->handler_saved = 1;
   else
     previous->handler_saved = 0;
+}
+
+#if GDB_SELF_TEST
+namespace selftests {
+void (*hook_set_active_ext_lang) () = nullptr;
+}
+#endif
+
+/* True if cooperative SIGINT handling is disabled.  This is needed so
+   that calls to set_active_ext_lang do not re-enable cooperative
+   handling, which if enabled would make set_quit_flag store the
+   SIGINT in an extension language.  */
+static bool cooperative_sigint_handling_disabled = false;
+
+scoped_disable_cooperative_sigint_handling::scoped_disable_cooperative_sigint_handling ()
+{
+#if CXX_STD_THREAD
+  std::lock_guard guard (ext_lang_mutex);
+#endif /* CXX_STD_THREAD */
+
+  /* Force the active extension language to the GDB scripting
+     language.  This ensures that a previously saved SIGINT is moved
+     to the quit_flag global, as well as ensures that future SIGINTs
+     are also saved in the global.  */
+  m_prev_active_ext_lang_state
+    = set_active_ext_lang (&extension_language_gdb);
+
+  /* Set the "cooperative SIGINT handling disabled" global flag, so
+     that a future call to set_active_ext_lang does not re-enable
+     cooperative mode.  */
+  m_prev_cooperative_sigint_handling_disabled
+    = cooperative_sigint_handling_disabled;
+  cooperative_sigint_handling_disabled = true;
+}
+
+scoped_disable_cooperative_sigint_handling::~scoped_disable_cooperative_sigint_handling ()
+{
+#if CXX_STD_THREAD
+  std::lock_guard guard (ext_lang_mutex);
+#endif /* CXX_STD_THREAD */
+
+  cooperative_sigint_handling_disabled = m_prev_cooperative_sigint_handling_disabled;
+  restore_active_ext_lang (m_prev_active_ext_lang_state);
 }
 
 /* Set the currently active extension language to NOW_ACTIVE.
@@ -703,11 +778,44 @@ install_gdb_sigint_handler (struct signal_handler *previous)
    check_quit_flag is not called, the original SIGINT will be thrown.
    Non-cooperative extension languages are free to install their own SIGINT
    handler but the original must be restored upon return, either itself
-   or via restore_active_ext_lang.  */
+   or via restore_active_ext_lang.
+
+   If cooperative SIGINT handling is force-disabled (e.g., we're in
+   the middle of handling an inferior event), then we don't actually
+   record NOW_ACTIVE as the current active extension language, so that
+   set_quit_flag saves the SIGINT in the global quit flag instead of
+   in the extension language.  The caller does not need to concern
+   itself about this, though.  The currently active extension language
+   concept only exists for cooperative SIGINT handling.  */
 
 struct active_ext_lang_state *
 set_active_ext_lang (const struct extension_language_defn *now_active)
 {
+#if CXX_STD_THREAD
+  std::lock_guard guard (ext_lang_mutex);
+#endif /* CXX_STD_THREAD */
+
+#if GDB_SELF_TEST
+  if (selftests::hook_set_active_ext_lang)
+    selftests::hook_set_active_ext_lang ();
+#endif
+
+  /* If cooperative SIGINT handling was previously force-disabled,
+     make sure to not re-enable it (as NOW_ACTIVE could be a language
+     that supports cooperative SIGINT handling).  */
+  if (cooperative_sigint_handling_disabled)
+    {
+      /* Ensure set_quit_flag saves SIGINT in the quit_flag
+	 global.  */
+      gdb_assert (active_ext_lang->ops == nullptr
+		  || active_ext_lang->ops->check_quit_flag == nullptr);
+
+      /* The only thing the caller can do with the result is pass it
+	 to restore_active_ext_lang, which expects NULL when
+	 cooperative SIGINT handling is disabled.  */
+      return nullptr;
+    }
+
   struct active_ext_lang_state *previous
     = XCNEW (struct active_ext_lang_state);
 
@@ -739,13 +847,24 @@ set_active_ext_lang (const struct extension_language_defn *now_active)
 void
 restore_active_ext_lang (struct active_ext_lang_state *previous)
 {
+#if CXX_STD_THREAD
+  std::lock_guard guard (ext_lang_mutex);
+#endif /* CXX_STD_THREAD */
+
+  if (cooperative_sigint_handling_disabled)
+    {
+      /* See set_active_ext_lang.  */
+      gdb_assert (previous == nullptr);
+      return;
+    }
+
   active_ext_lang = previous->ext_lang;
 
   if (target_terminal::is_ours ())
     {
       /* Restore the previous SIGINT handler if one was saved.  */
       if (previous->sigint_handler.handler_saved)
-	install_sigint_handler (&previous->sigint_handler);
+	install_ext_sigint_handler (&previous->sigint_handler);
 
       /* If there's a SIGINT recorded in the cooperative extension languages,
 	 move it to the new language, or save it in GDB's global flag if the
@@ -757,23 +876,21 @@ restore_active_ext_lang (struct active_ext_lang_state *previous)
   xfree (previous);
 }
 
-/* Set the quit flag.
-   This only sets the flag in the currently active extension language.
-   If the currently active extension language does not have cooperative
-   SIGINT handling, then GDB's global flag is set, and it is up to the
-   extension language to call check_quit_flag.  The extension language
-   is free to install its own SIGINT handler, but we still need to handle
-   the transition.  */
+/* See extension.h.  */
 
 void
-set_quit_flag (void)
+set_quit_flag ()
 {
+#if CXX_STD_THREAD
+  std::lock_guard guard (ext_lang_mutex);
+#endif /* CXX_STD_THREAD */
+
   if (active_ext_lang->ops != NULL
       && active_ext_lang->ops->set_quit_flag != NULL)
     active_ext_lang->ops->set_quit_flag (active_ext_lang);
   else
     {
-      quit_flag = 1;
+      quit_flag = true;
 
       /* Now wake up the event loop, or any interruptible_select.  Do
 	 this after setting the flag, because signals on Windows
@@ -784,22 +901,23 @@ set_quit_flag (void)
     }
 }
 
-/* Return true if the quit flag has been set, false otherwise.
-   Note: The flag is cleared as a side-effect.
-   The flag is checked in all extension languages that support cooperative
-   SIGINT handling, not just the current one.  This simplifies transitions.  */
+/* See extension.h.  */
 
-int
-check_quit_flag (void)
+bool
+check_quit_flag ()
 {
-  int result = 0;
+#if CXX_STD_THREAD
+  std::lock_guard guard (ext_lang_mutex);
+#endif /* CXX_STD_THREAD */
+
+  bool result = false;
 
   for (const struct extension_language_defn *extlang : extension_languages)
     {
       if (extlang->ops != nullptr
 	  && extlang->ops->check_quit_flag != NULL)
-	if (extlang->ops->check_quit_flag (extlang) != 0)
-	  result = 1;
+	if (extlang->ops->check_quit_flag (extlang))
+	  result = true;
     }
 
   /* This is written in a particular way to avoid races.  */
@@ -809,8 +927,8 @@ check_quit_flag (void)
 	 interruptible_select.  The caller handles the quit
 	 request.  */
       quit_serial_event_clear ();
-      quit_flag = 0;
-      result = 1;
+      quit_flag = false;
+      result = true;
     }
 
   return result;
@@ -875,10 +993,10 @@ xmethod_worker::get_result_type (value *object, gdb::array_view<value *> args)
 
 /* See extension.h.  */
 
-gdb::optional<std::string>
+std::optional<std::string>
 ext_lang_colorize (const std::string &filename, const std::string &contents)
 {
-  gdb::optional<std::string> result;
+  std::optional<std::string> result;
 
   for (const struct extension_language_defn *extlang : extension_languages)
     {
@@ -891,6 +1009,65 @@ ext_lang_colorize (const std::string &filename, const std::string &contents)
     }
 
   return result;
+}
+
+/* See extension.h.  */
+
+std::optional<std::string>
+ext_lang_colorize_disasm (const std::string &content, gdbarch *gdbarch)
+{
+  std::optional<std::string> result;
+
+  for (const struct extension_language_defn *extlang : extension_languages)
+    {
+      if (extlang->ops == nullptr
+	  || extlang->ops->colorize_disasm == nullptr)
+	continue;
+      result = extlang->ops->colorize_disasm (content, gdbarch);
+      if (result.has_value ())
+	return result;
+    }
+
+  return result;
+}
+
+/* See extension.h.  */
+
+std::optional<int>
+ext_lang_print_insn (struct gdbarch *gdbarch, CORE_ADDR address,
+		     struct disassemble_info *info)
+{
+  for (const struct extension_language_defn *extlang : extension_languages)
+    {
+      if (extlang->ops == nullptr
+	  || extlang->ops->print_insn == nullptr)
+	continue;
+      std::optional<int> length
+	= extlang->ops->print_insn (gdbarch, address, info);
+      if (length.has_value ())
+	return length;
+    }
+
+  return {};
+}
+
+/* See extension.h.  */
+
+ext_lang_missing_debuginfo_result
+ext_lang_handle_missing_debuginfo (struct objfile *objfile)
+{
+  for (const struct extension_language_defn *extlang : extension_languages)
+    {
+      if (extlang->ops == nullptr
+	  || extlang->ops->handle_missing_debuginfo == nullptr)
+	continue;
+      ext_lang_missing_debuginfo_result result
+	= extlang->ops->handle_missing_debuginfo (extlang, objfile);
+      if (!result.filename ().empty () || result.try_again ())
+	return result;
+    }
+
+  return {};
 }
 
 /* Called via an observer before gdb prints its prompt.

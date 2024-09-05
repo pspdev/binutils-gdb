@@ -1,6 +1,6 @@
 /* SystemTap probe support for GDB.
 
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,14 +17,14 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "stap-probe.h"
+#include "extract-store-integer.h"
 #include "probe.h"
 #include "ui-out.h"
 #include "objfiles.h"
 #include "arch-utils.h"
 #include "command.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "filenames.h"
 #include "value.h"
 #include "ax.h"
@@ -151,7 +151,7 @@ public:
 
   /* See probe.h.  */
   struct value *evaluate_argument (unsigned n,
-				   struct frame_info *frame) override;
+				   const frame_info_ptr &frame) override;
 
   /* See probe.h.  */
   void compile_to_ax (struct agent_expr *aexpr,
@@ -185,15 +185,13 @@ public:
 
     gdb_assert (m_have_parsed_args);
     if (m_parsed_args.empty ())
-      internal_error (__FILE__, __LINE__,
-		      _("Probe '%s' apparently does not have arguments, but \n"
+      internal_error (_("Probe '%s' apparently does not have arguments, but \n"
 			"GDB is requesting its argument number %u anyway.  "
 			"This should not happen.  Please report this bug."),
 		      this->get_name ().c_str (), n);
 
     if (n > m_parsed_args.size ())
-      internal_error (__FILE__, __LINE__,
-		      _("Probe '%s' has %d arguments, but GDB is requesting\n"
+      internal_error (_("Probe '%s' has %d arguments, but GDB is requesting\n"
 			"argument %u.  This should not happen.  Please\n"
 			"report this bug."),
 		      this->get_name ().c_str (),
@@ -281,8 +279,8 @@ static void
 show_stapexpressiondebug (struct ui_file *file, int from_tty,
 			  struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("SystemTap Probe expression debugging is %s.\n"),
-		    value);
+  gdb_printf (file, _("SystemTap Probe expression debugging is %s.\n"),
+	      value);
 }
 
 /* Returns the operator precedence level of OP, or STAP_OPERAND_PREC_NONE
@@ -811,8 +809,7 @@ stap_parse_register_operand (struct stap_parse_info *p)
 						newregname.size ());
 
 	  if (regnum == -1)
-	    internal_error (__FILE__, __LINE__,
-			    _("Invalid register name '%s' after replacing it"
+	    internal_error (_("Invalid register name '%s' after replacing it"
 			      " (previous name was '%s')"),
 			    newregname.c_str (), regname.c_str ());
 
@@ -821,6 +818,21 @@ stap_parse_register_operand (struct stap_parse_info *p)
     }
 
   operation_up reg = make_operation<register_operation> (std::move (regname));
+
+  /* If the argument has been placed into a vector register then (for most
+     architectures), the type of this register will be a union of arrays.
+     As a result, attempting to cast from the register type to the scalar
+     argument type will not be possible (GDB will throw an error during
+     expression evaluation).
+
+     The solution is to extract the scalar type from the value contents of
+     the entire register value.  */
+  if (!is_scalar_type (gdbarch_register_type (gdbarch, regnum)))
+    {
+      gdb_assert (is_scalar_type (p->arg_type));
+      reg = make_operation<unop_extract_operation> (std::move (reg),
+						    p->arg_type);
+    }
 
   if (indirect_p)
     {
@@ -1316,7 +1328,7 @@ stap_probe::parse_arguments (struct gdbarch *gdbarch)
       expression_up expr = stap_parse_argument (&cur, atype, gdbarch);
 
       if (stap_expression_debug)
-	dump_prefix_expression (expr.get (), gdb_stdlog);
+	expr->dump (gdb_stdlog);
 
       m_parsed_args.emplace_back (bitness, atype, std::move (expr));
 
@@ -1330,7 +1342,7 @@ stap_probe::parse_arguments (struct gdbarch *gdbarch)
 static CORE_ADDR
 relocate_address (CORE_ADDR address, struct objfile *objfile)
 {
-  return address + objfile->data_section_offset ();
+  return address + objfile->text_section_offset ();
 }
 
 /* Implementation of the get_relocated_address method.  */
@@ -1426,13 +1438,13 @@ stap_probe::can_evaluate_arguments () const
    corresponding to it.  Assertion is thrown if N does not exist.  */
 
 struct value *
-stap_probe::evaluate_argument (unsigned n, struct frame_info *frame)
+stap_probe::evaluate_argument (unsigned n, const frame_info_ptr &frame)
 {
   struct stap_probe_arg *arg;
   struct gdbarch *gdbarch = get_frame_arch (frame);
 
   arg = this->get_arg_by_number (n, gdbarch);
-  return evaluate_expression (arg->aexpr.get (), arg->atype);
+  return arg->aexpr->evaluate (arg->atype);
 }
 
 /* Compile the probe's argument N (indexed from 0) to agent expression.
@@ -1467,14 +1479,14 @@ stap_modify_semaphore (CORE_ADDR address, int set, struct gdbarch *gdbarch)
   ULONGEST value;
 
   /* Swallow errors.  */
-  if (target_read_memory (address, bytes, TYPE_LENGTH (type)) != 0)
+  if (target_read_memory (address, bytes, type->length ()) != 0)
     {
       warning (_("Could not read the value of a SystemTap semaphore."));
       return;
     }
 
   enum bfd_endian byte_order = type_byte_order (type);
-  value = extract_unsigned_integer (bytes, TYPE_LENGTH (type), byte_order);
+  value = extract_unsigned_integer (bytes, type->length (), byte_order);
   /* Note that we explicitly don't worry about overflow or
      underflow.  */
   if (set)
@@ -1482,9 +1494,9 @@ stap_modify_semaphore (CORE_ADDR address, int set, struct gdbarch *gdbarch)
   else
     --value;
 
-  store_unsigned_integer (bytes, TYPE_LENGTH (type), byte_order, value);
+  store_unsigned_integer (bytes, type->length (), byte_order, value);
 
-  if (target_write_memory (address, bytes, TYPE_LENGTH (type)) != 0)
+  if (target_write_memory (address, bytes, type->length ()) != 0)
     warning (_("Could not write the value of a SystemTap semaphore."));
 }
 
@@ -1551,7 +1563,7 @@ handle_stap_probe (struct objfile *objfile, struct sdt_note *el,
 		   std::vector<std::unique_ptr<probe>> *probesp,
 		   CORE_ADDR base)
 {
-  bfd *abfd = objfile->obfd;
+  bfd *abfd = objfile->obfd.get ();
   int size = bfd_get_arch_size (abfd) / 8;
   struct gdbarch *gdbarch = objfile->arch ();
   struct type *ptr_type = builtin_type (gdbarch)->builtin_data_ptr;
@@ -1606,6 +1618,9 @@ handle_stap_probe (struct objfile *objfile, struct sdt_note *el,
 	 it.  So we return.  */
       return;
     }
+
+  if (ignore_probe_p (provider, name, objfile_name (objfile), "SystemTap"))
+    return;
 
   stap_probe *ret = new stap_probe (std::string (name), std::string (provider),
 				    address, gdbarch, sem_addr, probe_args);
@@ -1663,7 +1678,7 @@ stap_static_probe_ops::get_probes
      SystemTap probe's information.  We basically have to count how many
      probes the objfile has, and then fill in the necessary information
      for each one.  */
-  bfd *obfd = objfile->obfd;
+  bfd *obfd = objfile->obfd.get ();
   bfd_vma base;
   struct sdt_note *iter;
   unsigned save_probesp_len = probesp->size ();

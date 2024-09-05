@@ -1,5 +1,5 @@
 /* tc-or1k.c -- Assembler for the OpenRISC family.
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2024 Free Software Foundation, Inc.
    Contributed for OR32 by Johan Rydberg, jrydberg@opencores.org
 
    This file is part of GAS, the GNU Assembler.
@@ -49,7 +49,7 @@ typedef struct
 }
 or1k_insn;
 
-const char comment_chars[]        = "#";
+const char comment_chars[]        = ";#";
 const char line_comment_chars[]   = "#";
 const char line_separator_chars[] = ";";
 const char EXP_CHARS[]            = "eE";
@@ -89,8 +89,6 @@ s_nodelay (int val ATTRIBUTE_UNUSED)
 {
   nodelay = true;
 }
-
-const char or1k_comment_chars [] = ";#";
 
 /* The target specific pseudo-ops which we support.  */
 const pseudo_typeS md_pseudo_table[] =

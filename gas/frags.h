@@ -1,5 +1,5 @@
 /* frags.h - Header file for the frag concept.
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -20,8 +20,6 @@
 
 #ifndef FRAGS_H
 #define FRAGS_H
-
-struct obstack;
 
 /* A code fragment (frag) is some known number of chars, followed by some
    unknown number of chars. Typically the unknown number of chars is an

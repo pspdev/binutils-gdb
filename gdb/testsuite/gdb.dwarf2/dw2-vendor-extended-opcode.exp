@@ -1,4 +1,4 @@
-# Copyright 2020-2021 Free Software Foundation, Inc.
+# Copyright 2020-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,19 +15,10 @@
 load_lib dwarf.exp
 
 # This test can only be run on targets which support DWARF-2 and use gas.
-if {![dwarf2_support]} {
-    verbose "Skipping $gdb_test_file_name."
-    return 0
-}
+require dwarf2_support
 
 # The .c files use __attribute__.
-if [get_compiler_info] {
-    return -1
-}
-if !$gcc_compiled {
-    verbose "Skipping $gdb_test_file_name."
-    return 0
-}
+require is_c_compiler_gcc
 
 standard_testfile .c -dw.S
 
@@ -38,6 +29,8 @@ Dwarf::assemble $asm_file {
 
     set DW_LNE_lo_usr 0x80
     set DW_LNE_hi_usr 0xff
+
+    get_func_info main
 
     cu {} {
 	compile_unit {
@@ -57,14 +50,14 @@ Dwarf::assemble $asm_file {
 	file_name "$srcfile" 1
 
 	program {
-	    {DW_LNE_set_address main_label}
-	    {line 27}
-	    {DW_LNE_user 1 $DW_LNE_lo_usr}
-	    {DW_LNE_user 2 $DW_LNE_hi_usr}
-	    {DW_LNS_copy}
+	    DW_LNE_set_address main_label
+	    line 27
+	    DW_LNE_user 1 $DW_LNE_lo_usr
+	    DW_LNE_user 2 $DW_LNE_hi_usr
+	    DW_LNS_copy
 
-	    {DW_LNE_set_address main_label_2}
-	    {DW_LNE_end_sequence}
+	    DW_LNE_set_address $main_end
+	    DW_LNE_end_sequence
 	}
     }
 }

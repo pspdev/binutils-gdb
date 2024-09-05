@@ -54,7 +54,7 @@ typedef enum {
 /* disposition of an object when things are next restarted */
 
 typedef enum {
-  permenant_object,
+  permanent_object,
   tempoary_object,
 } object_disposition;
 
@@ -71,7 +71,7 @@ typedef enum {
 
 /* Basic configuration */
 
-#include "ppc-config.h"
+#include "std-config.h"
 #include "inline.h"
 
 

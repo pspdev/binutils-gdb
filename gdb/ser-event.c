@@ -1,5 +1,5 @@
 /* Serial interface for a selectable event.
-   Copyright (C) 2016-2021 Free Software Foundation, Inc.
+   Copyright (C) 2016-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "ser-event.h"
 #include "serial.h"
 #include "gdbsupport/filestuff.h"
@@ -48,7 +47,7 @@ struct serial_event_state
 
 /* Open a new serial event.  */
 
-static int
+static void
 serial_event_open (struct serial *scb, const char *name)
 {
   struct serial_event_state *state;
@@ -61,8 +60,7 @@ serial_event_open (struct serial *scb, const char *name)
     int fds[2];
 
     if (gdb_pipe_cloexec (fds) == -1)
-      internal_error (__FILE__, __LINE__,
-		      "creating serial event pipe failed.");
+      internal_error ("creating serial event pipe failed.");
 
     fcntl (fds[0], F_SETFL, O_NONBLOCK);
     fcntl (fds[1], F_SETFL, O_NONBLOCK);
@@ -86,8 +84,6 @@ serial_event_open (struct serial *scb, const char *name)
     scb->fd = _open_osfhandle ((intptr_t) dummy_file, 0);
   }
 #endif
-
-  return 0;
 }
 
 static void

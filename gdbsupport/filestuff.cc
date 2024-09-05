@@ -1,5 +1,5 @@
 /* Low-level file-handling.
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "common-defs.h"
 #include "filestuff.h"
 #include "gdb_vecs.h"
 #include <fcntl.h>
@@ -215,7 +214,7 @@ unmark_fd_no_cloexec (int fd)
   if (it != open_fds.end ())
     open_fds.erase (it);
   else
-    gdb_assert_not_reached (_("fd not found in open_fds"));
+    gdb_assert_not_reached ("fd not found in open_fds");
 }
 
 /* Helper function for close_most_fds that closes the file descriptor
@@ -306,13 +305,13 @@ socket_mark_cloexec (int fd)
 
 /* See filestuff.h.  */
 
-int
+scoped_fd
 gdb_open_cloexec (const char *filename, int flags, unsigned long mode)
 {
-  int fd = open (filename, flags | O_CLOEXEC, mode);
+  scoped_fd fd (open (filename, flags | O_CLOEXEC, mode));
 
-  if (fd >= 0)
-    maybe_mark_cloexec (fd);
+  if (fd.get () >= 0)
+    maybe_mark_cloexec (fd.get ());
 
   return fd;
 }
@@ -378,7 +377,7 @@ gdb_socketpair_cloexec (int domain, int style, int protocol,
 
   return result;
 #else
-  gdb_assert_not_reached (_("socketpair not available on this host"));
+  gdb_assert_not_reached ("socketpair not available on this host");
 #endif
 }
 
@@ -419,7 +418,7 @@ gdb_pipe_cloexec (int filedes[2])
       mark_cloexec (filedes[1]);
     }
 #else /* HAVE_PIPE */
-  gdb_assert_not_reached (_("pipe not available on this host"));
+  gdb_assert_not_reached ("pipe not available on this host");
 #endif /* HAVE_PIPE */
 #endif /* HAVE_PIPE2 */
 
@@ -500,4 +499,49 @@ mkdir_recursive (const char *dir)
       *component_end = saved_char;
       component_start = component_end;
     }
+}
+
+/* See gdbsupport/filestuff.h.  */
+
+std::string
+read_remainder_of_file (FILE *file)
+{
+  std::string res;
+  for (;;)
+    {
+      std::string::size_type start_size = res.size ();
+      constexpr int chunk_size = 1024;
+
+      /* Resize to accommodate CHUNK_SIZE bytes.  */
+      res.resize (start_size + chunk_size);
+
+      int n = fread (&res[start_size], 1, chunk_size, file);
+      if (n == chunk_size)
+	continue;
+
+      gdb_assert (n < chunk_size);
+
+      /* Less than CHUNK means EOF or error.  If it's an error, return
+	 no value.  */
+      if (ferror (file))
+	return {};
+
+      /* Resize the string according to the data we read.  */
+      res.resize (start_size + n);
+      break;
+    }
+
+  return res;
+}
+
+/* See gdbsupport/filestuff.h.  */
+
+std::optional<std::string>
+read_text_file_to_string (const char *path)
+{
+  gdb_file_up file = gdb_fopen_cloexec (path, "r");
+  if (file == nullptr)
+    return {};
+
+  return read_remainder_of_file (file.get ());
 }

@@ -1,6 +1,6 @@
 /* Code dealing with register stack frames, for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,7 +18,6 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 
-#include "defs.h"
 #include "regcache.h"
 #include "sentinel-frame.h"
 #include "inferior.h"
@@ -42,7 +41,7 @@ sentinel_frame_cache (struct regcache *regcache)
 /* Here the register value is taken direct from the register cache.  */
 
 static struct value *
-sentinel_frame_prev_register (struct frame_info *this_frame,
+sentinel_frame_prev_register (const frame_info_ptr &this_frame,
 			      void **this_prologue_cache,
 			      int regnum)
 {
@@ -50,25 +49,27 @@ sentinel_frame_prev_register (struct frame_info *this_frame,
     = (struct frame_unwind_cache *) *this_prologue_cache;
   struct value *value;
 
+  frame_id this_frame_id = get_frame_id (this_frame);
+  gdb_assert (is_sentinel_frame_id (this_frame_id));
+
   value = cache->regcache->cooked_read_value (regnum);
-  VALUE_NEXT_FRAME_ID (value) = sentinel_frame_id;
 
   return value;
 }
 
 static void
-sentinel_frame_this_id (struct frame_info *this_frame,
+sentinel_frame_this_id (const frame_info_ptr &this_frame,
 			void **this_prologue_cache,
 			struct frame_id *this_id)
 {
   /* The sentinel frame is used as a starting point for creating the
      previous (inner most) frame.  That frame's THIS_ID method will be
      called to determine the inner most frame's ID.  Not this one.  */
-  internal_error (__FILE__, __LINE__, _("sentinel_frame_this_id called"));
+  internal_error (_("sentinel_frame_this_id called"));
 }
 
 static struct gdbarch *
-sentinel_frame_prev_arch (struct frame_info *this_frame,
+sentinel_frame_prev_arch (const frame_info_ptr &this_frame,
 			  void **this_prologue_cache)
 {
   struct frame_unwind_cache *cache

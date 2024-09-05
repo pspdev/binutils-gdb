@@ -1,5 +1,5 @@
 /* vms.c -- BFD back-end for EVAX (openVMS/Alpha) files.
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2024 Free Software Foundation, Inc.
 
    Initial version written by Klaus Kaempf (kkaempf@rmi.de)
    Major rewrite by Adacore.
@@ -266,8 +266,9 @@ struct module
 
 struct vms_private_data_struct
 {
-  /* If true, relocs have been read.  */
-  bool reloc_done;
+  /* If 1, relocs have been read successfully, if 0 they have yet to be
+     read, if -1 reading relocs failed.  */
+  int reloc_done;
 
   /* Record input buffer.  */
   struct vms_rec_rd recrd;
@@ -522,7 +523,7 @@ _bfd_vms_slurp_eisd (bfd *abfd, unsigned int offset)
       struct vms_eisd *eisd;
       unsigned int rec_size;
       unsigned int size;
-      bfd_uint64_t vaddr;
+      uint64_t vaddr;
       unsigned int flags;
       unsigned int vbn;
       char *name = NULL;
@@ -801,7 +802,7 @@ _bfd_vms_get_object_record (bfd *abfd)
   /* Skip alignment byte if the current position is odd.  */
   if (PRIV (recrd.file_format) == FF_FOREIGN && (bfd_tell (abfd) & 1))
     {
-      if (bfd_bread (PRIV (recrd.buf), 1, abfd) != 1)
+      if (bfd_read (PRIV (recrd.buf), 1, abfd) != 1)
 	{
 	  bfd_set_error (bfd_error_file_truncated);
 	  return -1;
@@ -809,7 +810,7 @@ _bfd_vms_get_object_record (bfd *abfd)
     }
 
   /* Read the record header  */
-  if (bfd_bread (PRIV (recrd.buf), test_len, abfd) != test_len)
+  if (bfd_read (PRIV (recrd.buf), test_len, abfd) != test_len)
     {
       bfd_set_error (bfd_error_file_truncated);
       return -1;
@@ -879,7 +880,7 @@ vms_get_remaining_object_record (bfd *abfd, unsigned int read_so_far)
 
   vms_debug2 ((8, "vms_get_remaining_obj_record: to_read %d\n", to_read));
 
-  if (bfd_bread (PRIV (recrd.buf) + read_so_far, to_read, abfd) != to_read)
+  if (bfd_read (PRIV (recrd.buf) + read_so_far, to_read, abfd) != to_read)
     {
       bfd_set_error (bfd_error_file_truncated);
       return 0;
@@ -1570,6 +1571,8 @@ dst_define_location (bfd *abfd, unsigned int loc)
 			       (loc + 1) * sizeof (unsigned int));
       if (PRIV (dst_ptr_offsets) == NULL)
 	return false;
+      memset (PRIV (dst_ptr_offsets) + PRIV (dst_ptr_offsets_count), 0,
+	      (loc - PRIV (dst_ptr_offsets_count)) * sizeof (unsigned int));
       PRIV (dst_ptr_offsets_count) = loc + 1;
     }
 
@@ -1625,7 +1628,7 @@ image_write (bfd *abfd, unsigned char *ptr, unsigned int size)
 
 #if VMS_DEBUG
   _bfd_vms_debug (8, "image_write from (%p, %d) to (%ld)\n", ptr, size,
-		  (long) off));
+		  (long) off);
 #endif
 
   if (PRIV (image_section)->contents != NULL)
@@ -2800,7 +2803,7 @@ alpha_vms_object_p (bfd *abfd)
       return NULL;
     }
 
-  if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET))
+  if (bfd_seek (abfd, 0, SEEK_SET))
     goto error_ret;
 
   /* The first challenge with VMS is to discover the kind of the file.
@@ -2845,7 +2848,7 @@ alpha_vms_object_p (bfd *abfd)
       if (PRIV (recrd.rec_size) < sizeof (struct vms_eihd))
 	goto err_wrong_format;
 
-      if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET))
+      if (bfd_seek (abfd, 0, SEEK_SET))
 	goto error_ret;
 
       free (PRIV (recrd.buf));
@@ -2920,7 +2923,7 @@ alpha_vms_object_p (bfd *abfd)
 
 /* Write an EMH/MHD record.  */
 
-static void
+static bool
 _bfd_vms_write_emh (bfd *abfd)
 {
   struct vms_rec_wr *recwr = &PRIV (recwr);
@@ -2949,12 +2952,12 @@ _bfd_vms_write_emh (bfd *abfd)
   _bfd_vms_output_counted (recwr, BFD_VERSION_STRING);
   _bfd_vms_output_dump (recwr, get_vms_time_string (tbuf), EMH_DATE_LENGTH);
   _bfd_vms_output_fill (recwr, 0, EMH_DATE_LENGTH);
-  _bfd_vms_output_end (abfd, recwr);
+  return _bfd_vms_output_end (abfd, recwr);
 }
 
 /* Write an EMH/LMN record.  */
 
-static void
+static bool
 _bfd_vms_write_lmn (bfd *abfd, const char *name)
 {
   char version [64];
@@ -2967,7 +2970,7 @@ _bfd_vms_write_lmn (bfd *abfd, const char *name)
   snprintf (version, sizeof (version), "%s %d.%d.%d", name,
 	    ver / 10000, (ver / 100) % 100, ver % 100);
   _bfd_vms_output_dump (recwr, (unsigned char *)version, strlen (version));
-  _bfd_vms_output_end (abfd, recwr);
+  return _bfd_vms_output_end (abfd, recwr);
 }
 
 
@@ -3005,8 +3008,7 @@ _bfd_vms_write_eeom (bfd *abfd)
       _bfd_vms_output_long (recwr, 0);
     }
 
-  _bfd_vms_output_end (abfd, recwr);
-  return true;
+  return _bfd_vms_output_end (abfd, recwr);
 }
 
 static void *
@@ -3378,7 +3380,8 @@ alpha_vms_write_exec (bfd *abfd)
   /* Place sections.  */
   for (sec = abfd->sections; sec; sec = sec->next)
     {
-      if (!(sec->flags & SEC_HAS_CONTENTS))
+      if (!(sec->flags & SEC_HAS_CONTENTS)
+	  || sec->contents == NULL)
 	continue;
 
       eisd = vms_section_data (sec)->eisd;
@@ -3422,7 +3425,7 @@ alpha_vms_write_exec (bfd *abfd)
 
   /* Write first block.  */
   bfd_putl32 (lnkflags, eihd.lnkflags);
-  if (bfd_bwrite (&eihd, sizeof (eihd), abfd) != sizeof (eihd))
+  if (bfd_write (&eihd, sizeof (eihd), abfd) != sizeof (eihd))
     return false;
 
   /* Write remaining eisd.  */
@@ -3443,7 +3446,7 @@ alpha_vms_write_exec (bfd *abfd)
 	      || (next_eisd->file_pos / VMS_BLOCK_SIZE
 		  != eisd->file_pos / VMS_BLOCK_SIZE))
 	    {
-	      if (bfd_bwrite (blk, sizeof (blk), abfd) != sizeof (blk))
+	      if (bfd_write (blk, sizeof (blk), abfd) != sizeof (blk))
 		return false;
 
 	      memset (blk, 0xff, sizeof (blk));
@@ -3458,9 +3461,10 @@ alpha_vms_write_exec (bfd *abfd)
       unsigned char blk[VMS_BLOCK_SIZE];
       bfd_size_type len;
 
-      if (sec->size == 0 || !(sec->flags & SEC_HAS_CONTENTS))
+      if (sec->size == 0 || !(sec->flags & SEC_HAS_CONTENTS)
+	  || sec->contents == NULL)
 	continue;
-      if (bfd_bwrite (sec->contents, sec->size, abfd) != sec->size)
+      if (bfd_write (sec->contents, sec->size, abfd) != sec->size)
 	return false;
 
       /* Pad.  */
@@ -3468,7 +3472,7 @@ alpha_vms_write_exec (bfd *abfd)
       if (len != VMS_BLOCK_SIZE)
 	{
 	  memset (blk, 0, len);
-	  if (bfd_bwrite (blk, len, abfd) != len)
+	  if (bfd_write (blk, len, abfd) != len)
 	    return false;
 	}
     }
@@ -3479,8 +3483,9 @@ alpha_vms_write_exec (bfd *abfd)
       struct vms_rec_wr *recwr = &PRIV (recwr);
       unsigned int i;
 
-      _bfd_vms_write_emh (abfd);
-      _bfd_vms_write_lmn (abfd, "GNU LD");
+      if (!_bfd_vms_write_emh (abfd)
+	  || !_bfd_vms_write_lmn (abfd, "GNU LD"))
+	return false;
 
       /* PSC for the absolute section.  */
       _bfd_vms_output_begin (recwr, EOBJ__C_EGSD);
@@ -3491,7 +3496,8 @@ alpha_vms_write_exec (bfd *abfd)
       _bfd_vms_output_long (recwr, 0);
       _bfd_vms_output_counted (recwr, ".$$ABS$$.");
       _bfd_vms_output_end_subrec (recwr);
-      _bfd_vms_output_end (abfd, recwr);
+      if (!_bfd_vms_output_end (abfd, recwr))
+	return false;
 
       for (i = 0; i < PRIV (gsd_sym_count); i++)
 	{
@@ -3524,11 +3530,13 @@ alpha_vms_write_exec (bfd *abfd)
 	  _bfd_vms_output_long (recwr, 0);
 	  _bfd_vms_output_counted (recwr, sym->name);
 	  _bfd_vms_output_end_subrec (recwr);
-	  if ((i % 5) == 4)
-	    _bfd_vms_output_end (abfd, recwr);
+	  if ((i % 5) == 4
+	      && !_bfd_vms_output_end (abfd, recwr))
+	    return false;
 	}
-      if ((i % 5) != 0)
-	_bfd_vms_output_end (abfd, recwr);
+      if ((i % 5) != 0
+	  && !_bfd_vms_output_end (abfd, recwr))
+	return false;
 
       if (!_bfd_vms_write_eeom (abfd))
 	return false;
@@ -3586,7 +3594,8 @@ _bfd_vms_write_egsd (bfd *abfd)
       /* 13 bytes egsd, max 31 chars name -> should be 44 bytes.  */
       if (_bfd_vms_output_check (recwr, 64) < 0)
 	{
-	  _bfd_vms_output_end (abfd, recwr);
+	  if (!_bfd_vms_output_end (abfd, recwr))
+	    return false;
 	  _bfd_vms_output_begin (recwr, EOBJ__C_EGSD);
 	  _bfd_vms_output_long (recwr, 0);
 	}
@@ -3682,7 +3691,8 @@ _bfd_vms_write_egsd (bfd *abfd)
 	 bytes for a possible ABS section.  */
       if (_bfd_vms_output_check (recwr, 80 + 16) < 0)
 	{
-	  _bfd_vms_output_end (abfd, recwr);
+	  if (!_bfd_vms_output_end (abfd, recwr))
+	    return false;
 	  _bfd_vms_output_begin (recwr, EOBJ__C_EGSD);
 	  _bfd_vms_output_long (recwr, 0);
 	}
@@ -3761,9 +3771,7 @@ _bfd_vms_write_egsd (bfd *abfd)
     }
 
   _bfd_vms_output_alignment (recwr, 8);
-  _bfd_vms_output_end (abfd, recwr);
-
-  return true;
+  return _bfd_vms_output_end (abfd, recwr);
 }
 
 /* Write object header for bfd abfd.  Return FALSE on error.  */
@@ -3779,8 +3787,9 @@ _bfd_vms_write_ehdr (bfd *abfd)
 
   _bfd_vms_output_alignment (recwr, 2);
 
-  _bfd_vms_write_emh (abfd);
-  _bfd_vms_write_lmn (abfd, "GNU AS");
+  if (!_bfd_vms_write_emh (abfd)
+      || !_bfd_vms_write_lmn (abfd, "GNU AS"))
+    return false;
 
   /* SRC.  */
   _bfd_vms_output_begin (recwr, EOBJ__C_EMH);
@@ -3801,13 +3810,15 @@ _bfd_vms_write_ehdr (bfd *abfd)
   if (symnum == abfd->symcount)
     _bfd_vms_output_dump (recwr, (unsigned char *) STRING_COMMA_LEN ("noname"));
 
-  _bfd_vms_output_end (abfd, recwr);
+  if (!_bfd_vms_output_end (abfd, recwr))
+    return false;
 
   /* TTL.  */
   _bfd_vms_output_begin (recwr, EOBJ__C_EMH);
   _bfd_vms_output_short (recwr, EMH__C_TTL);
   _bfd_vms_output_dump (recwr, (unsigned char *) STRING_COMMA_LEN ("TTL"));
-  _bfd_vms_output_end (abfd, recwr);
+  if (!_bfd_vms_output_end (abfd, recwr))
+    return false;
 
   /* CPR.  */
   _bfd_vms_output_begin (recwr, EOBJ__C_EMH);
@@ -3815,9 +3826,7 @@ _bfd_vms_write_ehdr (bfd *abfd)
   _bfd_vms_output_dump (recwr,
 			(unsigned char *)"GNU BFD ported by Klaus Kämpf 1994-1996",
 			 39);
-  _bfd_vms_output_end (abfd, recwr);
-
-  return true;
+  return _bfd_vms_output_end (abfd, recwr);
 }
 
 /* Part 4.6, relocations.  */
@@ -3829,12 +3838,12 @@ _bfd_vms_write_ehdr (bfd *abfd)
 
 /* Close the etir/etbt record.  */
 
-static void
+static bool
 end_etir_record (bfd * abfd)
 {
   struct vms_rec_wr *recwr = &PRIV (recwr);
 
-  _bfd_vms_output_end (abfd, recwr);
+  return _bfd_vms_output_end (abfd, recwr);
 }
 
 static void
@@ -3880,7 +3889,7 @@ start_etir_or_etbt_record (bfd *abfd, asection *section, bfd_vma offset)
 /* Output a STO_IMM command for SSIZE bytes of data from CPR at virtual
    address VADDR in section specified by SEC_INDEX and NAME.  */
 
-static void
+static bool
 sto_imm (bfd *abfd, asection *section,
 	 bfd_size_type ssize, unsigned char *cptr, bfd_vma vaddr)
 {
@@ -3900,7 +3909,8 @@ sto_imm (bfd *abfd, asection *section,
       if (_bfd_vms_output_check (recwr, size) < 0)
 	{
 	  /* Doesn't fit, split !  */
-	  end_etir_record (abfd);
+	  if (!end_etir_record (abfd))
+	    return false;
 
 	  start_etir_or_etbt_record (abfd, section, vaddr);
 
@@ -3923,17 +3933,20 @@ sto_imm (bfd *abfd, asection *section,
       cptr += size;
       ssize -= size;
     }
+  return true;
 }
 
-static void
+static bool
 etir_output_check (bfd *abfd, asection *section, bfd_vma vaddr, int checklen)
 {
   if (_bfd_vms_output_check (&PRIV (recwr), checklen) < 0)
     {
       /* Not enough room in this record.  Close it and open a new one.  */
-      end_etir_record (abfd);
+      if (!end_etir_record (abfd))
+	return false;
       start_etir_or_etbt_record (abfd, section, vaddr);
     }
+  return true;
 }
 
 /* Return whether RELOC must be deferred till the end.  */
@@ -4051,7 +4064,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		    _bfd_error_handler (_("size error in section %pA"),
 					section);
 		  size = addr - curr_addr;
-		  sto_imm (abfd, section, size, curr_data, curr_addr);
+		  if (!sto_imm (abfd, section, size, curr_data, curr_addr))
+		    return false;
 		  curr_data += size;
 		  curr_addr += size;
 		}
@@ -4068,7 +4082,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		    {
 		      bfd_vma addend = rptr->addend;
 		      slen = strlen ((char *) sym->name);
-		      etir_output_check (abfd, section, curr_addr, slen);
+		      if (!etir_output_check (abfd, section, curr_addr, slen))
+			return false;
 		      if (addend)
 			{
 			  _bfd_vms_output_begin_subrec (recwr, ETIR__C_STA_GBL);
@@ -4092,7 +4107,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		    }
 		  else if (bfd_is_abs_section (sym->section))
 		    {
-		      etir_output_check (abfd, section, curr_addr, 16);
+		      if (!etir_output_check (abfd, section, curr_addr, 16))
+			return false;
 		      _bfd_vms_output_begin_subrec (recwr, ETIR__C_STA_LW);
 		      _bfd_vms_output_long (recwr, (unsigned long) sym->value);
 		      _bfd_vms_output_end_subrec (recwr);
@@ -4101,7 +4117,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		    }
 		  else
 		    {
-		      etir_output_check (abfd, section, curr_addr, 32);
+		      if (!etir_output_check (abfd, section, curr_addr, 32))
+			return false;
 		      _bfd_vms_output_begin_subrec (recwr, ETIR__C_STA_PQ);
 		      _bfd_vms_output_long (recwr,
 					    (unsigned long) sec->target_index);
@@ -4121,7 +4138,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		    {
 		      bfd_vma addend = rptr->addend;
 		      slen = strlen ((char *) sym->name);
-		      etir_output_check (abfd, section, curr_addr, slen);
+		      if (!etir_output_check (abfd, section, curr_addr, slen))
+			return false;
 		      if (addend)
 			{
 			  _bfd_vms_output_begin_subrec (recwr, ETIR__C_STA_GBL);
@@ -4144,7 +4162,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		    }
 		  else if (bfd_is_abs_section (sym->section))
 		    {
-		      etir_output_check (abfd, section, curr_addr, 16);
+		      if (!etir_output_check (abfd, section, curr_addr, 16))
+			return false;
 		      _bfd_vms_output_begin_subrec (recwr, ETIR__C_STA_QW);
 		      _bfd_vms_output_quad (recwr, sym->value);
 		      _bfd_vms_output_end_subrec (recwr);
@@ -4153,7 +4172,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		    }
 		  else
 		    {
-		      etir_output_check (abfd, section, curr_addr, 32);
+		      if (!etir_output_check (abfd, section, curr_addr, 32))
+			return false;
 		      _bfd_vms_output_begin_subrec (recwr, ETIR__C_STA_PQ);
 		      _bfd_vms_output_long (recwr,
 					    (unsigned long) sec->target_index);
@@ -4165,12 +4185,14 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		  break;
 
 		case ALPHA_R_HINT:
-		  sto_imm (abfd, section, size, curr_data, curr_addr);
+		  if (!sto_imm (abfd, section, size, curr_data, curr_addr))
+		    return false;
 		  break;
 
 		case ALPHA_R_LINKAGE:
 		  size = 16;
-		  etir_output_check (abfd, section, curr_addr, 64);
+		  if (!etir_output_check (abfd, section, curr_addr, 64))
+		    return false;
 		  _bfd_vms_output_begin_subrec (recwr, ETIR__C_STC_LP_PSB);
 		  _bfd_vms_output_long
 		    (recwr, (unsigned long) rptr->addend);
@@ -4183,7 +4205,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 
 		case ALPHA_R_CODEADDR:
 		  slen = strlen ((char *) sym->name);
-		  etir_output_check (abfd, section, curr_addr, slen);
+		  if (!etir_output_check (abfd, section, curr_addr, slen))
+		    return false;
 		  _bfd_vms_output_begin_subrec (recwr, ETIR__C_STO_CA);
 		  _bfd_vms_output_counted (recwr, sym->name);
 		  _bfd_vms_output_end_subrec (recwr);
@@ -4192,8 +4215,9 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		case ALPHA_R_NOP:
 		  udata
 		    = (struct evax_private_udata_struct *) rptr->sym_ptr_ptr;
-		  etir_output_check (abfd, section, curr_addr,
-				     32 + 1 + strlen (udata->origname));
+		  if (!etir_output_check (abfd, section, curr_addr,
+					  32 + 1 + strlen (udata->origname)))
+		    return false;
 		  _bfd_vms_output_begin_subrec (recwr, ETIR__C_STC_NOP_GBL);
 		  _bfd_vms_output_long (recwr, (unsigned long) udata->lkindex);
 		  _bfd_vms_output_long
@@ -4214,8 +4238,9 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		case ALPHA_R_LDA:
 		  udata
 		    = (struct evax_private_udata_struct *) rptr->sym_ptr_ptr;
-		  etir_output_check (abfd, section, curr_addr,
-				     32 + 1 + strlen (udata->origname));
+		  if (!etir_output_check (abfd, section, curr_addr,
+					  32 + 1 + strlen (udata->origname)))
+		    return false;
 		  _bfd_vms_output_begin_subrec (recwr, ETIR__C_STC_LDA_GBL);
 		  _bfd_vms_output_long
 		    (recwr, (unsigned long) udata->lkindex + 1);
@@ -4233,8 +4258,9 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		case ALPHA_R_BOH:
 		  udata
 		    = (struct evax_private_udata_struct *) rptr->sym_ptr_ptr;
-		  etir_output_check (abfd, section, curr_addr,
-				       32 + 1 + strlen (udata->origname));
+		  if (!etir_output_check (abfd, section, curr_addr,
+					  32 + 1 + strlen (udata->origname)))
+		    return false;
 		  _bfd_vms_output_begin_subrec (recwr, ETIR__C_STC_BOH_GBL);
 		  _bfd_vms_output_long (recwr, (unsigned long) udata->lkindex);
 		  _bfd_vms_output_long
@@ -4267,7 +4293,8 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 		  return false;
 		}
 	      size = section->size - curr_addr;
-	      sto_imm (abfd, section, size, curr_data, curr_addr);
+	      if (!sto_imm (abfd, section, size, curr_data, curr_addr))
+		return false;
 	      curr_data += size;
 	      curr_addr += size;
 
@@ -4280,9 +4307,11 @@ _bfd_vms_write_etir (bfd * abfd, int objtype ATTRIBUTE_UNUSED)
 	}
 
       else /* (section->flags & SEC_RELOC) */
-	sto_imm (abfd, section, section->size, section->contents, 0);
+	if (!sto_imm (abfd, section, section->size, section->contents, 0))
+	  return false;
 
-      end_etir_record (abfd);
+      if (!end_etir_record (abfd))
+	return false;
     }
 
   _bfd_vms_output_alignment (recwr, 2);
@@ -4332,7 +4361,7 @@ new_module (bfd *abfd)
     = (struct module *) bfd_zalloc (abfd, sizeof (struct module));
   module->file_table_count = 16; /* Arbitrary.  */
   module->file_table
-    = bfd_malloc (module->file_table_count * sizeof (struct fileinfo));
+    = bfd_zmalloc (module->file_table_count * sizeof (struct fileinfo));
   return module;
 }
 
@@ -4340,7 +4369,7 @@ new_module (bfd *abfd)
 
 static bool
 parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
-	      int length)
+	      bfd_size_type length)
 {
   unsigned char *maxptr = ptr + length;
   unsigned char *src_ptr, *pcl_ptr;
@@ -4352,12 +4381,16 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 
   /* Initialize tables with zero element.  */
   curr_srec = (struct srecinfo *) bfd_zalloc (abfd, sizeof (struct srecinfo));
+  if (!curr_srec)
+    return false;
   module->srec_table = curr_srec;
 
   curr_line = (struct lineinfo *) bfd_zalloc (abfd, sizeof (struct lineinfo));
+  if (!curr_line)
+    return false;
   module->line_table = curr_line;
 
-  while (length == -1 || ptr < maxptr)
+  while (ptr + 3 < maxptr)
     {
       /* The first byte is not counted in the recorded length.  */
       int rec_length = bfd_getl16 (ptr) + 1;
@@ -4365,15 +4398,19 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 
       vms_debug2 ((2, "DST record: leng %d, type %d\n", rec_length, rec_type));
 
-      if (length == -1 && rec_type == DST__K_MODEND)
+      if (rec_length > maxptr - ptr)
+	break;
+      if (rec_type == DST__K_MODEND)
 	break;
 
       switch (rec_type)
 	{
 	case DST__K_MODBEG:
+	  if (rec_length <= DST_S_B_MODBEG_NAME)
+	    break;
 	  module->name
 	    = _bfd_vms_save_counted_string (abfd, ptr + DST_S_B_MODBEG_NAME,
-					    maxptr - (ptr + DST_S_B_MODBEG_NAME));
+					    rec_length - DST_S_B_MODBEG_NAME);
 
 	  curr_pc = 0;
 	  prev_pc = 0;
@@ -4387,11 +4424,15 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 	  break;
 
 	case DST__K_RTNBEG:
+	  if (rec_length <= DST_S_B_RTNBEG_NAME)
+	    break;
 	  funcinfo = (struct funcinfo *)
 	    bfd_zalloc (abfd, sizeof (struct funcinfo));
+	  if (!funcinfo)
+	    return false;
 	  funcinfo->name
 	    = _bfd_vms_save_counted_string (abfd, ptr + DST_S_B_RTNBEG_NAME,
-					    maxptr - (ptr + DST_S_B_RTNBEG_NAME));
+					    rec_length - DST_S_B_RTNBEG_NAME);
 	  funcinfo->low = bfd_getl32 (ptr + DST_S_L_RTNBEG_ADDRESS);
 	  funcinfo->next = module->func_table;
 	  module->func_table = funcinfo;
@@ -4401,6 +4442,10 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 	  break;
 
 	case DST__K_RTNEND:
+	  if (rec_length < DST_S_L_RTNEND_SIZE + 4)
+	    break;
+	  if (!module->func_table)
+	    return false;
 	  module->func_table->high = module->func_table->low
 	    + bfd_getl32 (ptr + DST_S_L_RTNEND_SIZE) - 1;
 
@@ -4431,9 +4476,62 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 
 	  vms_debug2 ((3, "source info\n"));
 
-	  while (src_ptr < ptr + rec_length)
+	  while (src_ptr - ptr < rec_length)
 	    {
 	      int cmd = src_ptr[0], cmd_length, data;
+
+	      switch (cmd)
+		{
+		case DST__K_SRC_DECLFILE:
+		  if (src_ptr - ptr + DST_S_B_SRC_DF_LENGTH >= rec_length)
+		    cmd_length = 0x10000;
+		  else
+		    cmd_length = src_ptr[DST_S_B_SRC_DF_LENGTH] + 2;
+		  break;
+
+		case DST__K_SRC_DEFLINES_B:
+		  cmd_length = 2;
+		  break;
+
+		case DST__K_SRC_DEFLINES_W:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_SRC_INCRLNUM_B:
+		  cmd_length = 2;
+		  break;
+
+		case DST__K_SRC_SETFILE:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_SRC_SETLNUM_L:
+		  cmd_length = 5;
+		  break;
+
+		case DST__K_SRC_SETLNUM_W:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_SRC_SETREC_L:
+		  cmd_length = 5;
+		  break;
+
+		case DST__K_SRC_SETREC_W:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_SRC_FORMFEED:
+		  cmd_length = 1;
+		  break;
+
+		default:
+		  cmd_length = 2;
+		  break;
+		}
+
+	      if (src_ptr - ptr + cmd_length > rec_length)
+		break;
 
 	      switch (cmd)
 		{
@@ -4446,20 +4544,22 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 		       src_ptr + DST_S_B_SRC_DF_FILENAME,
 		       ptr + rec_length - (src_ptr + DST_S_B_SRC_DF_FILENAME));
 
-		    while (fileid >= module->file_table_count)
+		    if (fileid >= module->file_table_count)
 		      {
-			module->file_table_count *= 2;
+			unsigned int old_count = module->file_table_count;
+			module->file_table_count += fileid;
 			module->file_table
 			  = bfd_realloc_or_free (module->file_table,
 						 module->file_table_count
 						 * sizeof (struct fileinfo));
 			if (module->file_table == NULL)
 			  return false;
+			memset (module->file_table + old_count, 0,
+				fileid * sizeof (struct fileinfo));
 		      }
 
 		    module->file_table [fileid].name = filename;
 		    module->file_table [fileid].srec = 1;
-		    cmd_length = src_ptr[DST_S_B_SRC_DF_LENGTH] + 2;
 		    vms_debug2 ((4, "DST_S_C_SRC_DECLFILE: %d, %s\n",
 				 fileid, module->file_table [fileid].name));
 		  }
@@ -4476,7 +4576,6 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 		  srec->sfile = curr_srec->sfile;
 		  curr_srec->next = srec;
 		  curr_srec = srec;
-		  cmd_length = 2;
 		  vms_debug2 ((4, "DST_S_C_SRC_DEFLINES_B: %d\n", data));
 		  break;
 
@@ -4491,36 +4590,34 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 		  srec->sfile = curr_srec->sfile;
 		  curr_srec->next = srec;
 		  curr_srec = srec;
-		  cmd_length = 3;
 		  vms_debug2 ((4, "DST_S_C_SRC_DEFLINES_W: %d\n", data));
 		  break;
 
 		case DST__K_SRC_INCRLNUM_B:
 		  data = src_ptr[DST_S_B_SRC_UNSBYTE];
 		  curr_srec->line += data;
-		  cmd_length = 2;
 		  vms_debug2 ((4, "DST_S_C_SRC_INCRLNUM_B: %d\n", data));
 		  break;
 
 		case DST__K_SRC_SETFILE:
 		  data = bfd_getl16 (src_ptr + DST_S_W_SRC_UNSWORD);
-		  curr_srec->sfile = data;
-		  curr_srec->srec = module->file_table[data].srec;
-		  cmd_length = 3;
+		  if ((unsigned int) data < module->file_table_count)
+		    {
+		      curr_srec->sfile = data;
+		      curr_srec->srec = module->file_table[data].srec;
+		    }
 		  vms_debug2 ((4, "DST_S_C_SRC_SETFILE: %d\n", data));
 		  break;
 
 		case DST__K_SRC_SETLNUM_L:
 		  data = bfd_getl32 (src_ptr + DST_S_L_SRC_UNSLONG);
 		  curr_srec->line = data;
-		  cmd_length = 5;
 		  vms_debug2 ((4, "DST_S_C_SRC_SETLNUM_L: %d\n", data));
 		  break;
 
 		case DST__K_SRC_SETLNUM_W:
 		  data = bfd_getl16 (src_ptr + DST_S_W_SRC_UNSWORD);
 		  curr_srec->line = data;
-		  cmd_length = 3;
 		  vms_debug2 ((4, "DST_S_C_SRC_SETLNUM_W: %d\n", data));
 		  break;
 
@@ -4528,7 +4625,6 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 		  data = bfd_getl32 (src_ptr + DST_S_L_SRC_UNSLONG);
 		  curr_srec->srec = data;
 		  module->file_table[curr_srec->sfile].srec = data;
-		  cmd_length = 5;
 		  vms_debug2 ((4, "DST_S_C_SRC_SETREC_L: %d\n", data));
 		  break;
 
@@ -4536,19 +4632,16 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 		  data = bfd_getl16 (src_ptr + DST_S_W_SRC_UNSWORD);
 		  curr_srec->srec = data;
 		  module->file_table[curr_srec->sfile].srec = data;
-		  cmd_length = 3;
 		  vms_debug2 ((4, "DST_S_C_SRC_SETREC_W: %d\n", data));
 		  break;
 
 		case DST__K_SRC_FORMFEED:
-		  cmd_length = 1;
 		  vms_debug2 ((4, "DST_S_C_SRC_FORMFEED\n"));
 		  break;
 
 		default:
 		  _bfd_error_handler (_("unknown source command %d"),
 				      cmd);
-		  cmd_length = 2;
 		  break;
 		}
 
@@ -4561,7 +4654,7 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 
 	  vms_debug2 ((3, "line info\n"));
 
-	  while (pcl_ptr < ptr + rec_length)
+	  while (pcl_ptr - ptr < rec_length)
 	    {
 	      /* The command byte is signed so we must sign-extend it.  */
 	      int cmd = ((signed char *)pcl_ptr)[0], cmd_length, data;
@@ -4569,10 +4662,106 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 	      switch (cmd)
 		{
 		case DST__K_DELTA_PC_W:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_DELTA_PC_L:
+		  cmd_length = 5;
+		  break;
+
+		case DST__K_INCR_LINUM:
+		  cmd_length = 2;
+		  break;
+
+		case DST__K_INCR_LINUM_W:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_INCR_LINUM_L:
+		  cmd_length = 5;
+		  break;
+
+		case DST__K_SET_LINUM_INCR:
+		  cmd_length = 2;
+		  break;
+
+		case DST__K_SET_LINUM_INCR_W:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_RESET_LINUM_INCR:
+		  cmd_length = 1;
+		  break;
+
+		case DST__K_BEG_STMT_MODE:
+		  cmd_length = 1;
+		  break;
+
+		case DST__K_END_STMT_MODE:
+		  cmd_length = 1;
+		  break;
+
+		case DST__K_SET_LINUM_B:
+		  cmd_length = 2;
+		  break;
+
+		case DST__K_SET_LINUM:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_SET_LINUM_L:
+		  cmd_length = 5;
+		  break;
+
+		case DST__K_SET_PC:
+		  cmd_length = 2;
+		  break;
+
+		case DST__K_SET_PC_W:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_SET_PC_L:
+		  cmd_length = 5;
+		  break;
+
+		case DST__K_SET_STMTNUM:
+		  cmd_length = 2;
+		  break;
+
+		case DST__K_TERM:
+		  cmd_length = 2;
+		  break;
+
+		case DST__K_TERM_W:
+		  cmd_length = 3;
+		  break;
+
+		case DST__K_TERM_L:
+		  cmd_length = 5;
+		  break;
+
+		case DST__K_SET_ABS_PC:
+		  cmd_length = 5;
+		  break;
+
+		default:
+		  if (cmd <= 0)
+		    cmd_length = 1;
+		  else
+		    cmd_length = 2;
+		  break;
+		}
+
+	      if (pcl_ptr - ptr + cmd_length > rec_length)
+		break;
+
+	      switch (cmd)
+		{
+		case DST__K_DELTA_PC_W:
 		  data = bfd_getl16 (pcl_ptr + DST_S_W_PCLINE_UNSWORD);
 		  curr_pc += data;
 		  curr_linenum += 1;
-		  cmd_length = 3;
 		  vms_debug2 ((4, "DST__K_DELTA_PC_W: %d\n", data));
 		  break;
 
@@ -4580,131 +4769,111 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 		  data = bfd_getl32 (pcl_ptr + DST_S_L_PCLINE_UNSLONG);
 		  curr_pc += data;
 		  curr_linenum += 1;
-		  cmd_length = 5;
 		  vms_debug2 ((4, "DST__K_DELTA_PC_L: %d\n", data));
 		  break;
 
 		case DST__K_INCR_LINUM:
 		  data = pcl_ptr[DST_S_B_PCLINE_UNSBYTE];
 		  curr_linenum += data;
-		  cmd_length = 2;
 		  vms_debug2 ((4, "DST__K_INCR_LINUM: %d\n", data));
 		  break;
 
 		case DST__K_INCR_LINUM_W:
 		  data = bfd_getl16 (pcl_ptr + DST_S_W_PCLINE_UNSWORD);
 		  curr_linenum += data;
-		  cmd_length = 3;
 		  vms_debug2 ((4, "DST__K_INCR_LINUM_W: %d\n", data));
 		  break;
 
 		case DST__K_INCR_LINUM_L:
 		  data = bfd_getl32 (pcl_ptr + DST_S_L_PCLINE_UNSLONG);
 		  curr_linenum += data;
-		  cmd_length = 5;
 		  vms_debug2 ((4, "DST__K_INCR_LINUM_L: %d\n", data));
 		  break;
 
 		case DST__K_SET_LINUM_INCR:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_SET_LINUM_INCR");
-		  cmd_length = 2;
 		  break;
 
 		case DST__K_SET_LINUM_INCR_W:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_SET_LINUM_INCR_W");
-		  cmd_length = 3;
 		  break;
 
 		case DST__K_RESET_LINUM_INCR:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_RESET_LINUM_INCR");
-		  cmd_length = 1;
 		  break;
 
 		case DST__K_BEG_STMT_MODE:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_BEG_STMT_MODE");
-		  cmd_length = 1;
 		  break;
 
 		case DST__K_END_STMT_MODE:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_END_STMT_MODE");
-		  cmd_length = 1;
 		  break;
 
 		case DST__K_SET_LINUM_B:
 		  data = pcl_ptr[DST_S_B_PCLINE_UNSBYTE];
 		  curr_linenum = data;
-		  cmd_length = 2;
 		  vms_debug2 ((4, "DST__K_SET_LINUM_B: %d\n", data));
 		  break;
 
 		case DST__K_SET_LINUM:
 		  data = bfd_getl16 (pcl_ptr + DST_S_W_PCLINE_UNSWORD);
 		  curr_linenum = data;
-		  cmd_length = 3;
 		  vms_debug2 ((4, "DST__K_SET_LINE_NUM: %d\n", data));
 		  break;
 
 		case DST__K_SET_LINUM_L:
 		  data = bfd_getl32 (pcl_ptr + DST_S_L_PCLINE_UNSLONG);
 		  curr_linenum = data;
-		  cmd_length = 5;
 		  vms_debug2 ((4, "DST__K_SET_LINUM_L: %d\n", data));
 		  break;
 
 		case DST__K_SET_PC:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_SET_PC");
-		  cmd_length = 2;
 		  break;
 
 		case DST__K_SET_PC_W:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_SET_PC_W");
-		  cmd_length = 3;
 		  break;
 
 		case DST__K_SET_PC_L:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_SET_PC_L");
-		  cmd_length = 5;
 		  break;
 
 		case DST__K_SET_STMTNUM:
 		  _bfd_error_handler
 		    (_("%s not implemented"), "DST__K_SET_STMTNUM");
-		  cmd_length = 2;
 		  break;
 
 		case DST__K_TERM:
 		  data = pcl_ptr[DST_S_B_PCLINE_UNSBYTE];
 		  curr_pc += data;
-		  cmd_length = 2;
 		  vms_debug2 ((4, "DST__K_TERM: %d\n", data));
 		  break;
 
 		case DST__K_TERM_W:
 		  data = bfd_getl16 (pcl_ptr + DST_S_W_PCLINE_UNSWORD);
 		  curr_pc += data;
-		  cmd_length = 3;
 		  vms_debug2 ((4, "DST__K_TERM_W: %d\n", data));
 		  break;
 
 		case DST__K_TERM_L:
 		  data = bfd_getl32 (pcl_ptr + DST_S_L_PCLINE_UNSLONG);
 		  curr_pc += data;
-		  cmd_length = 5;
 		  vms_debug2 ((4, "DST__K_TERM_L: %d\n", data));
 		  break;
 
 		case DST__K_SET_ABS_PC:
 		  data = bfd_getl32 (pcl_ptr + DST_S_L_PCLINE_UNSLONG);
 		  curr_pc = data;
-		  cmd_length = 5;
 		  vms_debug2 ((4, "DST__K_SET_ABS_PC: 0x%x\n", data));
 		  break;
 
@@ -4713,15 +4882,11 @@ parse_module (bfd *abfd, struct module *module, unsigned char *ptr,
 		    {
 		      curr_pc -= cmd;
 		      curr_linenum += 1;
-		      cmd_length = 1;
 		      vms_debug2 ((4, "bump pc to 0x%lx and line to %d\n",
 				   (unsigned long)curr_pc, curr_linenum));
 		    }
 		  else
-		    {
-		      _bfd_error_handler (_("unknown line command %d"), cmd);
-		      cmd_length = 2;
-		    }
+		    _bfd_error_handler (_("unknown line command %d"), cmd);
 		  break;
 		}
 
@@ -4794,30 +4959,26 @@ build_module_list (bfd *abfd)
 	 since we can compute the start address and the end address
 	 of every module from the section contents.  */
       bfd_size_type size = bfd_section_size (dmt);
-      unsigned char *ptr, *end;
+      unsigned char *buf, *ptr, *end;
 
-      ptr = (unsigned char *) bfd_alloc (abfd, size);
-      if (! ptr)
-	return NULL;
-
-      if (! bfd_get_section_contents (abfd, dmt, ptr, 0, size))
+      if (! bfd_malloc_and_get_section (abfd, dmt, &buf))
 	return NULL;
 
       vms_debug2 ((2, "DMT\n"));
 
+      ptr = buf;
       end = ptr + size;
-
-      while (ptr < end)
+      while (end - ptr >= DBG_S_C_DMT_HEADER_SIZE)
 	{
 	  /* Each header declares a module with its start offset and size
 	     of debug info in the DST section, as well as the count of
 	     program sections (i.e. address spans) it contains.  */
-	  int modbeg = bfd_getl32 (ptr + DBG_S_L_DMT_MODBEG);
-	  int msize = bfd_getl32 (ptr + DBG_S_L_DST_SIZE);
+	  unsigned int modbeg = bfd_getl32 (ptr + DBG_S_L_DMT_MODBEG);
+	  unsigned int msize = bfd_getl32 (ptr + DBG_S_L_DST_SIZE);
 	  int count = bfd_getl16 (ptr + DBG_S_W_DMT_PSECT_COUNT);
 	  ptr += DBG_S_C_DMT_HEADER_SIZE;
 
-	  vms_debug2 ((3, "module: modbeg = %d, size = %d, count = %d\n",
+	  vms_debug2 ((3, "module: modbeg = %u, size = %u, count = %d\n",
 		       modbeg, msize, count));
 
 	  /* We create a 'module' structure for each program section since
@@ -4825,10 +4986,10 @@ build_module_list (bfd *abfd)
 	     As a consequence, the actual debug info in the DST section is
 	     shared and can be parsed multiple times; that doesn't seem to
 	     cause problems in practice.  */
-	  while (count-- > 0)
+	  while (count-- > 0 && end - ptr >= DBG_S_C_DMT_PSECT_SIZE)
 	    {
-	      int start = bfd_getl32 (ptr + DBG_S_L_DMT_PSECT_START);
-	      int length = bfd_getl32 (ptr + DBG_S_L_DMT_PSECT_LENGTH);
+	      unsigned int start = bfd_getl32 (ptr + DBG_S_L_DMT_PSECT_START);
+	      unsigned int length = bfd_getl32 (ptr + DBG_S_L_DMT_PSECT_LENGTH);
 	      module = new_module (abfd);
 	      module->modbeg = modbeg;
 	      module->size = msize;
@@ -4838,10 +4999,11 @@ build_module_list (bfd *abfd)
 	      list = module;
 	      ptr += DBG_S_C_DMT_PSECT_SIZE;
 
-	      vms_debug2 ((4, "section: start = 0x%x, length = %d\n",
+	      vms_debug2 ((4, "section: start = 0x%x, length = %u\n",
 			   start, length));
 	    }
 	}
+      free (buf);
     }
   else
     {
@@ -4854,7 +5016,8 @@ build_module_list (bfd *abfd)
 	return NULL;
 
       module = new_module (abfd);
-      if (!parse_module (abfd, module, PRIV (dst_section)->contents, -1))
+      if (!parse_module (abfd, module, PRIV (dst_section)->contents,
+			 PRIV (dst_section)->size))
 	return NULL;
       list = module;
     }
@@ -5115,15 +5278,14 @@ alpha_vms_slurp_relocs (bfd *abfd)
   vms_debug2 ((3, "alpha_vms_slurp_relocs\n"));
 
   /* We slurp relocs only once, for all sections.  */
-  if (PRIV (reloc_done))
-      return true;
-  PRIV (reloc_done) = true;
+  if (PRIV (reloc_done) != 0)
+    return PRIV (reloc_done) == 1;
 
   if (alpha_vms_canonicalize_symtab (abfd, NULL) < 0)
-    return false;
+    goto fail;
 
   if (bfd_seek (abfd, 0, SEEK_SET) != 0)
-    return false;
+    goto fail;
 
   while (1)
     {
@@ -5144,6 +5306,8 @@ alpha_vms_slurp_relocs (bfd *abfd)
 
       /* Skip non-ETIR records.  */
       type = _bfd_vms_get_object_record (abfd);
+      if (type < 0)
+	goto fail;
       if (type == EOBJ__C_EEOM)
 	break;
       if (type != EOBJ__C_ETIR)
@@ -5152,12 +5316,18 @@ alpha_vms_slurp_relocs (bfd *abfd)
       begin = PRIV (recrd.rec) + 4;
       end = PRIV (recrd.rec) + PRIV (recrd.rec_size);
 
-      for (ptr = begin; ptr < end; ptr += length)
+      for (ptr = begin; ptr + 4 <= end; ptr += length)
 	{
 	  int cmd;
 
 	  cmd = bfd_getl16 (ptr);
 	  length = bfd_getl16 (ptr + 2);
+	  if (length < 4 || length > end - ptr)
+	    {
+	    bad_rec:
+	      _bfd_error_handler (_("corrupt reloc record"));
+	      goto fail;
+	    }
 
 	  cur_address = vaddr;
 
@@ -5173,6 +5343,8 @@ alpha_vms_slurp_relocs (bfd *abfd)
 	      continue;
 
 	    case ETIR__C_STA_PQ: /* ALPHA_R_REF{LONG|QUAD}, others part 1 */
+	      if (length < 16)
+		goto bad_rec;
 	      cur_psidx = bfd_getl32 (ptr + 4);
 	      cur_addend = bfd_getl64 (ptr + 8);
 	      prev_cmd = cmd;
@@ -5185,7 +5357,7 @@ alpha_vms_slurp_relocs (bfd *abfd)
 		    /* xgettext:c-format */
 		    (_("unknown reloc %s + %s"), _bfd_vms_etir_name (prev_cmd),
 		     _bfd_vms_etir_name (cmd));
-		  return false;
+		  goto fail;
 		}
 	      cur_psect = cur_psidx;
 	      vaddr = cur_addend;
@@ -5203,9 +5375,11 @@ alpha_vms_slurp_relocs (bfd *abfd)
 			/* xgettext:c-format */
 			(_("unknown reloc %s + %s"), _bfd_vms_etir_name (cmd),
 			 _bfd_vms_etir_name (ETIR__C_STA_LW));
-		      return false;
+		      goto fail;
 		    }
 		}
+	      if (length < 8)
+		goto bad_rec;
 	      cur_addend = bfd_getl32 (ptr + 4);
 	      prev_cmd = cmd;
 	      continue;
@@ -5218,8 +5392,10 @@ alpha_vms_slurp_relocs (bfd *abfd)
 		    /* xgettext:c-format */
 		    (_("unknown reloc %s + %s"), _bfd_vms_etir_name (cmd),
 		     _bfd_vms_etir_name (ETIR__C_STA_QW));
-		  return false;
+		  goto fail;
 		}
+	      if (length < 12)
+		goto bad_rec;
 	      cur_addend = bfd_getl64 (ptr + 4);
 	      prev_cmd = cmd;
 	      continue;
@@ -5235,7 +5411,7 @@ alpha_vms_slurp_relocs (bfd *abfd)
 		  _bfd_error_handler (_("unknown reloc %s + %s"),
 				      _bfd_vms_etir_name (prev_cmd),
 				      _bfd_vms_etir_name (ETIR__C_STO_LW));
-		  return false;
+		  goto fail;
 		}
 	      reloc_code = BFD_RELOC_32;
 	      break;
@@ -5248,7 +5424,7 @@ alpha_vms_slurp_relocs (bfd *abfd)
 		  _bfd_error_handler (_("unknown reloc %s + %s"),
 				      _bfd_vms_etir_name (prev_cmd),
 				      _bfd_vms_etir_name (ETIR__C_STO_QW));
-		  return false;
+		  goto fail;
 		}
 	      reloc_code = BFD_RELOC_64;
 	      break;
@@ -5260,7 +5436,7 @@ alpha_vms_slurp_relocs (bfd *abfd)
 		  _bfd_error_handler (_("unknown reloc %s + %s"),
 				      _bfd_vms_etir_name (prev_cmd),
 				      _bfd_vms_etir_name (ETIR__C_STO_OFF));
-		  return false;
+		  goto fail;
 		}
 	      reloc_code = BFD_RELOC_64;
 	      break;
@@ -5273,7 +5449,7 @@ alpha_vms_slurp_relocs (bfd *abfd)
 		  _bfd_error_handler (_("unknown reloc %s + %s"),
 				      _bfd_vms_etir_name (prev_cmd),
 				      _bfd_vms_etir_name (ETIR__C_OPR_ADD));
-		  return false;
+		  goto fail;
 		}
 	      prev_cmd = ETIR__C_OPR_ADD;
 	      continue;
@@ -5315,19 +5491,23 @@ alpha_vms_slurp_relocs (bfd *abfd)
 	      goto call_reloc;
 
 	    call_reloc:
+	      if (length < 36)
+		goto bad_rec;
 	      cur_sym = ptr + 4 + 32;
 	      cur_address = bfd_getl64 (ptr + 4 + 8);
 	      cur_addend = bfd_getl64 (ptr + 4 + 24);
 	      break;
 
 	    case ETIR__C_STO_IMM:
+	      if (length < 8)
+		goto bad_rec;
 	      vaddr += bfd_getl32 (ptr + 4);
 	      continue;
 
 	    default:
 	      _bfd_error_handler (_("unknown reloc %s"),
 				  _bfd_vms_etir_name (cmd));
-	      return false;
+	      goto fail;
 	    }
 
 	  {
@@ -5340,16 +5520,16 @@ alpha_vms_slurp_relocs (bfd *abfd)
 	    if (cur_psect < 0 || cur_psect > (int)PRIV (section_count))
 	      {
 		_bfd_error_handler (_("invalid section index in ETIR"));
-		return false;
+		goto fail;
 	      }
 
 	    if (PRIV (sections) == NULL)
-	      return false;
+	      goto fail;
 	    sec = PRIV (sections)[cur_psect];
 	    if (sec == bfd_abs_section_ptr)
 	      {
 		_bfd_error_handler (_("relocation for non-REL psect"));
-		return false;
+		goto fail;
 	      }
 
 	    vms_sec = vms_section_data (sec);
@@ -5369,7 +5549,7 @@ alpha_vms_slurp_relocs (bfd *abfd)
 		    sec->relocation = bfd_realloc_or_free
 		      (sec->relocation, vms_sec->reloc_max * sizeof (arelent));
 		    if (sec->relocation == NULL)
-		      return false;
+		      goto fail;
 		  }
 	      }
 	    reloc = &sec->relocation[sec->reloc_count];
@@ -5380,12 +5560,16 @@ alpha_vms_slurp_relocs (bfd *abfd)
 	    if (cur_sym != NULL)
 	      {
 		unsigned int j;
-		unsigned int symlen = *cur_sym;
+		int symlen;
 		asymbol **sym;
 
 		/* Linear search.  */
+		if (end - cur_sym < 1)
+		  goto bad_rec;
 		symlen = *cur_sym;
 		cur_sym++;
+		if (end - cur_sym < symlen)
+		  goto bad_rec;
 		sym = NULL;
 
 		for (j = 0; j < PRIV (gsd_sym_count); j++)
@@ -5407,7 +5591,7 @@ alpha_vms_slurp_relocs (bfd *abfd)
 	    else if (cur_psidx >= 0)
 	      {
 		if (PRIV (sections) == NULL || cur_psidx >= (int) PRIV (section_count))
-		  return false;
+		  goto fail;
 		reloc->sym_ptr_ptr =
 		  PRIV (sections)[cur_psidx]->symbol_ptr_ptr;
 	      }
@@ -5431,8 +5615,12 @@ alpha_vms_slurp_relocs (bfd *abfd)
 	}
     }
   vms_debug2 ((3, "alpha_vms_slurp_relocs: result = true\n"));
-
+  PRIV (reloc_done) = 1;
   return true;
+
+fail:
+  PRIV (reloc_done) = -1;
+  return false;
 }
 
 /* Return the number of bytes required to store the relocation
@@ -5441,9 +5629,10 @@ alpha_vms_slurp_relocs (bfd *abfd)
 static long
 alpha_vms_get_reloc_upper_bound (bfd *abfd ATTRIBUTE_UNUSED, asection *section)
 {
-  alpha_vms_slurp_relocs (abfd);
+  if (!alpha_vms_slurp_relocs (abfd))
+    return -1;
 
-  return (section->reloc_count + 1) * sizeof (arelent *);
+  return (section->reloc_count + 1L) * sizeof (arelent *);
 }
 
 /* Convert relocations from VMS (external) form into BFD internal
@@ -5510,7 +5699,7 @@ static reloc_howto_type alpha_howto_table[] =
 {
   HOWTO (ALPHA_R_IGNORE,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 0,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 1,			/* Size.  */
 	 8,			/* Bitsize.  */
 	 true,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5525,7 +5714,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* A 64 bit reference to a symbol.  */
   HOWTO (ALPHA_R_REFQUAD,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 4,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 8,			/* Size.  */
 	 64,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5542,7 +5731,7 @@ static reloc_howto_type alpha_howto_table[] =
      relative offset in the instruction.  */
   HOWTO (ALPHA_R_BRADDR,	/* Type.  */
 	 2,			/* Rightshift.  */
-	 2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 4,			/* Size.  */
 	 21,			/* Bitsize.  */
 	 true,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5557,7 +5746,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* A hint for a jump to a register.  */
   HOWTO (ALPHA_R_HINT,		/* Type.  */
 	 2,			/* Rightshift.  */
-	 1,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 2,			/* Size.  */
 	 14,			/* Bitsize.  */
 	 true,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5572,7 +5761,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* 16 bit PC relative offset.  */
   HOWTO (ALPHA_R_SREL16,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 1,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 2,			/* Size.  */
 	 16,			/* Bitsize.  */
 	 true,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5587,7 +5776,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* 32 bit PC relative offset.  */
   HOWTO (ALPHA_R_SREL32,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 4,			/* Size.  */
 	 32,			/* Bitsize.  */
 	 true,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5602,7 +5791,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* A 64 bit PC relative offset.  */
   HOWTO (ALPHA_R_SREL64,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 4,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 8,			/* Size.  */
 	 64,			/* Bitsize.  */
 	 true,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5617,7 +5806,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* Push a value on the reloc evaluation stack.  */
   HOWTO (ALPHA_R_OP_PUSH,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 0,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 0,			/* Size.  */
 	 0,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5633,7 +5822,7 @@ static reloc_howto_type alpha_howto_table[] =
      a bitfield of size r_size starting at bit position r_offset.  */
   HOWTO (ALPHA_R_OP_STORE,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 4,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 8,			/* Size.  */
 	 64,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5649,7 +5838,7 @@ static reloc_howto_type alpha_howto_table[] =
      relocation stack.  */
   HOWTO (ALPHA_R_OP_PSUB,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 0,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 0,			/* Size.  */
 	 0,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5665,7 +5854,7 @@ static reloc_howto_type alpha_howto_table[] =
      given value.  */
   HOWTO (ALPHA_R_OP_PRSHIFT,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 0,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 0,			/* Size.  */
 	 0,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5680,7 +5869,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* Hack. Linkage is done by linker.  */
   HOWTO (ALPHA_R_LINKAGE,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 0,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 0,			/* Size.  */
 	 0,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5695,7 +5884,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* A 32 bit reference to a symbol.  */
   HOWTO (ALPHA_R_REFLONG,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 4,			/* Size.  */
 	 32,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5710,7 +5899,7 @@ static reloc_howto_type alpha_howto_table[] =
   /* A 64 bit reference to a procedure, written as 32 bit value.  */
   HOWTO (ALPHA_R_CODEADDR,	/* Type.  */
 	 0,			/* Rightshift.  */
-	 4,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 8,			/* Size.  */
 	 64,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5724,7 +5913,7 @@ static reloc_howto_type alpha_howto_table[] =
 
   HOWTO (ALPHA_R_NOP,		/* Type.  */
 	 0,			/* Rightshift.  */
-	 3,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 0,			/* Size.  */
 	 0,			/* Bitsize.  */
 	 /* The following value must match that of ALPHA_R_BSR/ALPHA_R_BOH
 	    because the calculations for the 3 relocations are the same.
@@ -5741,7 +5930,7 @@ static reloc_howto_type alpha_howto_table[] =
 
   HOWTO (ALPHA_R_BSR,		/* Type.  */
 	 0,			/* Rightshift.  */
-	 3,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 0,			/* Size.  */
 	 0,			/* Bitsize.  */
 	 true,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5755,7 +5944,7 @@ static reloc_howto_type alpha_howto_table[] =
 
   HOWTO (ALPHA_R_LDA,		/* Type.  */
 	 0,			/* Rightshift.  */
-	 3,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	 0,			/* Size.  */
 	 0,			/* Bitsize.  */
 	 false,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5769,7 +5958,7 @@ static reloc_howto_type alpha_howto_table[] =
 
   HOWTO (ALPHA_R_BOH,		/* Type.  */
 	 0,			/* Rightshift.  */
-	 3,			/* Size (0 = byte, 1 = short, 2 = long, 3 = nil).  */
+	 0,			/* Size.  */
 	 0,			/* Bitsize.  */
 	 true,			/* PC relative.  */
 	 0,			/* Bitpos.  */
@@ -5921,20 +6110,23 @@ static void
 evax_bfd_print_emh (FILE *file, unsigned char *rec, unsigned int rec_len)
 {
   struct vms_emh_common *emh = (struct vms_emh_common *)rec;
-  unsigned int subtype;
+  int subtype = -1;
   int extra;
 
-  subtype = (unsigned) bfd_getl16 (emh->subtyp);
+  if (rec_len >= sizeof (*emh))
+    subtype = bfd_getl16 (emh->subtyp);
 
   /* xgettext:c-format */
-  fprintf (file, _("  EMH %u (len=%u): "), subtype, rec_len);
+  fprintf (file, _("  EMH %d (len=%u): "), subtype, rec_len);
 
   /* PR 21618: Check for invalid lengths.  */
-  if (rec_len < sizeof (* emh))
+  if (rec_len < sizeof (*emh))
     {
-      fprintf (file, _("   Error: The length is less than the length of an EMH record\n"));
+      fprintf (file, _("   Error: %s min length is %u\n"),
+	       "EMH", (unsigned) sizeof (*emh));
       return;
     }
+
   extra = rec_len - sizeof (struct vms_emh_common);
 
   switch (subtype)
@@ -5942,22 +6134,23 @@ evax_bfd_print_emh (FILE *file, unsigned char *rec, unsigned int rec_len)
     case EMH__C_MHD:
       {
 	struct vms_emh_mhd *mhd = (struct vms_emh_mhd *) rec;
-	const char * name;
-	const char * nextname;
-	const char * maxname;
+	unsigned char *name;
+	unsigned char *nextname;
+	unsigned char *maxname;
 
 	/* PR 21840: Check for invalid lengths.  */
 	if (rec_len < sizeof (* mhd))
 	  {
-	    fprintf (file, _("   Error: The record length is less than the size of an EMH_MHD record\n"));
+	    fprintf (file, _("   Error: %s min length is %u\n"),
+		     "EMH_MHD", (unsigned) sizeof (*mhd));
 	    return;
 	  }
 	fprintf (file, _("Module header\n"));
 	fprintf (file, _("   structure level: %u\n"), mhd->strlvl);
 	fprintf (file, _("   max record size: %u\n"),
 		 (unsigned) bfd_getl32 (mhd->recsiz));
-	name = (char *)(mhd + 1);
-	maxname = (char *) rec + rec_len;
+	name = (unsigned char *) (mhd + 1);
+	maxname = (unsigned char *) rec + rec_len;
 	if (name > maxname - 2)
 	  {
 	    fprintf (file, _("   Error: The module name is missing\n"));
@@ -6025,9 +6218,10 @@ evax_bfd_print_eeom (FILE *file, unsigned char *rec, unsigned int rec_len)
   fprintf (file, _("  EEOM (len=%u):\n"), rec_len);
 
   /* PR 21618: Check for invalid lengths.  */
-  if (rec_len < sizeof (* eeom))
+  if (rec_len < 10)
     {
-      fprintf (file, _("   Error: The length is less than the length of an EEOM record\n"));
+      fprintf (file, _("   Error: %s min length is %u\n"),
+	       "EEOM", 10);
       return;
     }
 
@@ -6035,7 +6229,8 @@ evax_bfd_print_eeom (FILE *file, unsigned char *rec, unsigned int rec_len)
 	   (unsigned)bfd_getl32 (eeom->total_lps));
   fprintf (file, _("   completion code: %u\n"),
 	   (unsigned)bfd_getl16 (eeom->comcod));
-  if (rec_len > 10)
+
+  if (rec_len >= sizeof (*eeom))
     {
       fprintf (file, _("   transfer addr flags: 0x%02x\n"), eeom->tfrflg);
       fprintf (file, _("   transfer addr psect: %u\n"),
@@ -6101,16 +6296,18 @@ static void
 evax_bfd_print_egsd (FILE *file, unsigned char *rec, unsigned int rec_len)
 {
   unsigned int off = sizeof (struct vms_egsd);
-  unsigned int n;
+  unsigned int n = 0;
 
   fprintf (file, _("  EGSD (len=%u):\n"), rec_len);
+  if (rec_len < sizeof (struct vms_egsd) + sizeof (struct vms_egsd_entry))
+    return;
 
-  n = 0;
-  for (off = sizeof (struct vms_egsd); off < rec_len; )
+  while (off <= rec_len - sizeof (struct vms_egsd_entry))
     {
       struct vms_egsd_entry *e = (struct vms_egsd_entry *)(rec + off);
       unsigned int type;
       unsigned int len;
+      unsigned int rest;
 
       type = (unsigned)bfd_getl16 (e->gsdtyp);
       len = (unsigned)bfd_getl16 (e->gsdsiz);
@@ -6120,174 +6317,212 @@ evax_bfd_print_egsd (FILE *file, unsigned char *rec, unsigned int rec_len)
 	       n, type, len);
       n++;
 
-      if (off + len > rec_len || off + len < off)
+      if (len < sizeof (struct vms_egsd_entry) || len > rec_len - off)
 	{
-	  fprintf (file, _("   Error: length larger than remaining space in record\n"));
+	  fprintf (file, _("   Erroneous length\n"));
 	  return;
 	}
 
       switch (type)
 	{
 	case EGSD__C_PSC:
-	  {
-	    struct vms_egps *egps = (struct vms_egps *)e;
-	    unsigned int flags = bfd_getl16 (egps->flags);
-	    unsigned int l;
+	  if (len >= offsetof (struct vms_egps, name))
+	    {
+	      struct vms_egps *egps = (struct vms_egps *) e;
+	      unsigned int flags = bfd_getl16 (egps->flags);
+	      unsigned int l;
 
-	    fprintf (file, _("PSC - Program section definition\n"));
-	    fprintf (file, _("   alignment  : 2**%u\n"), egps->align);
-	    fprintf (file, _("   flags      : 0x%04x"), flags);
-	    evax_bfd_print_egsd_flags (file, flags);
-	    fputc ('\n', file);
-	    l = bfd_getl32 (egps->alloc);
-	    fprintf (file, _("   alloc (len): %u (0x%08x)\n"), l, l);
-	    fprintf (file, _("   name       : %.*s\n"),
-		     egps->namlng, egps->name);
-	  }
+	      fprintf (file, _("PSC - Program section definition\n"));
+	      fprintf (file, _("   alignment  : 2**%u\n"), egps->align);
+	      fprintf (file, _("   flags      : 0x%04x"), flags);
+	      evax_bfd_print_egsd_flags (file, flags);
+	      fputc ('\n', file);
+	      l = bfd_getl32 (egps->alloc);
+	      fprintf (file, _("   alloc (len): %u (0x%08x)\n"), l, l);
+	      rest = len - offsetof (struct vms_egps, name);
+	      fprintf (file, _("   name       : %.*s\n"),
+		       egps->namlng > rest ? rest : egps->namlng,
+		       egps->name);
+	    }
 	  break;
 	case EGSD__C_SPSC:
-	  {
-	    struct vms_esgps *esgps = (struct vms_esgps *)e;
-	    unsigned int flags = bfd_getl16 (esgps->flags);
-	    unsigned int l;
+	  if (len >= offsetof (struct vms_esgps, name))
+	    {
+	      struct vms_esgps *esgps = (struct vms_esgps *) e;
+	      unsigned int flags = bfd_getl16 (esgps->flags);
+	      unsigned int l;
 
-	    fprintf (file, _("SPSC - Shared Image Program section def\n"));
-	    fprintf (file, _("   alignment  : 2**%u\n"), esgps->align);
-	    fprintf (file, _("   flags      : 0x%04x"), flags);
-	    evax_bfd_print_egsd_flags (file, flags);
-	    fputc ('\n', file);
-	    l = bfd_getl32 (esgps->alloc);
-	    fprintf (file, _("   alloc (len)   : %u (0x%08x)\n"), l, l);
-	    fprintf (file, _("   image offset  : 0x%08x\n"),
-		     (unsigned int)bfd_getl32 (esgps->base));
-	    fprintf (file, _("   symvec offset : 0x%08x\n"),
-		     (unsigned int)bfd_getl32 (esgps->value));
-	    fprintf (file, _("   name          : %.*s\n"),
-		     esgps->namlng, esgps->name);
-	  }
+	      fprintf (file, _("SPSC - Shared Image Program section def\n"));
+	      fprintf (file, _("   alignment  : 2**%u\n"), esgps->align);
+	      fprintf (file, _("   flags      : 0x%04x"), flags);
+	      evax_bfd_print_egsd_flags (file, flags);
+	      fputc ('\n', file);
+	      l = bfd_getl32 (esgps->alloc);
+	      fprintf (file, _("   alloc (len)   : %u (0x%08x)\n"), l, l);
+	      fprintf (file, _("   image offset  : 0x%08x\n"),
+		       (unsigned int) bfd_getl32 (esgps->base));
+	      fprintf (file, _("   symvec offset : 0x%08x\n"),
+		       (unsigned int) bfd_getl32 (esgps->value));
+	      rest = len - offsetof (struct vms_esgps, name);
+	      fprintf (file, _("   name          : %.*s\n"),
+		       esgps->namlng > rest ? rest : esgps->namlng,
+		       esgps->name);
+	    }
 	  break;
 	case EGSD__C_SYM:
-	  {
-	    struct vms_egsy *egsy = (struct vms_egsy *)e;
-	    unsigned int flags = bfd_getl16 (egsy->flags);
+	  if (len >= sizeof (struct vms_egsy))
+	    {
+	      struct vms_egsy *egsy = (struct vms_egsy *) e;
+	      unsigned int flags = bfd_getl16 (egsy->flags);
 
-	    if (flags & EGSY__V_DEF)
-	      {
-		struct vms_esdf *esdf = (struct vms_esdf *)e;
+	      if ((flags & EGSY__V_DEF) != 0
+		  && len >= offsetof (struct vms_esdf, name))
+		{
+		  struct vms_esdf *esdf = (struct vms_esdf *) e;
 
-		fprintf (file, _("SYM - Global symbol definition\n"));
-		fprintf (file, _("   flags: 0x%04x"), flags);
-		exav_bfd_print_egsy_flags (flags, file);
-		fputc ('\n', file);
-		fprintf (file, _("   psect offset: 0x%08x\n"),
-			 (unsigned)bfd_getl32 (esdf->value));
-		if (flags & EGSY__V_NORM)
-		  {
-		    fprintf (file, _("   code address: 0x%08x\n"),
-			     (unsigned)bfd_getl32 (esdf->code_address));
-		    fprintf (file, _("   psect index for entry point : %u\n"),
-			     (unsigned)bfd_getl32 (esdf->ca_psindx));
-		  }
-		fprintf (file, _("   psect index : %u\n"),
-			 (unsigned)bfd_getl32 (esdf->psindx));
-		fprintf (file, _("   name        : %.*s\n"),
-			 esdf->namlng, esdf->name);
-	      }
-	    else
-	      {
-		struct vms_esrf *esrf = (struct vms_esrf *)e;
+		  fprintf (file, _("SYM - Global symbol definition\n"));
+		  fprintf (file, _("   flags: 0x%04x"), flags);
+		  exav_bfd_print_egsy_flags (flags, file);
+		  fputc ('\n', file);
+		  fprintf (file, _("   psect offset: 0x%08x\n"),
+			   (unsigned) bfd_getl32 (esdf->value));
+		  if (flags & EGSY__V_NORM)
+		    {
+		      fprintf (file, _("   code address: 0x%08x\n"),
+			       (unsigned) bfd_getl32 (esdf->code_address));
+		      fprintf (file, _("   psect index for entry point : %u\n"),
+			       (unsigned) bfd_getl32 (esdf->ca_psindx));
+		    }
+		  fprintf (file, _("   psect index : %u\n"),
+			   (unsigned) bfd_getl32 (esdf->psindx));
+		  rest = len - offsetof (struct vms_esdf, name);
+		  fprintf (file, _("   name        : %.*s\n"),
+			   esdf->namlng > rest ? rest : esdf->namlng,
+			   esdf->name);
+		}
+	      else if (len >= offsetof (struct vms_esrf, name))
+		{
+		  struct vms_esrf *esrf = (struct vms_esrf *)e;
 
-		fprintf (file, _("SYM - Global symbol reference\n"));
-		fprintf (file, _("   name       : %.*s\n"),
-			 esrf->namlng, esrf->name);
-	      }
-	  }
+		  fprintf (file, _("SYM - Global symbol reference\n"));
+		  rest = len - offsetof (struct vms_esrf, name);
+		  fprintf (file, _("   name       : %.*s\n"),
+			   esrf->namlng > rest ? rest : esrf->namlng,
+			   esrf->name);
+		}
+	    }
 	  break;
 	case EGSD__C_IDC:
-	  {
-	    struct vms_eidc *eidc = (struct vms_eidc *)e;
-	    unsigned int flags = bfd_getl32 (eidc->flags);
-	    unsigned char *p;
+	  if (len >= sizeof (struct vms_eidc))
+	    {
+	      struct vms_eidc *eidc = (struct vms_eidc *) e;
+	      unsigned int flags = bfd_getl32 (eidc->flags);
+	      unsigned char *p;
 
-	    fprintf (file, _("IDC - Ident Consistency check\n"));
-	    fprintf (file, _("   flags         : 0x%08x"), flags);
-	    if (flags & EIDC__V_BINIDENT)
-	      fputs (" BINDENT", file);
-	    fputc ('\n', file);
-	    fprintf (file, _("   id match      : %x\n"),
-		     (flags >> EIDC__V_IDMATCH_SH) & EIDC__V_IDMATCH_MASK);
-	    fprintf (file, _("   error severity: %x\n"),
-		     (flags >> EIDC__V_ERRSEV_SH) & EIDC__V_ERRSEV_MASK);
-	    p = eidc->name;
-	    fprintf (file, _("   entity name   : %.*s\n"), p[0], p + 1);
-	    p += 1 + p[0];
-	    fprintf (file, _("   object name   : %.*s\n"), p[0], p + 1);
-	    p += 1 + p[0];
-	    if (flags & EIDC__V_BINIDENT)
-	      fprintf (file, _("   binary ident  : 0x%08x\n"),
-		       (unsigned)bfd_getl32 (p + 1));
-	    else
-	      fprintf (file, _("   ascii ident   : %.*s\n"), p[0], p + 1);
-	  }
+	      fprintf (file, _("IDC - Ident Consistency check\n"));
+	      fprintf (file, _("   flags         : 0x%08x"), flags);
+	      if (flags & EIDC__V_BINIDENT)
+		fputs (" BINDENT", file);
+	      fputc ('\n', file);
+	      fprintf (file, _("   id match      : %x\n"),
+		       (flags >> EIDC__V_IDMATCH_SH) & EIDC__V_IDMATCH_MASK);
+	      fprintf (file, _("   error severity: %x\n"),
+		       (flags >> EIDC__V_ERRSEV_SH) & EIDC__V_ERRSEV_MASK);
+	      p = eidc->name;
+	      rest = len - (p - (unsigned char *) e);
+	      fprintf (file, _("   entity name   : %.*s\n"),
+		       p[0] > rest - 1 ? rest - 1 : p[0], p + 1);
+	      if (rest > 1u + p[0])
+		{
+		  rest -= 1 + p[0];
+		  p += 1 + p[0];
+		  fprintf (file, _("   object name   : %.*s\n"),
+			   p[0] > rest - 1 ? rest - 1 : p[0], p + 1);
+		  if (rest > 1u + p[0])
+		    {
+		      rest -= 1 + p[0];
+		      p += 1 + p[0];
+		      if (flags & EIDC__V_BINIDENT)
+			{
+			  if (rest >= 4)
+			    fprintf (file, _("   binary ident  : 0x%08x\n"),
+				     (unsigned) bfd_getl32 (p));
+			}
+		      else
+			fprintf (file, _("   ascii ident   : %.*s\n"),
+				 p[0] > rest - 1 ? rest - 1 : p[0], p + 1);
+		    }
+		}
+	    }
 	  break;
 	case EGSD__C_SYMG:
-	  {
-	    struct vms_egst *egst = (struct vms_egst *)e;
-	    unsigned int flags = bfd_getl16 (egst->header.flags);
+	  if (len >= offsetof (struct vms_egst, name))
+	    {
+	      struct vms_egst *egst = (struct vms_egst *) e;
+	      unsigned int flags = bfd_getl16 (egst->header.flags);
 
-	    fprintf (file, _("SYMG - Universal symbol definition\n"));
-	    fprintf (file, _("   flags: 0x%04x"), flags);
-	    exav_bfd_print_egsy_flags (flags, file);
-	    fputc ('\n', file);
-	    fprintf (file, _("   symbol vector offset: 0x%08x\n"),
-		     (unsigned)bfd_getl32 (egst->value));
-	    fprintf (file, _("   entry point: 0x%08x\n"),
-		     (unsigned)bfd_getl32 (egst->lp_1));
-	    fprintf (file, _("   proc descr : 0x%08x\n"),
-		     (unsigned)bfd_getl32 (egst->lp_2));
-	    fprintf (file, _("   psect index: %u\n"),
-		     (unsigned)bfd_getl32 (egst->psindx));
-	    fprintf (file, _("   name       : %.*s\n"),
-		     egst->namlng, egst->name);
-	  }
+	      fprintf (file, _("SYMG - Universal symbol definition\n"));
+	      fprintf (file, _("   flags: 0x%04x"), flags);
+	      exav_bfd_print_egsy_flags (flags, file);
+	      fputc ('\n', file);
+	      fprintf (file, _("   symbol vector offset: 0x%08x\n"),
+		       (unsigned) bfd_getl32 (egst->value));
+	      fprintf (file, _("   entry point: 0x%08x\n"),
+		       (unsigned) bfd_getl32 (egst->lp_1));
+	      fprintf (file, _("   proc descr : 0x%08x\n"),
+		       (unsigned) bfd_getl32 (egst->lp_2));
+	      fprintf (file, _("   psect index: %u\n"),
+		       (unsigned) bfd_getl32 (egst->psindx));
+	      rest = len - offsetof (struct vms_egst, name);
+	      fprintf (file, _("   name       : %.*s\n"),
+		       egst->namlng > rest ? rest : egst->namlng,
+		       egst->name);
+	    }
 	  break;
 	case EGSD__C_SYMV:
-	  {
-	    struct vms_esdfv *esdfv = (struct vms_esdfv *)e;
-	    unsigned int flags = bfd_getl16 (esdfv->flags);
+	  if (len >= offsetof (struct vms_esdfv, name))
+	    {
+	      struct vms_esdfv *esdfv = (struct vms_esdfv *) e;
+	      unsigned int flags = bfd_getl16 (esdfv->flags);
 
-	    fprintf (file, _("SYMV - Vectored symbol definition\n"));
-	    fprintf (file, _("   flags: 0x%04x"), flags);
-	    exav_bfd_print_egsy_flags (flags, file);
-	    fputc ('\n', file);
-	    fprintf (file, _("   vector      : 0x%08x\n"),
-		     (unsigned)bfd_getl32 (esdfv->vector));
-	    fprintf (file, _("   psect offset: %u\n"),
-		     (unsigned)bfd_getl32 (esdfv->value));
-	    fprintf (file, _("   psect index : %u\n"),
-		     (unsigned)bfd_getl32 (esdfv->psindx));
-	    fprintf (file, _("   name        : %.*s\n"),
-		     esdfv->namlng, esdfv->name);
-	  }
+	      fprintf (file, _("SYMV - Vectored symbol definition\n"));
+	      fprintf (file, _("   flags: 0x%04x"), flags);
+	      exav_bfd_print_egsy_flags (flags, file);
+	      fputc ('\n', file);
+	      fprintf (file, _("   vector      : 0x%08x\n"),
+		       (unsigned) bfd_getl32 (esdfv->vector));
+	      fprintf (file, _("   psect offset: %u\n"),
+		       (unsigned) bfd_getl32 (esdfv->value));
+	      fprintf (file, _("   psect index : %u\n"),
+		       (unsigned) bfd_getl32 (esdfv->psindx));
+	      rest = len - offsetof (struct vms_esdfv, name);
+	      fprintf (file, _("   name        : %.*s\n"),
+		       esdfv->namlng > rest ? rest : esdfv->namlng,
+		       esdfv->name);
+	    }
 	  break;
 	case EGSD__C_SYMM:
-	  {
-	    struct vms_esdfm *esdfm = (struct vms_esdfm *)e;
-	    unsigned int flags = bfd_getl16 (esdfm->flags);
+	  if (len >= offsetof (struct vms_esdfm, name))
+	    {
+	      struct vms_esdfm *esdfm = (struct vms_esdfm *) e;
+	      unsigned int flags = bfd_getl16 (esdfm->flags);
 
-	    fprintf (file, _("SYMM - Global symbol definition with version\n"));
-	    fprintf (file, _("   flags: 0x%04x"), flags);
-	    exav_bfd_print_egsy_flags (flags, file);
-	    fputc ('\n', file);
-	    fprintf (file, _("   version mask: 0x%08x\n"),
-		     (unsigned)bfd_getl32 (esdfm->version_mask));
-	    fprintf (file, _("   psect offset: %u\n"),
-		     (unsigned)bfd_getl32 (esdfm->value));
-	    fprintf (file, _("   psect index : %u\n"),
-		     (unsigned)bfd_getl32 (esdfm->psindx));
-	    fprintf (file, _("   name        : %.*s\n"),
-		     esdfm->namlng, esdfm->name);
-	  }
+	      fprintf (file,
+		       _("SYMM - Global symbol definition with version\n"));
+	      fprintf (file, _("   flags: 0x%04x"), flags);
+	      exav_bfd_print_egsy_flags (flags, file);
+	      fputc ('\n', file);
+	      fprintf (file, _("   version mask: 0x%08x\n"),
+		       (unsigned)bfd_getl32 (esdfm->version_mask));
+	      fprintf (file, _("   psect offset: %u\n"),
+		       (unsigned)bfd_getl32 (esdfm->value));
+	      fprintf (file, _("   psect index : %u\n"),
+		       (unsigned)bfd_getl32 (esdfm->psindx));
+	      rest = len - offsetof (struct vms_esdfm, name);
+	      fprintf (file, _("   name        : %.*s\n"),
+		       esdfm->namlng > rest ? rest : esdfm->namlng,
+		       esdfm->name);
+	    }
 	  break;
 	default:
 	  fprintf (file, _("unhandled egsd entry type %u\n"), type);
@@ -6322,8 +6557,12 @@ evax_bfd_print_hex (FILE *file, const char *pfx,
 }
 
 static void
-evax_bfd_print_etir_stc_ir (FILE *file, const unsigned char *buf, int is_ps)
+evax_bfd_print_etir_stc_ir (FILE *file, const unsigned char *buf,
+			    unsigned int len, int is_ps)
 {
+  if (is_ps ? len < 44 : len < 33)
+    return;
+
   /* xgettext:c-format */
   fprintf (file, _("    linkage index: %u, replacement insn: 0x%08x\n"),
 	   (unsigned)bfd_getl32 (buf),
@@ -6345,62 +6584,71 @@ evax_bfd_print_etir_stc_ir (FILE *file, const unsigned char *buf, int is_ps)
 	     (unsigned)bfd_getl32 (buf + 40),
 	     (unsigned)bfd_getl32 (buf + 36));
   else
-    fprintf (file, _("    global name: %.*s\n"), buf[32], buf + 33);
+    fprintf (file, _("    global name: %.*s\n"),
+	     buf[32] > len - 33 ? len - 33 : buf[32],
+	     buf + 33);
 }
 
 static void
 evax_bfd_print_etir (FILE *file, const char *name,
 		     unsigned char *rec, unsigned int rec_len)
 {
-  unsigned int off = sizeof (struct vms_egsd);
-  unsigned int sec_len = 0;
+  unsigned int off = sizeof (struct vms_eobjrec);
 
   /* xgettext:c-format */
-  fprintf (file, _("  %s (len=%u+%u):\n"), name,
-	   (unsigned)(rec_len - sizeof (struct vms_eobjrec)),
-	   (unsigned)sizeof (struct vms_eobjrec));
+  fprintf (file, _("  %s (len=%u):\n"), name, (unsigned) rec_len);
+  if (rec_len < sizeof (struct vms_eobjrec) + sizeof (struct vms_etir))
+    return;
 
-  for (off = sizeof (struct vms_eobjrec); off < rec_len; )
+  while (off <= rec_len - sizeof (struct vms_etir))
     {
       struct vms_etir *etir = (struct vms_etir *)(rec + off);
       unsigned char *buf;
       unsigned int type;
       unsigned int size;
+      unsigned int rest;
 
       type = bfd_getl16 (etir->rectyp);
       size = bfd_getl16 (etir->size);
       buf = rec + off + sizeof (struct vms_etir);
 
-      if (off + size > rec_len || off + size < off)
+      if (size < sizeof (struct vms_etir) || size > rec_len - off)
 	{
-	  fprintf (file, _("   Error: length larger than remaining space in record\n"));
+	  fprintf (file, _("   Erroneous length\n"));
 	  return;
 	}
 
       /* xgettext:c-format */
-      fprintf (file, _("   (type: %3u, size: 4+%3u): "), type, size - 4);
+      fprintf (file, _("   (type: %3u, size: %3u): "), type, size);
+      rest = size - sizeof (struct vms_etir);
       switch (type)
 	{
 	case ETIR__C_STA_GBL:
-	  fprintf (file, _("STA_GBL (stack global) %.*s\n"),
-		   buf[0], buf + 1);
+	  if (rest >= 1)
+	    fprintf (file, _("STA_GBL (stack global) %.*s\n"),
+		     buf[0] > rest - 1 ? rest - 1 : buf[0], buf + 1);
 	  break;
 	case ETIR__C_STA_LW:
-	  fprintf (file, _("STA_LW (stack longword) 0x%08x\n"),
-		   (unsigned)bfd_getl32 (buf));
+	  fprintf (file, _("STA_LW (stack longword)"));
+	  if (rest >= 4)
+	    fprintf (file, " 0x%08x\n",
+		     (unsigned) bfd_getl32 (buf));
 	  break;
 	case ETIR__C_STA_QW:
-	  fprintf (file, _("STA_QW (stack quadword) 0x%08x %08x\n"),
-		   (unsigned)bfd_getl32 (buf + 4),
-		   (unsigned)bfd_getl32 (buf + 0));
+	  fprintf (file, _("STA_QW (stack quadword)"));
+	  if (rest >= 8)
+	    fprintf (file, " 0x%08x %08x\n",
+		     (unsigned) bfd_getl32 (buf + 4),
+		     (unsigned) bfd_getl32 (buf + 0));
 	  break;
 	case ETIR__C_STA_PQ:
 	  fprintf (file, _("STA_PQ (stack psect base + offset)\n"));
-	  /* xgettext:c-format */
-	  fprintf (file, _("    psect: %u, offset: 0x%08x %08x\n"),
-		   (unsigned)bfd_getl32 (buf + 0),
-		   (unsigned)bfd_getl32 (buf + 8),
-		   (unsigned)bfd_getl32 (buf + 4));
+	  if (rest >= 12)
+	    /* xgettext:c-format */
+	    fprintf (file, _("    psect: %u, offset: 0x%08x %08x\n"),
+		     (unsigned) bfd_getl32 (buf + 0),
+		     (unsigned) bfd_getl32 (buf + 8),
+		     (unsigned) bfd_getl32 (buf + 4));
 	  break;
 	case ETIR__C_STA_LI:
 	  fprintf (file, _("STA_LI (stack literal)\n"));
@@ -6425,22 +6673,26 @@ evax_bfd_print_etir (FILE *file, const char *name,
 	  fprintf (file, _("STO_QW (store quadword)\n"));
 	  break;
 	case ETIR__C_STO_IMMR:
-	  {
-	    unsigned int len = bfd_getl32 (buf);
-	    fprintf (file,
-		     _("STO_IMMR (store immediate repeat) %u bytes\n"),
-		     len);
-	    evax_bfd_print_hex (file, "   ", buf + 4, len);
-	    sec_len += len;
-	  }
+	  if (rest >= 4)
+	    {
+	      unsigned int rpt = bfd_getl32 (buf);
+	      fprintf (file,
+		       _("STO_IMMR (store immediate repeat) %u bytes\n"),
+		       rpt);
+	      if (rpt > rest - 4)
+		rpt = rest - 4;
+	      evax_bfd_print_hex (file, "   ", buf + 4, rpt);
+	    }
 	  break;
 	case ETIR__C_STO_GBL:
-	  fprintf (file, _("STO_GBL (store global) %.*s\n"),
-		   buf[0], buf + 1);
+	  if (rest >= 1)
+	    fprintf (file, _("STO_GBL (store global) %.*s\n"),
+		     buf[0] > rest - 1 ? rest - 1 : buf[0], buf + 1);
 	  break;
 	case ETIR__C_STO_CA:
-	  fprintf (file, _("STO_CA (store code address) %.*s\n"),
-		   buf[0], buf + 1);
+	  if (rest >= 1)
+	    fprintf (file, _("STO_CA (store code address) %.*s\n"),
+		     buf[0] > rest - 1 ? rest - 1 : buf[0], buf + 1);
 	  break;
 	case ETIR__C_STO_RB:
 	  fprintf (file, _("STO_RB (store relative branch)\n"));
@@ -6452,18 +6704,21 @@ evax_bfd_print_etir (FILE *file, const char *name,
 	  fprintf (file, _("STO_OFF (store offset to psect)\n"));
 	  break;
 	case ETIR__C_STO_IMM:
-	  {
-	    unsigned int len = bfd_getl32 (buf);
-	    fprintf (file,
-		     _("STO_IMM (store immediate) %u bytes\n"),
-		     len);
-	    evax_bfd_print_hex (file, "   ", buf + 4, len);
-	    sec_len += len;
-	  }
+	  if (rest >= 4)
+	    {
+	      unsigned int rpt = bfd_getl32 (buf);
+	      fprintf (file,
+		       _("STO_IMM (store immediate) %u bytes\n"),
+		       rpt);
+	      if (rpt > rest - 4)
+		rpt = rest - 4;
+	      evax_bfd_print_hex (file, "   ", buf + 4, rpt);
+	    }
 	  break;
 	case ETIR__C_STO_GBL_LW:
-	  fprintf (file, _("STO_GBL_LW (store global longword) %.*s\n"),
-		   buf[0], buf + 1);
+	  if (rest >= 1)
+	    fprintf (file, _("STO_GBL_LW (store global longword) %.*s\n"),
+		     buf[0] > rest - 1 ? rest - 1 : buf[0], buf + 1);
 	  break;
 	case ETIR__C_STO_LP_PSB:
 	  fprintf (file, _("STO_OFF (store LP with procedure signature)\n"));
@@ -6533,65 +6788,79 @@ evax_bfd_print_etir (FILE *file, const char *name,
 	case ETIR__C_STC_LP_PSB:
 	  fprintf (file,
 		   _("STC_LP_PSB (store cond linkage pair + signature)\n"));
-	  /* xgettext:c-format */
-	  fprintf (file, _("   linkage index: %u, procedure: %.*s\n"),
-		   (unsigned)bfd_getl32 (buf), buf[4], buf + 5);
-	  buf += 4 + 1 + buf[4];
-	  fprintf (file, _("   signature: %.*s\n"), buf[0], buf + 1);
+	  if (rest >= 5)
+	    {
+	      /* xgettext:c-format */
+	      fprintf (file, _("   linkage index: %u, procedure: %.*s\n"),
+		       (unsigned) bfd_getl32 (buf),
+		       buf[4] > rest - 5 ? rest - 5 : buf[4], buf + 5);
+	      if (rest > 4 + 1u + buf[4])
+		{
+		  rest -= 4 + 1 + buf[4];
+		  buf += 4 + 1 + buf[4];
+		  fprintf (file, _("   signature: %.*s\n"),
+			   buf[0] > rest - 1 ? rest - 1: buf[0], buf + 1);
+		}
+	    }
 	  break;
 	case ETIR__C_STC_GBL:
 	  fprintf (file, _("STC_GBL (store cond global)\n"));
-	  /* xgettext:c-format */
-	  fprintf (file, _("   linkage index: %u, global: %.*s\n"),
-		   (unsigned)bfd_getl32 (buf), buf[4], buf + 5);
+	  if (rest >= 5)
+	    /* xgettext:c-format */
+	    fprintf (file, _("   linkage index: %u, global: %.*s\n"),
+		     (unsigned) bfd_getl32 (buf),
+		     buf[4] > rest - 5 ? rest - 5 : buf[4], buf + 5);
 	  break;
 	case ETIR__C_STC_GCA:
 	  fprintf (file, _("STC_GCA (store cond code address)\n"));
-	  /* xgettext:c-format */
-	  fprintf (file, _("   linkage index: %u, procedure name: %.*s\n"),
-		   (unsigned)bfd_getl32 (buf), buf[4], buf + 5);
+	  if (rest >= 5)
+	    /* xgettext:c-format */
+	    fprintf (file, _("   linkage index: %u, procedure name: %.*s\n"),
+		     (unsigned) bfd_getl32 (buf),
+		     buf[4] > rest - 5 ? rest - 5 : buf[4], buf + 5);
 	  break;
 	case ETIR__C_STC_PS:
 	  fprintf (file, _("STC_PS (store cond psect + offset)\n"));
-	  fprintf (file,
-		   /* xgettext:c-format */
-		   _("   linkage index: %u, psect: %u, offset: 0x%08x %08x\n"),
-		   (unsigned)bfd_getl32 (buf),
-		   (unsigned)bfd_getl32 (buf + 4),
-		   (unsigned)bfd_getl32 (buf + 12),
-		   (unsigned)bfd_getl32 (buf + 8));
+	  if (rest >= 16)
+	    fprintf (file,
+		     /* xgettext:c-format */
+		     _("   linkage index: %u, psect: %u, offset: 0x%08x %08x\n"),
+		     (unsigned)bfd_getl32 (buf),
+		     (unsigned)bfd_getl32 (buf + 4),
+		     (unsigned)bfd_getl32 (buf + 12),
+		     (unsigned)bfd_getl32 (buf + 8));
 	  break;
 	case ETIR__C_STC_NOP_GBL:
 	  fprintf (file, _("STC_NOP_GBL (store cond NOP at global addr)\n"));
-	  evax_bfd_print_etir_stc_ir (file, buf, 0);
+	  evax_bfd_print_etir_stc_ir (file, buf, rest, 0);
 	  break;
 	case ETIR__C_STC_NOP_PS:
 	  fprintf (file, _("STC_NOP_PS (store cond NOP at psect + offset)\n"));
-	  evax_bfd_print_etir_stc_ir (file, buf, 1);
+	  evax_bfd_print_etir_stc_ir (file, buf, rest, 1);
 	  break;
 	case ETIR__C_STC_BSR_GBL:
 	  fprintf (file, _("STC_BSR_GBL (store cond BSR at global addr)\n"));
-	  evax_bfd_print_etir_stc_ir (file, buf, 0);
+	  evax_bfd_print_etir_stc_ir (file, buf, rest, 0);
 	  break;
 	case ETIR__C_STC_BSR_PS:
 	  fprintf (file, _("STC_BSR_PS (store cond BSR at psect + offset)\n"));
-	  evax_bfd_print_etir_stc_ir (file, buf, 1);
+	  evax_bfd_print_etir_stc_ir (file, buf, rest, 1);
 	  break;
 	case ETIR__C_STC_LDA_GBL:
 	  fprintf (file, _("STC_LDA_GBL (store cond LDA at global addr)\n"));
-	  evax_bfd_print_etir_stc_ir (file, buf, 0);
+	  evax_bfd_print_etir_stc_ir (file, buf, rest, 0);
 	  break;
 	case ETIR__C_STC_LDA_PS:
 	  fprintf (file, _("STC_LDA_PS (store cond LDA at psect + offset)\n"));
-	  evax_bfd_print_etir_stc_ir (file, buf, 1);
+	  evax_bfd_print_etir_stc_ir (file, buf, rest, 1);
 	  break;
 	case ETIR__C_STC_BOH_GBL:
 	  fprintf (file, _("STC_BOH_GBL (store cond BOH at global addr)\n"));
-	  evax_bfd_print_etir_stc_ir (file, buf, 0);
+	  evax_bfd_print_etir_stc_ir (file, buf, rest, 0);
 	  break;
 	case ETIR__C_STC_BOH_PS:
 	  fprintf (file, _("STC_BOH_PS (store cond BOH at psect + offset)\n"));
-	  evax_bfd_print_etir_stc_ir (file, buf, 1);
+	  evax_bfd_print_etir_stc_ir (file, buf, rest, 1);
 	  break;
 	case ETIR__C_STC_NBH_GBL:
 	  fprintf (file,
@@ -6604,13 +6873,14 @@ evax_bfd_print_etir (FILE *file, const char *name,
 
 	case ETIR__C_CTL_SETRB:
 	  fprintf (file, _("CTL_SETRB (set relocation base)\n"));
-	  sec_len += 4;
 	  break;
 	case ETIR__C_CTL_AUGRB:
-	  {
-	    unsigned int val = bfd_getl32 (buf);
-	    fprintf (file, _("CTL_AUGRB (augment relocation base) %u\n"), val);
-	  }
+	  if (rest >= 4)
+	    {
+	      unsigned int val = bfd_getl32 (buf);
+	      fprintf (file, _("CTL_AUGRB (augment relocation base) %u\n"),
+		       val);
+	    }
 	  break;
 	case ETIR__C_CTL_DFLOC:
 	  fprintf (file, _("CTL_DFLOC (define location)\n"));
@@ -6633,7 +6903,7 @@ static void
 evax_bfd_print_eobj (struct bfd *abfd, FILE *file)
 {
   bool is_first = true;
-  bool has_records = false;
+  bool has_records = true;
 
   while (1)
     {
@@ -6642,89 +6912,75 @@ evax_bfd_print_eobj (struct bfd *abfd, FILE *file)
       unsigned char *rec;
       unsigned int hdr_size;
       unsigned int type;
+      unsigned char buf[6];
 
-      if (is_first)
+      hdr_size = has_records ? 6 : 4;
+      if (bfd_read (buf, hdr_size, abfd) != hdr_size)
 	{
-	  unsigned char buf[6];
-
-	  is_first = false;
-
-	  /* Read 6 bytes.  */
-	  if (bfd_bread (buf, sizeof (buf), abfd) != sizeof (buf))
-	    {
-	      fprintf (file, _("cannot read GST record length\n"));
-	      return;
-	    }
-	  rec_len = bfd_getl16 (buf + 0);
-	  if (rec_len == bfd_getl16 (buf + 4)
-	      && bfd_getl16 (buf + 2) == EOBJ__C_EMH)
-	    {
-	      /* The format is raw: record-size, type, record-size.  */
-	      has_records = true;
-	      pad_len = (rec_len + 1) & ~1U;
-	      hdr_size = 4;
-	    }
-	  else if (rec_len == EOBJ__C_EMH)
-	    {
-	      has_records = false;
-	      pad_len = bfd_getl16 (buf + 2);
-	      hdr_size = 6;
-	    }
-	  else
-	    {
-	      /* Ill-formed.  */
-	      fprintf (file, _("cannot find EMH in first GST record\n"));
-	      return;
-	    }
-	  rec = bfd_malloc (pad_len);
-	  memcpy (rec, buf + sizeof (buf) - hdr_size, hdr_size);
-	}
-      else
-	{
-	  unsigned int rec_len2 = 0;
-	  unsigned char hdr[4];
-
-	  if (has_records)
-	    {
-	      unsigned char buf_len[2];
-
-	      if (bfd_bread (buf_len, sizeof (buf_len), abfd)
-		  != sizeof (buf_len))
-		{
-		  fprintf (file, _("cannot read GST record length\n"));
-		  return;
-		}
-	      rec_len2 = (unsigned)bfd_getl16 (buf_len);
-	    }
-
-	  if (bfd_bread (hdr, sizeof (hdr), abfd) != sizeof (hdr))
-	    {
-	      fprintf (file, _("cannot read GST record header\n"));
-	      return;
-	    }
-	  rec_len = (unsigned)bfd_getl16 (hdr + 2);
-	  if (has_records)
-	    pad_len = (rec_len + 1) & ~1U;
-	  else
-	    pad_len = rec_len;
-	  rec = bfd_malloc (pad_len);
-	  memcpy (rec, hdr, sizeof (hdr));
-	  hdr_size = sizeof (hdr);
-	  if (has_records && rec_len2 != rec_len)
-	    {
-	      fprintf (file, _(" corrupted GST\n"));
-	      break;
-	    }
-	}
-
-      if (bfd_bread (rec + hdr_size, pad_len - hdr_size, abfd)
-	  != pad_len - hdr_size)
-	{
-	  fprintf (file, _("cannot read GST record\n"));
+	  fprintf (file, _("cannot read GST record header\n"));
 	  return;
 	}
 
-      type = (unsigned)bfd_getl16 (rec);
+      type = bfd_getl16 (buf);
+      rec_len = bfd_getl16 (buf + 2);
+      pad_len = rec_len;
+      if (has_records)
+	{
+	  unsigned int rec_len2 = bfd_getl16 (buf + 4);
+
+	  if (is_first)
+	    {
+	      is_first = false;
+	      if (type == rec_len2 && rec_len == EOBJ__C_EMH)
+		/* Matched a VMS record EMH.  */
+		;
+	      else
+		{
+		  has_records = false;
+		  if (type != EOBJ__C_EMH)
+		    {
+		      /* Ill-formed.  */
+		      fprintf (file, _("cannot find EMH in first GST record\n"));
+		      return;
+		    }
+		}
+	    }
+
+	  if (has_records)
+	    {
+	      /* VMS record format is: record-size, type, record-size.
+		 See maybe_adjust_record_pointer_for_object comment.  */
+	      if (type == rec_len2)
+		{
+		  type = rec_len;
+		  rec_len = rec_len2;
+		}
+	      else
+		rec_len = 0;
+	      pad_len = (rec_len + 1) & ~1U;
+	      hdr_size = 4;
+	    }
+	}
+
+      if (rec_len < hdr_size)
+	{
+	  fprintf (file, _("corrupted GST\n"));
+	  return;
+	}
+
+      rec = bfd_malloc (pad_len);
+      if (rec == NULL)
+	return;
+
+      memcpy (rec, buf + (has_records ? 2 : 0), hdr_size);
+
+      if (bfd_read (rec + hdr_size, pad_len - hdr_size, abfd)
+	  != pad_len - hdr_size)
+	{
+	  fprintf (file, _("cannot read GST record\n"));
+	  free (rec);
+	  return;
+	}
 
       switch (type)
 	{
@@ -6738,7 +6994,6 @@ evax_bfd_print_eobj (struct bfd *abfd, FILE *file)
 	  evax_bfd_print_eeom (file, rec, rec_len);
 	  free (rec);
 	  return;
-	  break;
 	case EOBJ__C_ETIR:
 	  evax_bfd_print_etir (file, "ETIR", rec, rec_len);
 	  break;
@@ -6757,34 +7012,35 @@ evax_bfd_print_eobj (struct bfd *abfd, FILE *file)
 }
 
 static void
-evax_bfd_print_relocation_records (FILE *file, const unsigned char *rel,
+evax_bfd_print_relocation_records (FILE *file, const unsigned char *buf,
+				   size_t buf_size, size_t off,
 				   unsigned int stride)
 {
-  while (1)
+  while (off <= buf_size - 8)
     {
       unsigned int base;
       unsigned int count;
       unsigned int j;
 
-      count = bfd_getl32 (rel + 0);
+      count = bfd_getl32 (buf + off + 0);
 
       if (count == 0)
 	break;
-      base = bfd_getl32 (rel + 4);
+      base = bfd_getl32 (buf + off + 4);
 
       /* xgettext:c-format */
       fprintf (file, _("  bitcount: %u, base addr: 0x%08x\n"),
 	       count, base);
 
-      rel += 8;
-      for (j = 0; count > 0; j += 4, count -= 32)
+      off += 8;
+      for (j = 0; count > 0 && off <= buf_size - 4; j += 4, count -= 32)
 	{
 	  unsigned int k;
 	  unsigned int n = 0;
 	  unsigned int val;
 
-	  val = bfd_getl32 (rel);
-	  rel += 4;
+	  val = bfd_getl32 (buf + off);
+	  off += 4;
 
 	  /* xgettext:c-format */
 	  fprintf (file, _("   bitmap: 0x%08x (count: %u):\n"), val, count);
@@ -6809,60 +7065,62 @@ evax_bfd_print_relocation_records (FILE *file, const unsigned char *rel,
 }
 
 static void
-evax_bfd_print_address_fixups (FILE *file, const unsigned char *rel)
+evax_bfd_print_address_fixups (FILE *file, const unsigned char *buf,
+			       size_t buf_size, size_t off)
 {
-  while (1)
+  while (off <= buf_size - 8)
     {
       unsigned int j;
       unsigned int count;
 
-      count = bfd_getl32 (rel + 0);
+      count = bfd_getl32 (buf + off + 0);
       if (count == 0)
 	return;
       /* xgettext:c-format */
       fprintf (file, _("  image %u (%u entries)\n"),
-	       (unsigned)bfd_getl32 (rel + 4), count);
-      rel += 8;
-      for (j = 0; j < count; j++)
+	       (unsigned) bfd_getl32 (buf + off + 4), count);
+      off += 8;
+      for (j = 0; j < count && off <= buf_size - 8; j++)
 	{
 	  /* xgettext:c-format */
 	  fprintf (file, _("   offset: 0x%08x, val: 0x%08x\n"),
-		   (unsigned)bfd_getl32 (rel + 0),
-		   (unsigned)bfd_getl32 (rel + 4));
-	  rel += 8;
+		   (unsigned) bfd_getl32 (buf + off + 0),
+		   (unsigned) bfd_getl32 (buf + off + 4));
+	  off += 8;
 	}
     }
 }
 
 static void
-evax_bfd_print_reference_fixups (FILE *file, const unsigned char *rel)
+evax_bfd_print_reference_fixups (FILE *file, const unsigned char *buf,
+				 size_t buf_size, size_t off)
 {
   unsigned int count;
 
-  while (1)
+  while (off <= buf_size - 8)
     {
       unsigned int j;
       unsigned int n = 0;
 
-      count = bfd_getl32 (rel + 0);
+      count = bfd_getl32 (buf + off + 0);
       if (count == 0)
 	break;
       /* xgettext:c-format */
       fprintf (file, _("  image %u (%u entries), offsets:\n"),
-	       (unsigned)bfd_getl32 (rel + 4), count);
-      rel += 8;
-      for (j = 0; j < count; j++)
+	       (unsigned) bfd_getl32 (buf + off + 4), count);
+      off += 8;
+      for (j = 0; j < count && off <= buf_size - 4; j++)
 	{
 	  if (n == 0)
 	    fputs ("   ", file);
-	  fprintf (file, _(" 0x%08x"), (unsigned)bfd_getl32 (rel));
+	  fprintf (file, _(" 0x%08x"), (unsigned) bfd_getl32 (buf + off));
 	  n++;
 	  if (n == 7)
 	    {
 	      fputs ("\n", file);
 	      n = 0;
 	    }
-	  rel += 4;
+	  off += 4;
 	}
       if (n)
 	fputs ("\n", file);
@@ -6965,8 +7223,12 @@ evax_bfd_get_dsc_name (unsigned int v)
 }
 
 static void
-evax_bfd_print_desc (const unsigned char *buf, int indent, FILE *file)
+evax_bfd_print_desc (const unsigned char *buf, unsigned int bufsize,
+		     int indent, FILE *file)
 {
+  if (bufsize < 8)
+    return;
+
   unsigned char bclass = buf[3];
   unsigned char dtype = buf[2];
   unsigned int len = (unsigned)bfd_getl16 (buf);
@@ -6995,38 +7257,47 @@ evax_bfd_print_desc (const unsigned char *buf, int indent, FILE *file)
 	    evax_bfd_print_indent (indent, file);
 	    fprintf (file, _("non-contiguous array of %s\n"),
 		     evax_bfd_get_dsc_name (dsc->dtype));
-	    evax_bfd_print_indent (indent + 1, file);
-	    fprintf (file,
-		     /* xgettext:c-format */
-		     _("dimct: %u, aflags: 0x%02x, digits: %u, scale: %u\n"),
-		     dsc->dimct, dsc->aflags, dsc->digits, dsc->scale);
-	    evax_bfd_print_indent (indent + 1, file);
-	    fprintf (file,
-		     /* xgettext:c-format */
-		     _("arsize: %u, a0: 0x%08x\n"),
-		     (unsigned)bfd_getl32 (dsc->arsize),
-		     (unsigned)bfd_getl32 (dsc->a0));
-	    evax_bfd_print_indent (indent + 1, file);
-	    fprintf (file, _("Strides:\n"));
-	    b = buf + sizeof (*dsc);
-	    for (i = 0; i < dsc->dimct; i++)
+	    if (bufsize >= sizeof (*dsc))
 	      {
-		evax_bfd_print_indent (indent + 2, file);
-		fprintf (file, "[%u]: %u\n", i + 1,
-			 (unsigned)bfd_getl32 (b));
-		b += 4;
-	      }
-	    evax_bfd_print_indent (indent + 1, file);
-	    fprintf (file, _("Bounds:\n"));
-	    b = buf + sizeof (*dsc);
-	    for (i = 0; i < dsc->dimct; i++)
-	      {
-		evax_bfd_print_indent (indent + 2, file);
-		/* xgettext:c-format */
-		fprintf (file, _("[%u]: Lower: %u, upper: %u\n"), i + 1,
-			 (unsigned)bfd_getl32 (b + 0),
-			 (unsigned)bfd_getl32 (b + 4));
-		b += 8;
+		evax_bfd_print_indent (indent + 1, file);
+		fprintf (file,
+			 /* xgettext:c-format */
+			 _("dimct: %u, aflags: 0x%02x, digits: %u, scale: %u\n"),
+			 dsc->dimct, dsc->aflags, dsc->digits, dsc->scale);
+		evax_bfd_print_indent (indent + 1, file);
+		fprintf (file,
+			 /* xgettext:c-format */
+			 _("arsize: %u, a0: 0x%08x\n"),
+			 (unsigned) bfd_getl32 (dsc->arsize),
+			 (unsigned) bfd_getl32 (dsc->a0));
+		evax_bfd_print_indent (indent + 1, file);
+		fprintf (file, _("Strides:\n"));
+		b = buf + sizeof (*dsc);
+		bufsize -= sizeof (*dsc);
+		for (i = 0; i < dsc->dimct; i++)
+		  {
+		    if (bufsize < 4)
+		      break;
+		    evax_bfd_print_indent (indent + 2, file);
+		    fprintf (file, "[%u]: %u\n", i + 1,
+			     (unsigned) bfd_getl32 (b));
+		    b += 4;
+		    bufsize -= 4;
+		  }
+		evax_bfd_print_indent (indent + 1, file);
+		fprintf (file, _("Bounds:\n"));
+		for (i = 0; i < dsc->dimct; i++)
+		  {
+		    if (bufsize < 8)
+		      break;
+		    evax_bfd_print_indent (indent + 2, file);
+		    /* xgettext:c-format */
+		    fprintf (file, _("[%u]: Lower: %u, upper: %u\n"), i + 1,
+			     (unsigned) bfd_getl32 (b + 0),
+			     (unsigned) bfd_getl32 (b + 4));
+		    b += 8;
+		    bufsize -= 8;
+		  }
 	      }
 	  }
 	  break;
@@ -7037,12 +7308,15 @@ evax_bfd_print_desc (const unsigned char *buf, int indent, FILE *file)
 	    evax_bfd_print_indent (indent, file);
 	    fprintf (file, _("unaligned bit-string of %s\n"),
 		     evax_bfd_get_dsc_name (ubs->dtype));
-	    evax_bfd_print_indent (indent + 1, file);
-	    fprintf (file,
-		     /* xgettext:c-format */
-		     _("base: %u, pos: %u\n"),
-		     (unsigned)bfd_getl32 (ubs->base),
-		     (unsigned)bfd_getl32 (ubs->pos));
+	    if (bufsize >= sizeof (*ubs))
+	      {
+		evax_bfd_print_indent (indent + 1, file);
+		fprintf (file,
+			 /* xgettext:c-format */
+			 _("base: %u, pos: %u\n"),
+			 (unsigned) bfd_getl32 (ubs->base),
+			 (unsigned) bfd_getl32 (ubs->pos));
+	      }
 	  }
 	  break;
 	default:
@@ -7053,16 +7327,21 @@ evax_bfd_print_desc (const unsigned char *buf, int indent, FILE *file)
 }
 
 static unsigned int
-evax_bfd_print_valspec (const unsigned char *buf, int indent, FILE *file)
+evax_bfd_print_valspec (const unsigned char *buf, unsigned int bufsize,
+			int indent, FILE *file)
 {
+  if (bufsize < 5)
+    return bufsize;
+
   unsigned int vflags = buf[0];
-  unsigned int value = (unsigned)bfd_getl32 (buf + 1);
+  unsigned int value = (unsigned) bfd_getl32 (buf + 1);
   unsigned int len = 5;
 
   evax_bfd_print_indent (indent, file);
   /* xgettext:c-format */
   fprintf (file, _("vflags: 0x%02x, value: 0x%08x "), vflags, value);
   buf += 5;
+  bufsize -= 5;
 
   switch (vflags)
     {
@@ -7077,7 +7356,8 @@ evax_bfd_print_valspec (const unsigned char *buf, int indent, FILE *file)
       break;
     case DST__K_VFLAGS_DSC:
       fprintf (file, _("(descriptor)\n"));
-      evax_bfd_print_desc (buf + value, indent + 1, file);
+      if (value <= bufsize)
+	evax_bfd_print_desc (buf + value, bufsize - value, indent + 1, file);
       break;
     case DST__K_VFLAGS_TVS:
       fprintf (file, _("(trailing value)\n"));
@@ -7116,29 +7396,36 @@ evax_bfd_print_valspec (const unsigned char *buf, int indent, FILE *file)
 }
 
 static void
-evax_bfd_print_typspec (const unsigned char *buf, int indent, FILE *file)
+evax_bfd_print_typspec (const unsigned char *buf, unsigned int bufsize,
+			int indent, FILE *file)
 {
+  if (bufsize < 3)
+    return;
+
   unsigned char kind = buf[2];
-  unsigned int len = (unsigned)bfd_getl16 (buf);
+  unsigned int len = (unsigned) bfd_getl16 (buf);
 
   evax_bfd_print_indent (indent, file);
   /* xgettext:c-format */
   fprintf (file, _("len: %2u, kind: %2u "), len, kind);
   buf += 3;
+  bufsize -= 3;
   switch (kind)
     {
     case DST__K_TS_ATOM:
     /* xgettext:c-format */
-      fprintf (file, _("atomic, type=0x%02x %s\n"),
-	       buf[0], evax_bfd_get_dsc_name (buf[0]));
+      if (bufsize >= 1)
+	fprintf (file, _("atomic, type=0x%02x %s\n"),
+		 buf[0], evax_bfd_get_dsc_name (buf[0]));
       break;
     case DST__K_TS_IND:
-      fprintf (file, _("indirect, defined at 0x%08x\n"),
-	       (unsigned)bfd_getl32 (buf));
+      if (bufsize >= 4)
+	fprintf (file, _("indirect, defined at 0x%08x\n"),
+		 (unsigned) bfd_getl32 (buf));
       break;
     case DST__K_TS_TPTR:
       fprintf (file, _("typed pointer\n"));
-      evax_bfd_print_typspec (buf, indent + 1, file);
+      evax_bfd_print_typspec (buf, bufsize, indent + 1, file);
       break;
     case DST__K_TS_PTR:
       fprintf (file, _("pointer\n"));
@@ -7146,29 +7433,51 @@ evax_bfd_print_typspec (const unsigned char *buf, int indent, FILE *file)
     case DST__K_TS_ARRAY:
       {
 	const unsigned char *vs;
+	unsigned int vs_len;
 	unsigned int vec_len;
 	unsigned int i;
 
+	if (bufsize == 0)
+	  return;
 	fprintf (file, _("array, dim: %u, bitmap: "), buf[0]);
+	--bufsize;
 	vec_len = (buf[0] + 1 + 7) / 8;
 	for (i = 0; i < vec_len; i++)
-	  fprintf (file, " %02x", buf[i + 1]);
+	  {
+	    if (bufsize == 0)
+	      break;
+	    fprintf (file, " %02x", buf[i + 1]);
+	    --bufsize;
+	  }
 	fputc ('\n', file);
+	if (bufsize == 0)
+	  return;
 	vs = buf + 1 + vec_len;
 	evax_bfd_print_indent (indent, file);
 	fprintf (file, _("array descriptor:\n"));
-	vs += evax_bfd_print_valspec (vs, indent + 1, file);
-	for (i = 0; i < buf[0] + 1U; i++)
-	  if (buf[1 + i / 8] & (1 << (i % 8)))
-	    {
-	      evax_bfd_print_indent (indent, file);
-	      if (i == 0)
-		fprintf (file, _("type spec for element:\n"));
-	      else
-		fprintf (file, _("type spec for subscript %u:\n"), i);
-	      evax_bfd_print_typspec (vs, indent + 1, file);
-	      vs += bfd_getl16 (vs);
-	    }
+	vs_len = evax_bfd_print_valspec (vs, bufsize, indent + 1, file);
+	vs += vs_len;
+	if (bufsize > vs_len)
+	  {
+	    bufsize -= vs_len;
+	    for (i = 0; i < buf[0] + 1U; i++)
+	      if (buf[1 + i / 8] & (1 << (i % 8)))
+		{
+		  evax_bfd_print_indent (indent, file);
+		  if (i == 0)
+		    fprintf (file, _("type spec for element:\n"));
+		  else
+		    fprintf (file, _("type spec for subscript %u:\n"), i);
+		  evax_bfd_print_typspec (vs, bufsize, indent + 1, file);
+		  if (bufsize < 2)
+		    break;
+		  vs_len = bfd_getl16 (vs);
+		  if (bufsize <= vs_len)
+		    break;
+		  vs += vs_len;
+		  bufsize -= vs_len;
+		}
+	  }
       }
       break;
     default:
@@ -7192,7 +7501,7 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
       unsigned int type;
       unsigned char *buf;
 
-      if (bfd_bread (&dsth, sizeof (dsth), abfd) != sizeof (dsth))
+      if (bfd_read (&dsth, sizeof (dsth), abfd) != sizeof (dsth))
 	{
 	  fprintf (file, _("cannot read DST header\n"));
 	  return;
@@ -7202,20 +7511,26 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
       /* xgettext:c-format */
       fprintf (file, _(" type: %3u, len: %3u (at 0x%08x): "),
 	       type, len, off);
-      if (len == 0)
+      if (len > dst_size)
+	len = dst_size;
+      if (len < sizeof (dsth))
 	{
 	  fputc ('\n', file);
 	  break;
 	}
-      len++;
       dst_size -= len;
       off += len;
       len -= sizeof (dsth);
-      buf = _bfd_malloc_and_read (abfd, len, len);
-      if (buf == NULL)
+      if (len == 0)
+	buf = NULL;
+      else
 	{
-	  fprintf (file, _("cannot read DST symbol\n"));
-	  return;
+	  buf = _bfd_malloc_and_read (abfd, len, len);
+	  if (buf == NULL)
+	    {
+	      fprintf (file, _("cannot read DST symbol\n"));
+	      return;
+	    }
 	}
       switch (type)
 	{
@@ -7259,15 +7574,19 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
 	case DSC__K_DTYPE_VT2:
 	  fprintf (file, _("standard data: %s\n"),
 		   evax_bfd_get_dsc_name (type));
-	  evax_bfd_print_valspec (buf, 4, file);
-	  fprintf (file, _("    name: %.*s\n"), buf[5], buf + 6);
+	  evax_bfd_print_valspec (buf, len, 4, file);
+	  if (len > 6)
+	    fprintf (file, _("    name: %.*s\n"),
+		     buf[5] > len - 6 ? len - 6 : buf[5], buf + 6);
 	  break;
 	case DST__K_MODBEG:
 	  {
 	    struct vms_dst_modbeg *dst = (void *)buf;
-	    const char *name = (const char *)buf + sizeof (*dst);
+	    unsigned char *name = buf + sizeof (*dst);
 
 	    fprintf (file, _("modbeg\n"));
+	    if (len < sizeof (*dst))
+	      break;
 	    /* xgettext:c-format */
 	    fprintf (file, _("   flags: %d, language: %u, "
 			     "major: %u, minor: %u\n"),
@@ -7275,11 +7594,21 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
 		     (unsigned)bfd_getl32 (dst->language),
 		     (unsigned)bfd_getl16 (dst->major),
 		     (unsigned)bfd_getl16 (dst->minor));
-	    fprintf (file, _("   module name: %.*s\n"),
-		     name[0], name + 1);
-	    name += name[0] + 1;
-	    fprintf (file, _("   compiler   : %.*s\n"),
-		     name[0], name + 1);
+	    len -= sizeof (*dst);
+	    if (len > 0)
+	      {
+		int nlen = len - 1;
+		fprintf (file, _("   module name: %.*s\n"),
+			 name[0] > nlen ? nlen : name[0], name + 1);
+		if (name[0] < nlen)
+		  {
+		    len -= name[0] + 1;
+		    name += name[0] + 1;
+		    nlen = len - 1;
+		    fprintf (file, _("   compiler   : %.*s\n"),
+			     name[0] > nlen ? nlen : name[0], name + 1);
+		  }
+	      }
 	  }
 	  break;
 	case DST__K_MODEND:
@@ -7288,98 +7617,145 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
 	case DST__K_RTNBEG:
 	  {
 	    struct vms_dst_rtnbeg *dst = (void *)buf;
-	    const char *name = (const char *)buf + sizeof (*dst);
+	    unsigned char *name = buf + sizeof (*dst);
 
 	    fputs (_("rtnbeg\n"), file);
-	    /* xgettext:c-format */
-	    fprintf (file, _("    flags: %u, address: 0x%08x, "
-			     "pd-address: 0x%08x\n"),
-		     dst->flags,
-		     (unsigned)bfd_getl32 (dst->address),
-		     (unsigned)bfd_getl32 (dst->pd_address));
-	    fprintf (file, _("    routine name: %.*s\n"),
-		     name[0], name + 1);
+	    if (len >= sizeof (*dst))
+	      {
+		/* xgettext:c-format */
+		fprintf (file, _("    flags: %u, address: 0x%08x, "
+				 "pd-address: 0x%08x\n"),
+			 dst->flags,
+			 (unsigned) bfd_getl32 (dst->address),
+			 (unsigned) bfd_getl32 (dst->pd_address));
+		len -= sizeof (*dst);
+		if (len > 0)
+		  {
+		    int nlen = len - 1;
+		    fprintf (file, _("    routine name: %.*s\n"),
+			     name[0] > nlen ? nlen : name[0], name + 1);
+		  }
+	      }
 	  }
 	  break;
 	case DST__K_RTNEND:
 	  {
 	    struct vms_dst_rtnend *dst = (void *)buf;
 
-	    fprintf (file, _("rtnend: size 0x%08x\n"),
-		     (unsigned)bfd_getl32 (dst->size));
+	    if (len >= sizeof (*dst))
+	      fprintf (file, _("rtnend: size 0x%08x\n"),
+		       (unsigned) bfd_getl32 (dst->size));
 	  }
 	  break;
 	case DST__K_PROLOG:
 	  {
 	    struct vms_dst_prolog *dst = (void *)buf;
 
-	    fprintf (file, _("prolog: bkpt address 0x%08x\n"),
-		     (unsigned)bfd_getl32 (dst->bkpt_addr));
+	    if (len >= sizeof (*dst))
+	      /* xgettext:c-format */
+	      fprintf (file, _("prolog: bkpt address 0x%08x\n"),
+		       (unsigned) bfd_getl32 (dst->bkpt_addr));
 	  }
 	  break;
 	case DST__K_EPILOG:
 	  {
 	    struct vms_dst_epilog *dst = (void *)buf;
 
-	    /* xgettext:c-format */
-	    fprintf (file, _("epilog: flags: %u, count: %u\n"),
-		     dst->flags, (unsigned)bfd_getl32 (dst->count));
+	    if (len >= sizeof (*dst))
+	      /* xgettext:c-format */
+	      fprintf (file, _("epilog: flags: %u, count: %u\n"),
+		       dst->flags, (unsigned) bfd_getl32 (dst->count));
 	  }
 	  break;
 	case DST__K_BLKBEG:
 	  {
 	    struct vms_dst_blkbeg *dst = (void *)buf;
-	    const char *name = (const char *)buf + sizeof (*dst);
+	    unsigned char *name = buf + sizeof (*dst);
 
-	    /* xgettext:c-format */
-	    fprintf (file, _("blkbeg: address: 0x%08x, name: %.*s\n"),
-		     (unsigned)bfd_getl32 (dst->address),
-		     name[0], name + 1);
+	    if (len > sizeof (*dst))
+	      {
+		int nlen;
+		len -= sizeof (*dst);
+		nlen = len - 1;
+		/* xgettext:c-format */
+		fprintf (file, _("blkbeg: address: 0x%08x, name: %.*s\n"),
+			 (unsigned) bfd_getl32 (dst->address),
+			 name[0] > nlen ? nlen : name[0], name + 1);
+	      }
 	  }
 	  break;
 	case DST__K_BLKEND:
 	  {
 	    struct vms_dst_blkend *dst = (void *)buf;
 
-	    fprintf (file, _("blkend: size: 0x%08x\n"),
-		     (unsigned)bfd_getl32 (dst->size));
+	    if (len >= sizeof (*dst))
+	      /* xgettext:c-format */
+	      fprintf (file, _("blkend: size: 0x%08x\n"),
+		       (unsigned) bfd_getl32 (dst->size));
 	  }
 	  break;
 	case DST__K_TYPSPEC:
 	  {
 	    fprintf (file, _("typspec (len: %u)\n"), len);
-	    fprintf (file, _("    name: %.*s\n"), buf[0], buf + 1);
-	    evax_bfd_print_typspec (buf + 1 + buf[0], 5, file);
+	    if (len >= 1)
+	      {
+		int nlen = len - 1;
+		fprintf (file, _("    name: %.*s\n"),
+			 buf[0] > nlen ? nlen : buf[0], buf + 1);
+		if (nlen > buf[0])
+		  evax_bfd_print_typspec (buf + 1 + buf[0], len - (1 + buf[0]),
+					  5, file);
+	      }
 	  }
 	  break;
 	case DST__K_SEPTYP:
 	  {
-	    fprintf (file, _("septyp, name: %.*s\n"), buf[5], buf + 6);
-	    evax_bfd_print_valspec (buf, 4, file);
+	    if (len >= 6)
+	      {
+		fprintf (file, _("septyp, name: %.*s\n"),
+			 buf[5] > len - 6 ? len - 6 : buf[5], buf + 6);
+		evax_bfd_print_valspec (buf, len, 4, file);
+	      }
 	  }
 	  break;
 	case DST__K_RECBEG:
 	  {
 	    struct vms_dst_recbeg *recbeg = (void *)buf;
-	    const char *name = (const char *)buf + sizeof (*recbeg);
 
-	    fprintf (file, _("recbeg: name: %.*s\n"), name[0], name + 1);
-	    evax_bfd_print_valspec (buf, 4, file);
-	    fprintf (file, _("    len: %u bits\n"),
-		     (unsigned)bfd_getl32 (name + 1 + name[0]));
+	    if (len > sizeof (*recbeg))
+	      {
+		unsigned char *name = buf + sizeof (*recbeg);
+		int nlen = len - sizeof (*recbeg) - 1;
+
+		if (name[0] < nlen)
+		  nlen = name[0];
+		fprintf (file, _("recbeg: name: %.*s\n"), nlen, name + 1);
+
+		evax_bfd_print_valspec (buf, len, 4, file);
+
+		len -= sizeof (*recbeg) + 1 + nlen;
+		if (len >= 4)
+		  fprintf (file, _("    len: %u bits\n"),
+			   (unsigned) bfd_getl32 (name + 1 + nlen));
+	      }
 	  }
 	  break;
 	case DST__K_RECEND:
 	  fprintf (file, _("recend\n"));
 	  break;
 	case DST__K_ENUMBEG:
-	  /* xgettext:c-format */
-	  fprintf (file, _("enumbeg, len: %u, name: %.*s\n"),
-		   buf[0], buf[1], buf + 2);
+	  if (len >= 2)
+	    /* xgettext:c-format */
+	    fprintf (file, _("enumbeg, len: %u, name: %.*s\n"),
+		     buf[0], buf[1] > len - 2 ? len - 2 : buf[1], buf + 2);
 	  break;
 	case DST__K_ENUMELT:
-	  fprintf (file, _("enumelt, name: %.*s\n"), buf[5], buf + 6);
-	  evax_bfd_print_valspec (buf, 4, file);
+	  if (len >= 6)
+	    {
+	      fprintf (file, _("enumelt, name: %.*s\n"),
+		       buf[5] > len - 6 ? len - 6 : buf[5], buf + 6);
+	      evax_bfd_print_valspec (buf, len, 4, file);
+	    }
 	  break;
 	case DST__K_ENUMEND:
 	  fprintf (file, _("enumend\n"));
@@ -7387,26 +7763,36 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
 	case DST__K_LABEL:
 	  {
 	    struct vms_dst_label *lab = (void *)buf;
-	    fprintf (file, _("label, name: %.*s\n"),
-		     lab->name[0], lab->name + 1);
-	    fprintf (file, _("    address: 0x%08x\n"),
-		     (unsigned)bfd_getl32 (lab->value));
+	    if (len >= sizeof (*lab))
+	      {
+		fprintf (file, _("label, name: %.*s\n"),
+			 lab->name[0] > len - 1 ? len - 1 : lab->name[0],
+			 lab->name + 1);
+		fprintf (file, _("    address: 0x%08x\n"),
+			 (unsigned) bfd_getl32 (lab->value));
+	      }
 	  }
 	  break;
 	case DST__K_DIS_RANGE:
-	  {
-	    unsigned int cnt = bfd_getl32 (buf);
-	    unsigned char *rng = buf + 4;
-	    unsigned int i;
+	  if (len >= 4)
+	    {
+	      unsigned int cnt = bfd_getl32 (buf);
+	      unsigned char *rng = buf + 4;
+	      unsigned int i;
 
-	    fprintf (file, _("discontiguous range (nbr: %u)\n"), cnt);
-	    for (i = 0; i < cnt; i++, rng += 8)
-	      /* xgettext:c-format */
-	      fprintf (file, _("    address: 0x%08x, size: %u\n"),
-		       (unsigned)bfd_getl32 (rng),
-		       (unsigned)bfd_getl32 (rng + 4));
-
-	  }
+	      fprintf (file, _("discontiguous range (nbr: %u)\n"), cnt);
+	      len -= 4;
+	      for (i = 0; i < cnt; i++, rng += 8)
+		{
+		  if (len < 8)
+		    break;
+		  /* xgettext:c-format */
+		  fprintf (file, _("    address: 0x%08x, size: %u\n"),
+			   (unsigned) bfd_getl32 (rng),
+			   (unsigned) bfd_getl32 (rng + 4));
+		  len -= 8;
+		}
+	    }
 	  break;
 	case DST__K_LINE_NUM:
 	  {
@@ -7416,79 +7802,101 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
 
 	    while (len > 0)
 	      {
-		signed char cmd;
-		unsigned char cmdlen;
+		int cmd;
 		unsigned int val;
+		int cmdlen = -1;
 
-		cmd = buf[0];
-		cmdlen = 0;
+		cmd = *buf++;
+		len--;
 
 		fputs ("    ", file);
 
 		switch (cmd)
 		  {
 		  case DST__K_DELTA_PC_W:
-		    val = bfd_getl16 (buf + 1);
+		    if (len < 2)
+		      break;
+		    val = bfd_getl16 (buf);
 		    fprintf (file, _("delta_pc_w %u\n"), val);
 		    pc += val;
 		    line++;
-		    cmdlen = 3;
+		    cmdlen = 2;
 		    break;
 		  case DST__K_INCR_LINUM:
-		    val = buf[1];
+		    if (len < 1)
+		      break;
+		    val = *buf;
 		    fprintf (file, _("incr_linum(b): +%u\n"), val);
 		    line += val;
-		    cmdlen = 2;
+		    cmdlen = 1;
 		    break;
 		  case DST__K_INCR_LINUM_W:
-		    val = bfd_getl16 (buf + 1);
+		    if (len < 2)
+		      break;
+		    val = bfd_getl16 (buf);
 		    fprintf (file, _("incr_linum_w: +%u\n"), val);
 		    line += val;
-		    cmdlen = 3;
+		    cmdlen = 2;
 		    break;
 		  case DST__K_INCR_LINUM_L:
-		    val = bfd_getl32 (buf + 1);
+		    if (len < 4)
+		      break;
+		    val = bfd_getl32 (buf);
 		    fprintf (file, _("incr_linum_l: +%u\n"), val);
 		    line += val;
-		    cmdlen = 5;
+		    cmdlen = 4;
 		    break;
 		  case DST__K_SET_LINUM:
-		    line = bfd_getl16 (buf + 1);
+		    if (len < 2)
+		      break;
+		    line = bfd_getl16 (buf);
 		    fprintf (file, _("set_line_num(w) %u\n"), line);
-		    cmdlen = 3;
+		    cmdlen = 2;
 		    break;
 		  case DST__K_SET_LINUM_B:
-		    line = buf[1];
+		    if (len < 1)
+		      break;
+		    line = *buf;
 		    fprintf (file, _("set_line_num_b %u\n"), line);
-		    cmdlen = 2;
+		    cmdlen = 1;
 		    break;
 		  case DST__K_SET_LINUM_L:
-		    line = bfd_getl32 (buf + 1);
+		    if (len < 4)
+		      break;
+		    line = bfd_getl32 (buf);
 		    fprintf (file, _("set_line_num_l %u\n"), line);
-		    cmdlen = 5;
+		    cmdlen = 4;
 		    break;
 		  case DST__K_SET_ABS_PC:
-		    pc = bfd_getl32 (buf + 1);
+		    if (len < 4)
+		      break;
+		    pc = bfd_getl32 (buf);
 		    fprintf (file, _("set_abs_pc: 0x%08x\n"), pc);
-		    cmdlen = 5;
+		    cmdlen = 4;
 		    break;
 		  case DST__K_DELTA_PC_L:
+		    if (len < 4)
+		      break;
 		    fprintf (file, _("delta_pc_l: +0x%08x\n"),
-			     (unsigned)bfd_getl32 (buf + 1));
-		    cmdlen = 5;
+			     (unsigned) bfd_getl32 (buf));
+		    cmdlen = 4;
 		    break;
 		  case DST__K_TERM:
-		    fprintf (file, _("term(b): 0x%02x"), buf[1]);
-		    pc += buf[1];
+		    if (len < 1)
+		      break;
+		    fprintf (file, _("term(b): 0x%02x"), *buf);
+		    pc += *buf;
 		    fprintf (file, _("        pc: 0x%08x\n"), pc);
-		    cmdlen = 2;
+		    cmdlen = 1;
 		    break;
 		  case DST__K_TERM_W:
-		    val = bfd_getl16 (buf + 1);
+		    if (len < 2)
+		      break;
+		    val = bfd_getl16 (buf);
 		    fprintf (file, _("term_w: 0x%04x"), val);
 		    pc += val;
 		    fprintf (file, _("    pc: 0x%08x\n"), pc);
-		    cmdlen = 3;
+		    cmdlen = 2;
 		    break;
 		  default:
 		    if (cmd <= 0)
@@ -7499,13 +7907,13 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
 			/* xgettext:c-format */
 			fprintf (file, _("    pc: 0x%08x line: %5u\n"),
 				 pc, line);
-			cmdlen = 1;
+			cmdlen = 0;
 		      }
 		    else
 		      fprintf (file, _("    *unhandled* cmd %u\n"), cmd);
 		    break;
 		  }
-		if (cmdlen == 0)
+		if (cmdlen < 0)
 		  break;
 		len -= cmdlen;
 		buf += cmdlen;
@@ -7521,16 +7929,20 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
 
 	    while (len > 0)
 	      {
-		signed char cmd = buf[0];
-		unsigned char cmdlen = 0;
+		int cmd = *buf++;
+		int cmdlen = -1;
 
+		len--;
 		switch (cmd)
 		  {
 		  case DST__K_SRC_DECLFILE:
 		    {
-		      struct vms_dst_src_decl_src *src = (void *)(buf + 1);
-		      const char *name;
+		      struct vms_dst_src_decl_src *src = (void *) buf;
+		      unsigned char *name;
+		      int nlen;
 
+		      if (len < sizeof (*src))
+			break;
 		      /* xgettext:c-format */
 		      fprintf (file, _("   declfile: len: %u, flags: %u, "
 				       "fileid: %u\n"),
@@ -7545,58 +7957,80 @@ evax_bfd_print_dst (struct bfd *abfd, unsigned int dst_size, FILE *file)
 			       (unsigned)bfd_getl32 (src->rms_ebk),
 			       (unsigned)bfd_getl16 (src->rms_ffb),
 			       src->rms_rfo);
-		      name = (const char *)buf + 1 + sizeof (*src);
+		      if (src->length > len || src->length <= sizeof (*src))
+			break;
+		      nlen = src->length - sizeof (*src) - 1;
+		      name = buf + sizeof (*src);
 		      fprintf (file, _("   filename   : %.*s\n"),
-			       name[0], name + 1);
+			       name[0] > nlen ? nlen : name[0], name + 1);
+		      if (name[0] >= nlen)
+			break;
+		      nlen -= name[0] + 1;
 		      name += name[0] + 1;
 		      fprintf (file, _("   module name: %.*s\n"),
-			       name[0], name + 1);
-		      cmdlen = 2 + src->length;
+			       name[0] > nlen ? nlen : name[0], name + 1);
+		      if (name[0] > nlen)
+			break;
+		      cmdlen = src->length;
 		    }
 		    break;
 		  case DST__K_SRC_SETFILE:
+		    if (len < 2)
+		      break;
 		    fprintf (file, _("   setfile %u\n"),
-			     (unsigned)bfd_getl16 (buf + 1));
-		    cmdlen = 3;
+			     (unsigned) bfd_getl16 (buf));
+		    cmdlen = 2;
 		    break;
 		  case DST__K_SRC_SETREC_W:
+		    if (len < 2)
+		      break;
 		    fprintf (file, _("   setrec %u\n"),
-			     (unsigned)bfd_getl16 (buf + 1));
-		    cmdlen = 3;
+			     (unsigned) bfd_getl16 (buf));
+		    cmdlen = 2;
 		    break;
 		  case DST__K_SRC_SETREC_L:
+		    if (len < 4)
+		      break;
 		    fprintf (file, _("   setrec %u\n"),
-			     (unsigned)bfd_getl32 (buf + 1));
-		    cmdlen = 5;
+			     (unsigned) bfd_getl32 (buf));
+		    cmdlen = 4;
 		    break;
 		  case DST__K_SRC_SETLNUM_W:
+		    if (len < 2)
+		      break;
 		    fprintf (file, _("   setlnum %u\n"),
-			     (unsigned)bfd_getl16 (buf + 1));
-		    cmdlen = 3;
+			     (unsigned) bfd_getl16 (buf));
+		    cmdlen = 2;
 		    break;
 		  case DST__K_SRC_SETLNUM_L:
+		    if (len < 4)
+		      break;
 		    fprintf (file, _("   setlnum %u\n"),
-			     (unsigned)bfd_getl32 (buf + 1));
-		    cmdlen = 5;
+			     (unsigned) bfd_getl32 (buf));
+		    cmdlen = 4;
 		    break;
 		  case DST__K_SRC_DEFLINES_W:
+		    if (len < 2)
+		      break;
 		    fprintf (file, _("   deflines %u\n"),
-			     (unsigned)bfd_getl16 (buf + 1));
-		    cmdlen = 3;
+			     (unsigned) bfd_getl16 (buf));
+		    cmdlen = 2;
 		    break;
 		  case DST__K_SRC_DEFLINES_B:
-		    fprintf (file, _("   deflines %u\n"), buf[1]);
-		    cmdlen = 2;
+		    if (len < 1)
+		      break;
+		    fprintf (file, _("   deflines %u\n"), *buf);
+		    cmdlen = 1;
 		    break;
 		  case DST__K_SRC_FORMFEED:
 		    fprintf (file, _("   formfeed\n"));
-		    cmdlen = 1;
+		    cmdlen = 0;
 		    break;
 		  default:
 		    fprintf (file, _("   *unhandled* cmd %u\n"), cmd);
 		    break;
 		  }
-		if (cmdlen == 0)
+		if (cmdlen < 0)
 		  break;
 		len -= cmdlen;
 		buf += cmdlen;
@@ -7634,8 +8068,8 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
   unsigned int eiaf_size = 0;
   unsigned int eihvn_off;
 
-  if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET)
-      || bfd_bread (&eihd, sizeof (eihd), abfd) != sizeof (eihd))
+  if (bfd_seek (abfd, 0, SEEK_SET)
+      || bfd_read (&eihd, sizeof (eihd), abfd) != sizeof (eihd))
     {
       fprintf (file, _("cannot read EIHD\n"));
       return;
@@ -7762,18 +8196,18 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
       unsigned int j;
 
       fprintf (file, _("system version array information:\n"));
-      if (bfd_seek (abfd, (file_ptr) eihvn_off, SEEK_SET)
-	  || bfd_bread (&eihvn, sizeof (eihvn), abfd) != sizeof (eihvn))
+      if (bfd_seek (abfd, eihvn_off, SEEK_SET)
+	  || bfd_read (&eihvn, sizeof (eihvn), abfd) != sizeof (eihvn))
 	{
 	  fprintf (file, _("cannot read EIHVN header\n"));
 	  return;
 	}
       mask = bfd_getl32 (eihvn.subsystem_mask);
       for (j = 0; j < 32; j++)
-	if (mask & (1 << j))
+	if (mask & (1u << j))
 	  {
 	    struct vms_eihvn_subversion ver;
-	    if (bfd_bread (&ver, sizeof (ver), abfd) != sizeof (ver))
+	    if (bfd_read (&ver, sizeof (ver), abfd) != sizeof (ver))
 	      {
 		fprintf (file, _("cannot read EIHVN version\n"));
 		return;
@@ -7855,8 +8289,8 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
     {
       struct vms_eiha eiha;
 
-      if (bfd_seek (abfd, (file_ptr) eiha_off, SEEK_SET)
-	  || bfd_bread (&eiha, sizeof (eiha), abfd) != sizeof (eiha))
+      if (bfd_seek (abfd, eiha_off, SEEK_SET)
+	  || bfd_read (&eiha, sizeof (eiha), abfd) != sizeof (eiha))
 	{
 	  fprintf (file, _("cannot read EIHA\n"));
 	  return;
@@ -7888,8 +8322,8 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
     {
       struct vms_eihi eihi;
 
-      if (bfd_seek (abfd, (file_ptr) eihi_off, SEEK_SET)
-	  || bfd_bread (&eihi, sizeof (eihi), abfd) != sizeof (eihi))
+      if (bfd_seek (abfd, eihi_off, SEEK_SET)
+	  || bfd_read (&eihi, sizeof (eihi), abfd) != sizeof (eihi))
 	{
 	  fprintf (file, _("cannot read EIHI\n"));
 	  return;
@@ -7913,8 +8347,8 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
     {
       struct vms_eihs eihs;
 
-      if (bfd_seek (abfd, (file_ptr) eihs_off, SEEK_SET)
-	  || bfd_bread (&eihs, sizeof (eihs), abfd) != sizeof (eihs))
+      if (bfd_seek (abfd, eihs_off, SEEK_SET)
+	  || bfd_read (&eihs, sizeof (eihs), abfd) != sizeof (eihs))
 	{
 	  fprintf (file, _("cannot read EIHS\n"));
 	  return;
@@ -7946,8 +8380,8 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
 
       while (1)
 	{
-	  if (bfd_seek (abfd, (file_ptr) eisd_off, SEEK_SET)
-	      || bfd_bread (&eisd, sizeof (eisd), abfd) != sizeof (eisd))
+	  if (bfd_seek (abfd, eisd_off, SEEK_SET)
+	      || bfd_read (&eisd, sizeof (eisd), abfd) != sizeof (eisd))
 	    {
 	      fprintf (file, _("cannot read EISD\n"));
 	      return;
@@ -8062,7 +8496,7 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
 	  struct vms_dmt_header dmth;
 	  unsigned int count;
 
-	  if (bfd_bread (&dmth, sizeof (dmth), abfd) != sizeof (dmth))
+	  if (bfd_read (&dmth, sizeof (dmth), abfd) != sizeof (dmth))
 	    {
 	      fprintf (file, _("cannot read DMT header\n"));
 	      return;
@@ -8078,7 +8512,7 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
 	    {
 	      struct vms_dmt_psect dmtp;
 
-	      if (bfd_bread (&dmtp, sizeof (dmtp), abfd) != sizeof (dmtp))
+	      if (bfd_read (&dmtp, sizeof (dmtp), abfd) != sizeof (dmtp))
 		{
 		  fprintf (file, _("cannot read DMT psect\n"));
 		  return;
@@ -8114,7 +8548,7 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
       fprintf (file, _("Global symbol table:\n"));
       evax_bfd_print_eobj (abfd, file);
     }
-  if (eiaf_vbn != 0)
+  if (eiaf_vbn != 0 && eiaf_size >= sizeof (struct vms_eiaf))
     {
       unsigned char *buf;
       struct vms_eiaf *eiaf;
@@ -8186,12 +8620,14 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
 
       if (shlstoff)
 	{
-	  struct vms_shl *shl = (struct vms_shl *)(buf + shlstoff);
 	  unsigned int j;
 
 	  fprintf (file, _(" Shareable images:\n"));
-	  for (j = 0; j < shrimgcnt; j++, shl++)
+	  for (j = 0;
+	       j < shrimgcnt && shlstoff <= eiaf_size - sizeof (struct vms_shl);
+	       j++, shlstoff += sizeof (struct vms_shl))
 	    {
+	      struct vms_shl *shl = (struct vms_shl *) (buf + shlstoff);
 	      fprintf (file,
 		       /* xgettext:c-format */
 		       _("  %u: size: %u, flags: 0x%02x, name: %.*s\n"),
@@ -8202,50 +8638,54 @@ evax_bfd_print_image (bfd *abfd, FILE *file)
       if (qrelfixoff != 0)
 	{
 	  fprintf (file, _(" quad-word relocation fixups:\n"));
-	  evax_bfd_print_relocation_records (file, buf + qrelfixoff, 8);
+	  evax_bfd_print_relocation_records (file, buf, eiaf_size,
+					     qrelfixoff, 8);
 	}
       if (lrelfixoff != 0)
 	{
 	  fprintf (file, _(" long-word relocation fixups:\n"));
-	  evax_bfd_print_relocation_records (file, buf + lrelfixoff, 4);
+	  evax_bfd_print_relocation_records (file, buf, eiaf_size,
+					     lrelfixoff, 4);
 	}
       if (qdotadroff != 0)
 	{
 	  fprintf (file, _(" quad-word .address reference fixups:\n"));
-	  evax_bfd_print_address_fixups (file, buf + qdotadroff);
+	  evax_bfd_print_address_fixups (file, buf, eiaf_size, qdotadroff);
 	}
       if (ldotadroff != 0)
 	{
 	  fprintf (file, _(" long-word .address reference fixups:\n"));
-	  evax_bfd_print_address_fixups (file, buf + ldotadroff);
+	  evax_bfd_print_address_fixups (file, buf, eiaf_size, ldotadroff);
 	}
       if (codeadroff != 0)
 	{
 	  fprintf (file, _(" Code Address Reference Fixups:\n"));
-	  evax_bfd_print_reference_fixups (file, buf + codeadroff);
+	  evax_bfd_print_reference_fixups (file, buf, eiaf_size, codeadroff);
 	}
       if (lpfixoff != 0)
 	{
 	  fprintf (file, _(" Linkage Pairs Reference Fixups:\n"));
-	  evax_bfd_print_reference_fixups (file, buf + lpfixoff);
+	  evax_bfd_print_reference_fixups (file, buf, eiaf_size, lpfixoff);
 	}
-      if (chgprtoff)
+      if (chgprtoff && chgprtoff <= eiaf_size - 4)
 	{
-	  unsigned int count = (unsigned)bfd_getl32 (buf + chgprtoff);
-	  struct vms_eicp *eicp = (struct vms_eicp *)(buf + chgprtoff + 4);
+	  unsigned int count = (unsigned) bfd_getl32 (buf + chgprtoff);
 	  unsigned int j;
 
 	  fprintf (file, _(" Change Protection (%u entries):\n"), count);
-	  for (j = 0; j < count; j++, eicp++)
+	  for (j = 0, chgprtoff += 4;
+	       j < count && chgprtoff <= eiaf_size - sizeof (struct vms_eicp);
+	       j++, chgprtoff += sizeof (struct vms_eicp))
 	    {
+	      struct vms_eicp *eicp = (struct vms_eicp *) (buf + chgprtoff);
 	      unsigned int prot = bfd_getl32 (eicp->newprt);
 	      fprintf (file,
 		       /* xgettext:c-format */
 		       _("  base: 0x%08x %08x, size: 0x%08x, prot: 0x%08x "),
-		       (unsigned)bfd_getl32 (eicp->baseva + 4),
-		       (unsigned)bfd_getl32 (eicp->baseva + 0),
-		       (unsigned)bfd_getl32 (eicp->size),
-		       (unsigned)bfd_getl32 (eicp->newprt));
+		       (unsigned) bfd_getl32 (eicp->baseva + 4),
+		       (unsigned) bfd_getl32 (eicp->baseva + 0),
+		       (unsigned) bfd_getl32 (eicp->size),
+		       (unsigned) bfd_getl32 (eicp->newprt));
 	      switch (prot)
 		{
 		case PRT__C_NA:
@@ -9405,12 +9845,15 @@ alpha_vms_get_section_contents (bfd *abfd, asection *section,
 				void *buf, file_ptr offset,
 				bfd_size_type count)
 {
-  asection *sec;
-
-  /* Image are easy.  */
-  if (bfd_get_file_flags (abfd) & (EXEC_P | DYNAMIC))
+  /* Handle image sections.  */
+  if (section->filepos != 0
+      || (section->flags & SEC_HAS_CONTENTS) == 0)
     return _bfd_generic_get_section_contents (abfd, section,
 					      buf, offset, count);
+
+  /* A section with a zero filepos implies the section has no direct
+     file backing.  Its contents must be calculated by processing ETIR
+     records.  */
 
   /* Safety check.  */
   if (offset + count < count
@@ -9420,33 +9863,32 @@ alpha_vms_get_section_contents (bfd *abfd, asection *section,
       return false;
     }
 
-  /* If the section is already in memory, just copy it.  */
-  if (section->flags & SEC_IN_MEMORY)
-    {
-      BFD_ASSERT (section->contents != NULL);
-      memcpy (buf, section->contents + offset, count);
-      return true;
-    }
   if (section->size == 0)
     return true;
 
-  /* Alloc in memory and read ETIRs.  */
-  for (sec = abfd->sections; sec; sec = sec->next)
+  /* If we haven't yet read ETIR/EDBG/ETBT records, do so.  */
+  if ((section->flags & SEC_IN_MEMORY) == 0)
     {
-      BFD_ASSERT (sec->contents == NULL);
-
-      if (sec->size != 0 && (sec->flags & SEC_HAS_CONTENTS))
+      /* Alloc memory and read ETIRs.  */
+      for (asection *sec = abfd->sections; sec; sec = sec->next)
 	{
-	  sec->contents = bfd_alloc (abfd, sec->size);
-	  if (sec->contents == NULL)
-	    return false;
+	  if (sec->size != 0
+	      && sec->filepos == 0
+	      && (sec->flags & SEC_HAS_CONTENTS) != 0)
+	    {
+	      BFD_ASSERT (sec->contents == NULL);
+
+	      sec->contents = bfd_zalloc (abfd, sec->size);
+	      sec->flags |= SEC_IN_MEMORY;
+	      if (sec->contents == NULL)
+		return false;
+	    }
 	}
+      if (!alpha_vms_read_sections_content (abfd, NULL))
+	return false;
     }
-  if (!alpha_vms_read_sections_content (abfd, NULL))
-    return false;
-  for (sec = abfd->sections; sec; sec = sec->next)
-    if (sec->contents)
-      sec->flags |= SEC_IN_MEMORY;
+
+  BFD_ASSERT (section->contents != NULL);
   memcpy (buf, section->contents + offset, count);
   return true;
 }
@@ -9698,25 +10140,13 @@ bfd_vms_get_data (bfd *abfd)
   return (struct vms_private_data_struct *)abfd->tdata.any;
 }
 
-#define vms_bfd_is_target_special_symbol  _bfd_bool_bfd_asymbol_false
-#define vms_bfd_link_just_syms		  _bfd_generic_link_just_syms
-#define vms_bfd_copy_link_hash_symbol_type \
-  _bfd_generic_copy_link_hash_symbol_type
-#define vms_bfd_is_group_section	  bfd_generic_is_group_section
-#define vms_bfd_group_name		  bfd_generic_group_name
-#define vms_bfd_discard_group		  bfd_generic_discard_group
-#define vms_section_already_linked	  _bfd_generic_section_already_linked
-#define vms_bfd_define_common_symbol	  bfd_generic_define_common_symbol
-#define vms_bfd_link_hide_symbol	  _bfd_generic_link_hide_symbol
-#define vms_bfd_define_start_stop         bfd_generic_define_start_stop
-#define vms_bfd_copy_private_header_data  _bfd_generic_bfd_copy_private_header_data
-
 #define vms_bfd_copy_private_bfd_data	  _bfd_generic_bfd_copy_private_bfd_data
-#define vms_bfd_free_cached_info	  _bfd_generic_bfd_free_cached_info
+#define vms_bfd_merge_private_bfd_data	  _bfd_generic_bfd_merge_private_bfd_data
+#define vms_init_private_section_data	  _bfd_generic_init_private_section_data
 #define vms_bfd_copy_private_section_data _bfd_generic_bfd_copy_private_section_data
 #define vms_bfd_copy_private_symbol_data  _bfd_generic_bfd_copy_private_symbol_data
+#define vms_bfd_copy_private_header_data  _bfd_generic_bfd_copy_private_header_data
 #define vms_bfd_set_private_flags	  _bfd_generic_bfd_set_private_flags
-#define vms_bfd_merge_private_bfd_data	  _bfd_generic_bfd_merge_private_bfd_data
 
 /* Symbols table.  */
 #define alpha_vms_make_empty_symbol	   _bfd_generic_make_empty_symbol
@@ -9732,15 +10162,16 @@ bfd_vms_get_data (bfd *abfd)
 #define alpha_vms_find_inliner_info	   _bfd_nosymbols_find_inliner_info
 #define alpha_vms_bfd_make_debug_symbol	   _bfd_nosymbols_bfd_make_debug_symbol
 #define alpha_vms_find_nearest_line	   _bfd_vms_find_nearest_line
+#define alpha_vms_find_nearest_line_with_alt \
+   _bfd_nosymbols_find_nearest_line_with_alt
 #define alpha_vms_find_line		   _bfd_nosymbols_find_line
 #define alpha_vms_bfd_is_local_label_name  vms_bfd_is_local_label_name
 
 /* Generic table.  */
 #define alpha_vms_close_and_cleanup	   vms_close_and_cleanup
-#define alpha_vms_bfd_free_cached_info	   vms_bfd_free_cached_info
+#define alpha_vms_bfd_free_cached_info	   _bfd_bool_bfd_true
 #define alpha_vms_new_section_hook	   vms_new_section_hook
 #define alpha_vms_set_section_contents	   _bfd_vms_set_section_contents
-#define alpha_vms_get_section_contents_in_window _bfd_generic_get_section_contents_in_window
 
 #define alpha_vms_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents

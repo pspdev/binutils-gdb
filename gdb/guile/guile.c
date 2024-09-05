@@ -1,6 +1,6 @@
 /* General GDB/Guile code.
 
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,14 +20,13 @@
 /* See README file in this directory for implementation notes, coding
    conventions, et.al.  */
 
-#include "defs.h"
 #include "breakpoint.h"
 #include "cli/cli-cmds.h"
 #include "cli/cli-script.h"
 #include "cli/cli-utils.h"
 #include "command.h"
-#include "gdbcmd.h"
 #include "top.h"
+#include "ui.h"
 #include "extension-priv.h"
 #include "utils.h"
 #include "gdbsupport/version.h"
@@ -114,6 +113,7 @@ static const struct extension_language_ops guile_extension_ops =
 {
   gdbscm_initialize,
   gdbscm_initialized,
+  nullptr,
 
   gdbscm_eval_from_control_command,
 
@@ -124,14 +124,19 @@ static const struct extension_language_ops guile_extension_ops =
   gdbscm_apply_val_pretty_printer,
 
   NULL, /* gdbscm_apply_frame_filter, */
+  NULL, /* gdbscm_load_ptwrite_filter, */
 
   gdbscm_preserve_values,
 
   gdbscm_breakpoint_has_cond,
   gdbscm_breakpoint_cond_says_stop,
 
-  NULL, /* gdbscm_check_quit_flag, */
   NULL, /* gdbscm_set_quit_flag, */
+  NULL, /* gdbscm_check_quit_flag, */
+  NULL, /* gdbscm_before_prompt, */
+  NULL, /* gdbscm_get_matching_xmethod_workers */
+  NULL, /* gdbscm_colorize */
+  NULL, /* gdbscm_print_insn */
 };
 #endif
 
@@ -273,7 +278,7 @@ gdbscm_source_script (const struct extension_language_defn *extlang,
   gdb::unique_xmalloc_ptr<char> msg = gdbscm_safe_source_script (filename);
 
   if (msg != NULL)
-    fprintf_filtered (gdb_stderr, "%s\n", msg.get ());
+    gdb_printf (gdb_stderr, "%s\n", msg.get ());
 }
 
 /* (execute string [#:from-tty boolean] [#:to-string boolean])
@@ -302,7 +307,7 @@ gdbscm_execute_gdb_command (SCM command_scm, SCM rest)
 
       scoped_restore preventer = prevent_dont_repeat ();
       if (to_string)
-	to_string_res = execute_command_to_string (command, from_tty, false);
+	execute_command_to_string (to_string_res, command, from_tty, false);
       else
 	execute_command (command, from_tty);
 
@@ -528,11 +533,11 @@ print_throw_error (SCM key, SCM args)
 static SCM
 handle_boot_error (void *boot_scm_file, SCM key, SCM args)
 {
-  fprintf_unfiltered (gdb_stderr, ("Exception caught while booting Guile.\n"));
+  gdb_printf (gdb_stderr, ("Exception caught while booting Guile.\n"));
 
   print_throw_error (key, args);
 
-  fprintf_unfiltered (gdb_stderr, "\n");
+  gdb_printf (gdb_stderr, "\n");
   warning (_("Could not complete Guile gdb module initialization from:\n"
 	     "%s.\n"
 	     "Limited Guile support is available.\n"
@@ -673,7 +678,17 @@ gdbscm_initialize (const struct extension_language_defn *extlang)
        "double free or corruption (out)" error.
        Work around the libguile bug by disabling the installation of the
        libgmp memory functions by guile initialization.  */
+
+    /* The scm_install_gmp_memory_functions variable should be removed after
+       version 3.0, so limit usage to 3.0 and before.  */
+#if SCM_MAJOR_VERSION < 3 || (SCM_MAJOR_VERSION == 3 && SCM_MINOR_VERSION == 0)
+    /* This variable is deprecated in Guile 3.0.8 and later but remains
+       available in the whole 3.0 series.  */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     scm_install_gmp_memory_functions = 0;
+#pragma GCC diagnostic pop
+#endif
 
     /* scm_with_guile is the most portable way to initialize Guile.  Plus
        we need to initialize the Guile support while in Guile mode (e.g.,
@@ -780,17 +795,17 @@ This command is only a placeholder.")
 	   );
   add_com_alias ("gu", guile_cmd_element, class_obscure, 1);
 
-  cmd_list_element *set_guile_cmd
-    = add_basic_prefix_cmd ("guile", class_obscure,
-			    _("Prefix command for Guile preference settings."),
-			    &set_guile_list, 0, &setlist);
-  add_alias_cmd ("gu", set_guile_cmd, class_obscure, 1, &setlist);
+  set_show_commands setshow_guile_cmds
+    = add_setshow_prefix_cmd ("guile", class_obscure,
+			      _("\
+Prefix command for Guile preference settings."),
+			      _("\
+Prefix command for Guile preference settings."),
+			      &set_guile_list, &show_guile_list,
+			      &setlist, &showlist);
 
-  cmd_list_element *show_guile_cmd
-    = add_show_prefix_cmd ("guile", class_obscure,
-			   _("Prefix command for Guile preference settings."),
-			   &show_guile_list, 0, &showlist);
-  add_alias_cmd ("gu", show_guile_cmd, class_obscure, 1, &showlist);
+  add_alias_cmd ("gu", setshow_guile_cmds.set, class_obscure, 1, &setlist);
+  add_alias_cmd ("gu", setshow_guile_cmds.show, class_obscure, 1, &showlist);
 
   cmd_list_element *info_guile_cmd
     = add_basic_prefix_cmd ("guile", class_obscure,

@@ -1,4 +1,4 @@
-# Copyright (C) 2009-2021 Free Software Foundation, Inc.
+# Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,17 +18,15 @@
 
 load_lib gdb-python.exp
 
+require allow_python_tests
+
 standard_testfile
 
 if { [prepare_for_testing "failed to prepare" ${testfile} ${srcfile}] } {
     return -1
 }
 
-# Skip all tests if Python scripting is not enabled.
-if { [skip_python_tests] } { continue }
-
-if ![runto_main] then {
-    fail "cannot run to main."
+if {![runto_main]} {
     return 0
 }
 
@@ -130,19 +128,19 @@ gdb_test "test_error_cmd ugh" "you lose!" "call error command"
 
 gdb_test "python print (gdb.string_to_argv (\"1 2 3\"))" \
   {\['1', '2', '3'\]} \
-  "string_to_argv (\"1 2 3\")"
+  "string_to_argv (\"1 2 3\"), case 1"
 
 gdb_test "python print (gdb.string_to_argv (\"'1 2' 3\"))" \
   {\['1 2', '3'\]} \
-  "string_to_argv (\"'1 2' 3\")"
+  "string_to_argv (\"'1 2' 3\"), case 2"
 
 gdb_test "python print (gdb.string_to_argv ('\"1 2\" 3'))" \
   {\['1 2', '3'\]} \
-  "string_to_argv ('\"1 2\" 3')"
+  "string_to_argv ('\"1 2\" 3'), case 3"
 
 gdb_test "python print (gdb.string_to_argv ('1\\ 2 3'))" \
   {\['1 2', '3'\]} \
-    "string_to_argv ('1\\ 2 3')"
+    "string_to_argv ('1\\ 2 3'), case 4"
 
 # Test user-defined python commands.
 gdb_test_multiline "input simple user-defined command" \
@@ -293,7 +291,7 @@ gdb_test_multiple "test_multiline" $test {
 
 send_gdb "q\n"
 set test "verify pagination from test_multiline: q"
-gdb_test_multiple "test_multiline" $test {
+gdb_test_multiple "" $test {
     -re "Error occurred in Python" {
 	fail $test
     }
@@ -301,3 +299,33 @@ gdb_test_multiple "test_multiline" $test {
 	pass $test
     }
 }
+
+# Test command redefining itself
+
+proc_with_prefix test_command_redefining_itself {} {
+    # Start with a fresh gdb
+    clean_restart
+
+
+    gdb_test_multiline "input command redefining itself" \
+	"python" "" \
+	"class redefine_cmd (gdb.Command):" "" \
+	"  def __init__ (self, msg):" "" \
+	"    super (redefine_cmd, self).__init__ (\"redefine_cmd\", gdb.COMMAND_OBSCURE)" "" \
+	"    self._msg = msg" "" \
+	"  def invoke (self, arg, from_tty):" "" \
+	"    print (\"redefine_cmd output, msg = %s\" % self._msg)" "" \
+	"    redefine_cmd (arg)" "" \
+	"redefine_cmd (\"XXX\")" "" \
+	"end" ""
+
+    gdb_test "redefine_cmd AAA" \
+	"redefine_cmd output, msg = XXX" \
+	"call command redefining itself 1"
+
+    gdb_test "redefine_cmd BBB" \
+	"redefine_cmd output, msg = AAA" \
+	"call command redefining itself 2"
+}
+
+test_command_redefining_itself

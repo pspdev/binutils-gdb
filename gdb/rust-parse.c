@@ -1,6 +1,6 @@
 /* Rust expression parsing for GDB, the GNU debugger.
 
-   Copyright (C) 2016-2021 Free Software Foundation, Inc.
+   Copyright (C) 2016-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,19 +17,19 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 
 #include "block.h"
 #include "charset.h"
 #include "cp-support.h"
-#include "gdb_obstack.h"
-#include "gdb_regex.h"
+#include "gdbsupport/gdb_obstack.h"
+#include "gdbsupport/gdb_regex.h"
 #include "rust-lang.h"
 #include "parser-defs.h"
 #include "gdbsupport/selftest.h"
 #include "value.h"
 #include "gdbarch.h"
 #include "rust-exp.h"
+#include "inferior.h"
 
 using namespace expr;
 
@@ -69,7 +69,7 @@ static const char number_regex_text[] =
 #define INT_TEXT 5
 #define INT_TYPE 6
   "(0x[a-fA-F0-9_]+|0o[0-7_]+|0b[01_]+|[0-9][0-9_]*)"
-  "([iu](size|8|16|32|64))?"
+  "([iu](size|8|16|32|64|128))?"
   ")";
 /* The number of subexpressions to allocate space for, including the
    "0th" whole match subexpression.  */
@@ -126,7 +126,7 @@ enum token_type : int
 
 struct typed_val_int
 {
-  ULONGEST val;
+  gdb_mpz val;
   struct type *type;
 };
 
@@ -271,7 +271,10 @@ struct rust_parser
   operation_up parse_entry_point ()
   {
     lex ();
-    return parse_expr ();
+    operation_up result = parse_expr ();
+    if (current_token != 0)
+      error (_("Syntax error near '%s'"), pstate->prev_lexptr);
+    return result;
   }
 
   operation_up parse_tuple ();
@@ -304,7 +307,7 @@ struct rust_parser
   void update_innermost_block (struct block_symbol sym);
   struct block_symbol lookup_symbol (const char *name,
 				     const struct block *block,
-				     const domain_enum domain);
+				     const domain_search_flags domain);
   struct type *rust_lookup_type (const char *name);
 
   /* Clear some state.  This is only used for testing.  */
@@ -370,7 +373,9 @@ rust_parser::crate_name (const std::string &name)
 std::string
 rust_parser::super_name (const std::string &ident, unsigned int n_supers)
 {
-  const char *scope = block_scope (pstate->expression_context_block);
+  const char *scope = "";
+  if (pstate->expression_context_block != nullptr)
+    scope = pstate->expression_context_block->scope ();
   int offset;
 
   if (scope[0] == '\0')
@@ -416,7 +421,7 @@ munge_name_and_block (const char **name, const struct block **block)
   if (startswith (*name, "::"))
     {
       *name += 2;
-      *block = block_static_block (*block);
+      *block = (*block)->static_block ();
     }
 }
 
@@ -425,7 +430,7 @@ munge_name_and_block (const char **name, const struct block **block)
 
 struct block_symbol
 rust_parser::lookup_symbol (const char *name, const struct block *block,
-			    const domain_enum domain)
+			    const domain_search_flags domain)
 {
   struct block_symbol result;
 
@@ -448,11 +453,11 @@ rust_parser::rust_lookup_type (const char *name)
   const struct block *block = pstate->expression_context_block;
   munge_name_and_block (&name, &block);
 
-  result = ::lookup_symbol (name, block, STRUCT_DOMAIN, NULL);
+  result = ::lookup_symbol (name, block, SEARCH_TYPE_DOMAIN, nullptr);
   if (result.symbol != NULL)
     {
       update_innermost_block (result);
-      return SYMBOL_TYPE (result.symbol);
+      return result.symbol->type ();
     }
 
   type = lookup_typename (language (), name, NULL, 1);
@@ -577,6 +582,36 @@ rust_parser::lex_escape (int is_byte)
   return result;
 }
 
+/* A helper for lex_character.  Search forward for the closing single
+   quote, then convert the bytes from the host charset to UTF-32.  */
+
+static uint32_t
+lex_multibyte_char (const char *text, int *len)
+{
+  /* Only look a maximum of 5 bytes for the closing quote.  This is
+     the maximum for UTF-8.  */
+  int quote;
+  gdb_assert (text[0] != '\'');
+  for (quote = 1; text[quote] != '\0' && text[quote] != '\''; ++quote)
+    ;
+  *len = quote;
+  /* The caller will issue an error.  */
+  if (text[quote] == '\0')
+    return 0;
+
+  auto_obstack result;
+  convert_between_encodings (host_charset (), HOST_UTF32,
+			     (const gdb_byte *) text,
+			     quote, 1, &result, translit_none);
+
+  int size = obstack_object_size (&result);
+  if (size > 4)
+    error (_("overlong character literal"));
+  uint32_t value;
+  memcpy (&value, obstack_finish (&result), size);
+  return value;
+}
+
 /* Lex a character constant.  */
 
 int
@@ -592,13 +627,15 @@ rust_parser::lex_character ()
     }
   gdb_assert (pstate->lexptr[0] == '\'');
   ++pstate->lexptr;
-  /* This should handle UTF-8 here.  */
-  if (pstate->lexptr[0] == '\\')
+  if (pstate->lexptr[0] == '\'')
+    error (_("empty character literal"));
+  else if (pstate->lexptr[0] == '\\')
     value = lex_escape (is_byte);
   else
     {
-      value = pstate->lexptr[0] & 0xff;
-      ++pstate->lexptr;
+      int len;
+      value = lex_multibyte_char (&pstate->lexptr[0], &len);
+      pstate->lexptr += len;
     }
 
   if (pstate->lexptr[0] != '\'')
@@ -695,7 +732,8 @@ rust_parser::lex_string ()
 	  if (is_byte)
 	    obstack_1grow (&obstack, value);
 	  else
-	    convert_between_encodings ("UTF-32", "UTF-8", (gdb_byte *) &value,
+	    convert_between_encodings (HOST_UTF32, "UTF-8",
+				       (gdb_byte *) &value,
 				       sizeof (value), sizeof (value),
 				       &obstack, translit_none);
 	}
@@ -739,7 +777,10 @@ rust_identifier_start_p (char c)
   return ((c >= 'a' && c <= 'z')
 	  || (c >= 'A' && c <= 'Z')
 	  || c == '_'
-	  || c == '$');
+	  || c == '$'
+	  /* Allow any non-ASCII character as an identifier.  There
+	     doesn't seem to be a need to be picky about this.  */
+	  || (c & 0x80) != 0);
 }
 
 /* Lex an identifier.  */
@@ -749,7 +790,6 @@ rust_parser::lex_identifier ()
 {
   unsigned int length;
   const struct token_info *token;
-  int i;
   int is_gdb_var = pstate->lexptr[0] == '$';
 
   bool is_raw = false;
@@ -766,13 +806,14 @@ rust_parser::lex_identifier ()
 
   ++pstate->lexptr;
 
-  /* For the time being this doesn't handle Unicode rules.  Non-ASCII
-     identifiers are gated anyway.  */
+  /* Allow any non-ASCII character here.  This "handles" UTF-8 by
+     passing it through.  */
   while ((pstate->lexptr[0] >= 'a' && pstate->lexptr[0] <= 'z')
 	 || (pstate->lexptr[0] >= 'A' && pstate->lexptr[0] <= 'Z')
 	 || pstate->lexptr[0] == '_'
 	 || (is_gdb_var && pstate->lexptr[0] == '$')
-	 || (pstate->lexptr[0] >= '0' && pstate->lexptr[0] <= '9'))
+	 || (pstate->lexptr[0] >= '0' && pstate->lexptr[0] <= '9')
+	 || (pstate->lexptr[0] & 0x80) != 0)
     ++pstate->lexptr;
 
 
@@ -780,12 +821,12 @@ rust_parser::lex_identifier ()
   token = NULL;
   if (!is_raw)
     {
-      for (i = 0; i < ARRAY_SIZE (identifier_tokens); ++i)
+      for (const auto &candidate : identifier_tokens)
 	{
-	  if (length == strlen (identifier_tokens[i].name)
-	      && strncmp (identifier_tokens[i].name, start, length) == 0)
+	  if (length == strlen (candidate.name)
+	      && strncmp (candidate.name, start, length) == 0)
 	    {
-	      token = &identifier_tokens[i];
+	      token = &candidate;
 	      break;
 	    }
 	}
@@ -838,15 +879,14 @@ int
 rust_parser::lex_operator ()
 {
   const struct token_info *token = NULL;
-  int i;
 
-  for (i = 0; i < ARRAY_SIZE (operator_tokens); ++i)
+  for (const auto &candidate : operator_tokens)
     {
-      if (strncmp (operator_tokens[i].name, pstate->lexptr,
-		   strlen (operator_tokens[i].name)) == 0)
+      if (strncmp (candidate.name, pstate->lexptr,
+		   strlen (candidate.name)) == 0)
 	{
-	  pstate->lexptr += strlen (operator_tokens[i].name);
-	  token = &operator_tokens[i];
+	  pstate->lexptr += strlen (candidate.name);
+	  token = &candidate;
 	  break;
 	}
     }
@@ -967,7 +1007,6 @@ rust_parser::lex_number ()
   /* Parse the number.  */
   if (is_integer)
     {
-      uint64_t value;
       int radix = 10;
       int offset = 0;
 
@@ -986,11 +1025,22 @@ rust_parser::lex_number ()
 	    }
 	}
 
-      value = strtoulst (number.c_str () + offset, NULL, radix);
-      if (implicit_i32 && value >= ((uint64_t) 1) << 31)
-	type = get_type ("i64");
+      if (!current_int_val.val.set (number.c_str () + offset, radix))
+	{
+	  /* Shouldn't be possible.  */
+	  error (_("Invalid integer"));
+	}
+      if (implicit_i32)
+	{
+	  static gdb_mpz sixty_three_bit = gdb_mpz::pow (2, 63);
+	  static gdb_mpz thirty_one_bit = gdb_mpz::pow (2, 31);
 
-      current_int_val.val = value;
+	  if (current_int_val.val >= sixty_three_bit)
+	    type = get_type ("i128");
+	  else if (current_int_val.val >= thirty_one_bit)
+	    type = get_type ("i64");
+	}
+
       current_int_val.type = type;
     }
   else
@@ -1100,7 +1150,7 @@ rust_parser::parse_tuple ()
     {
       /* Parenthesized expression.  */
       lex ();
-      return expr;
+      return make_operation<rust_parenthesized_operation> (std::move (expr));
     }
 
   std::vector<operation_up> ops;
@@ -1140,7 +1190,7 @@ rust_parser::parse_array ()
       result = make_operation<rust_array_operation> (std::move (expr),
 						     std::move (rhs));
     }
-  else if (current_token == ',')
+  else if (current_token == ',' || current_token == ']')
     {
       std::vector<operation_up> ops;
       ops.push_back (std::move (expr));
@@ -1155,7 +1205,7 @@ rust_parser::parse_array ()
       int len = ops.size () - 1;
       result = make_operation<array_operation> (0, len, std::move (ops));
     }
-  else if (current_token != ']')
+  else
     error (_("',', ';', or ']' expected"));
 
   require (']');
@@ -1170,16 +1220,16 @@ rust_parser::name_to_operation (const std::string &name)
 {
   struct block_symbol sym = lookup_symbol (name.c_str (),
 					   pstate->expression_context_block,
-					   VAR_DOMAIN);
-  if (sym.symbol != nullptr && SYMBOL_CLASS (sym.symbol) != LOC_TYPEDEF)
+					   SEARCH_VFT);
+  if (sym.symbol != nullptr && sym.symbol->aclass () != LOC_TYPEDEF)
     return make_operation<var_value_operation> (sym);
 
   struct type *type = nullptr;
 
   if (sym.symbol != nullptr)
     {
-      gdb_assert (SYMBOL_CLASS (sym.symbol) == LOC_TYPEDEF);
-      type = SYMBOL_TYPE (sym.symbol);
+      gdb_assert (sym.symbol->aclass () == LOC_TYPEDEF);
+      type = sym.symbol->type ();
     }
   if (type == nullptr)
     type = rust_lookup_type (name.c_str ());
@@ -1303,6 +1353,8 @@ rust_parser::parse_binop (bool required)
   OPERATION (ANDAND, 2, logical_and_operation)	\
   OPERATION (OROR, 1, logical_or_operation)
 
+#define ASSIGN_PREC 0
+
   operation_up start = parse_atom (required);
   if (start == nullptr)
     {
@@ -1333,9 +1385,9 @@ rust_parser::parse_binop (bool required)
 
 	case COMPOUND_ASSIGN:
 	  compound_assign_op = current_opcode;
-	  /* FALLTHROUGH */
+	  [[fallthrough]];
 	case '=':
-	  precedence = 0;
+	  precedence = ASSIGN_PREC;
 	  lex ();
 	  break;
 
@@ -1355,9 +1407,13 @@ rust_parser::parse_binop (bool required)
 	  /* Arrange to pop the entire stack.  */
 	  precedence = -2;
 	  break;
-        }
+	}
 
-      while (precedence < operator_stack.back ().precedence
+      /* Make sure that assignments are right-associative while other
+	 operations are left-associative.  */
+      while ((precedence == ASSIGN_PREC
+	      ? precedence < operator_stack.back ().precedence
+	      : precedence <= operator_stack.back ().precedence)
 	     && operator_stack.size () > 1)
 	{
 	  rustop_item rhs = std::move (operator_stack.back ());
@@ -1507,9 +1563,11 @@ rust_parser::parse_field (operation_up &&lhs)
       break;
 
     case DECIMAL_INTEGER:
-      result = make_operation<rust_struct_anon> (current_int_val.val,
-						 std::move (lhs));
-      lex ();
+      {
+	int idx = current_int_val.val.as_integer<int> ();
+	result = make_operation<rust_struct_anon> (idx, std::move (lhs));
+	lex ();
+      }
       break;
 
     case INTEGER:
@@ -1610,7 +1668,7 @@ rust_parser::parse_array_type ()
 
   if (current_token != INTEGER && current_token != DECIMAL_INTEGER)
     error (_("integer expected"));
-  ULONGEST val = current_int_val.val;
+  ULONGEST val = current_int_val.val.as_integer<ULONGEST> ();
   lex ();
   require (']');
 
@@ -1623,6 +1681,16 @@ struct type *
 rust_parser::parse_slice_type ()
 {
   assume ('&');
+
+  /* Handle &str specially.  This is an important type in Rust.  While
+     the compiler does emit the "&str" type in the DWARF, just "str"
+     itself isn't always available -- but it's handy if this works
+     seamlessly.  */
+  if (current_token == IDENT && get_string () == "str")
+    {
+      lex ();
+      return rust_slice_type ("&str", get_type ("u8"), get_type ("usize"));
+    }
 
   bool is_slice = current_token == '[';
   if (is_slice)
@@ -1762,7 +1830,7 @@ rust_parser::parse_path (bool for_expr)
       if (current_token != COLONCOLON)
 	return "self";
       lex ();
-      /* FALLTHROUGH */
+      [[fallthrough]];
     case KW_SUPER:
       while (current_token == KW_SUPER)
 	{
@@ -1985,6 +2053,7 @@ rust_parser::parse_atom (bool required)
 
     case STRING:
       result = parse_string ();
+      lex ();
       break;
 
     case BYTESTRING:
@@ -2239,11 +2308,9 @@ rust_lex_test_push_back (rust_parser *parser)
 static void
 rust_lex_tests (void)
 {
-  int i;
-
   /* Set up dummy "parser", so that rust_type works.  */
-  struct parser_state ps (language_def (language_rust), target_gdbarch (),
-			  nullptr, 0, 0, nullptr, 0, nullptr, false);
+  parser_state ps (language_def (language_rust), current_inferior ()->arch (),
+		   nullptr, 0, 0, nullptr, 0, nullptr);
   rust_parser parser (&ps);
 
   rust_lex_test_one (&parser, "", 0);
@@ -2335,13 +2402,11 @@ rust_lex_tests (void)
   rust_lex_stringish_test (&parser, "br####\"\\x73tring\"####", "\\x73tring",
 			   BYTESTRING);
 
-  for (i = 0; i < ARRAY_SIZE (identifier_tokens); ++i)
-    rust_lex_test_one (&parser, identifier_tokens[i].name,
-		       identifier_tokens[i].value);
+  for (const auto &candidate : identifier_tokens)
+    rust_lex_test_one (&parser, candidate.name, candidate.value);
 
-  for (i = 0; i < ARRAY_SIZE (operator_tokens); ++i)
-    rust_lex_test_one (&parser, operator_tokens[i].name,
-		       operator_tokens[i].value);
+  for (const auto &candidate : operator_tokens)
+    rust_lex_test_one (&parser, candidate.name, candidate.value);
 
   rust_lex_test_completion (&parser);
   rust_lex_test_push_back (&parser);

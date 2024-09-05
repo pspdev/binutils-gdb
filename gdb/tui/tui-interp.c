@@ -1,6 +1,6 @@
 /* TUI Interpreter definitions for GDB, the GNU debugger.
 
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,21 +17,15 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "cli/cli-interp.h"
 #include "interps.h"
-#include "top.h"
+#include "ui.h"
 #include "event-top.h"
-#include "gdbsupport/event-loop.h"
 #include "ui-out.h"
 #include "cli-out.h"
-#include "tui/tui-data.h"
 #include "tui/tui-win.h"
 #include "tui/tui.h"
 #include "tui/tui-io.h"
-#include "infrun.h"
-#include "observable.h"
-#include "gdbthread.h"
 #include "inferior.h"
 #include "main.h"
 
@@ -49,18 +43,12 @@ public:
   void init (bool top_level) override;
   void resume () override;
   void suspend () override;
-  gdb_exception exec (const char *command_str) override;
+  void exec (const char *command_str) override;
   ui_out *interp_ui_out () override;
+
+  bool supports_new_ui () const override
+  { return false; }
 };
-
-/* Returns the INTERP if the INTERP is a TUI, and returns NULL
-   otherwise.  */
-
-static tui_interp *
-as_tui_interp (struct interp *interp)
-{
-  return dynamic_cast<tui_interp *> (interp);
-}
 
 /* Cleanup the tui before exiting.  */
 
@@ -72,167 +60,6 @@ tui_exit (void)
   tui_disable ();
 }
 
-/* Observers for several run control events.  If the interpreter is
-   quiet (i.e., another interpreter is being run with
-   interpreter-exec), print nothing.  */
-
-/* Observer for the normal_stop notification.  */
-
-static void
-tui_on_normal_stop (struct bpstats *bs, int print_frame)
-{
-  if (!print_frame)
-    return;
-
-  SWITCH_THRU_ALL_UIS ()
-    {
-      struct interp *interp = top_level_interpreter ();
-      struct interp *tui = as_tui_interp (interp);
-      struct thread_info *thread;
-
-      if (tui == NULL)
-	continue;
-
-      thread = inferior_thread ();
-      if (should_print_stop_to_console (interp, thread))
-	print_stop_event (tui->interp_ui_out ());
-    }
-}
-
-/* Observer for the signal_received notification.  */
-
-static void
-tui_on_signal_received (enum gdb_signal siggnal)
-{
-  SWITCH_THRU_ALL_UIS ()
-    {
-      struct interp *tui = as_tui_interp (top_level_interpreter ());
-
-      if (tui == NULL)
-	continue;
-
-      print_signal_received_reason (tui->interp_ui_out (), siggnal);
-    }
-}
-
-/* Observer for the end_stepping_range notification.  */
-
-static void
-tui_on_end_stepping_range (void)
-{
-  SWITCH_THRU_ALL_UIS ()
-    {
-      struct interp *tui = as_tui_interp (top_level_interpreter ());
-
-      if (tui == NULL)
-	continue;
-
-      print_end_stepping_range_reason (tui->interp_ui_out ());
-    }
-}
-
-/* Observer for the signal_exited notification.  */
-
-static void
-tui_on_signal_exited (enum gdb_signal siggnal)
-{
-  SWITCH_THRU_ALL_UIS ()
-    {
-      struct interp *tui = as_tui_interp (top_level_interpreter ());
-
-      if (tui == NULL)
-	continue;
-
-      print_signal_exited_reason (tui->interp_ui_out (), siggnal);
-    }
-}
-
-/* Observer for the exited notification.  */
-
-static void
-tui_on_exited (int exitstatus)
-{
-  SWITCH_THRU_ALL_UIS ()
-    {
-      struct interp *tui = as_tui_interp (top_level_interpreter ());
-
-      if (tui == NULL)
-	continue;
-
-      print_exited_reason (tui->interp_ui_out (), exitstatus);
-    }
-}
-
-/* Observer for the no_history notification.  */
-
-static void
-tui_on_no_history (void)
-{
-  SWITCH_THRU_ALL_UIS ()
-    {
-      struct interp *tui = as_tui_interp (top_level_interpreter ());
-
-      if (tui == NULL)
-	continue;
-
-      print_no_history_reason (tui->interp_ui_out ());
-    }
-}
-
-/* Observer for the sync_execution_done notification.  */
-
-static void
-tui_on_sync_execution_done (void)
-{
-  struct interp *tui = as_tui_interp (top_level_interpreter ());
-
-  if (tui == NULL)
-    return;
-
-  display_gdb_prompt (NULL);
-}
-
-/* Observer for the command_error notification.  */
-
-static void
-tui_on_command_error (void)
-{
-  struct interp *tui = as_tui_interp (top_level_interpreter ());
-
-  if (tui == NULL)
-    return;
-
-  display_gdb_prompt (NULL);
-}
-
-/* Observer for the user_selected_context_changed notification.  */
-
-static void
-tui_on_user_selected_context_changed (user_selected_what selection)
-{
-  /* This event is suppressed.  */
-  if (cli_suppress_notification.user_selected_context)
-    return;
-
-  thread_info *tp = inferior_ptid != null_ptid ? inferior_thread () : NULL;
-
-  SWITCH_THRU_ALL_UIS ()
-    {
-      struct interp *tui = as_tui_interp (top_level_interpreter ());
-
-      if (tui == NULL)
-	continue;
-
-      if (selection & USER_SELECTED_INFERIOR)
-	print_selected_inferior (tui->interp_ui_out ());
-
-      if (tp != NULL
-	  && ((selection & (USER_SELECTED_THREAD | USER_SELECTED_FRAME))))
-	print_selected_thread_frame (tui->interp_ui_out (), selection);
-
-    }
-}
-
 /* These implement the TUI interpreter.  */
 
 void
@@ -242,9 +69,15 @@ tui_interp::init (bool top_level)
   atexit (tui_exit);
 
   tui_initialize_io ();
-  tui_initialize_win ();
   if (gdb_stdout->isatty ())
-    tui_ensure_readline_initialized ();
+    {
+      tui_ensure_readline_initialized ();
+
+      /* This installs the SIGWINCH signal handler.  The handler needs to do
+	 readline calls (to rl_resize_terminal), so it must not be installed
+	 unless readline is properly initialized.  */
+      tui_initialize_win ();
+    }
 }
 
 /* Used as the command handler for the tui.  */
@@ -299,6 +132,7 @@ tui_interp::resume ()
 void
 tui_interp::suspend ()
 {
+  gdb_disable_readline ();
   tui_start_enabled = tui_active;
   tui_disable ();
 }
@@ -312,10 +146,10 @@ tui_interp::interp_ui_out ()
     return tui_old_uiout;
 }
 
-gdb_exception
+void
 tui_interp::exec (const char *command_str)
 {
-  internal_error (__FILE__, __LINE__, _("tui_exec called"));
+  internal_error (_("tui_exec called"));
 }
 
 
@@ -333,26 +167,13 @@ _initialize_tui_interp ()
 {
   interp_factory_register (INTERP_TUI, tui_interp_factory);
 
-  if (interpreter_p && strcmp (interpreter_p, INTERP_TUI) == 0)
+  if (interpreter_p == INTERP_TUI)
     tui_start_enabled = true;
 
-  if (interpreter_p && strcmp (interpreter_p, INTERP_CONSOLE) == 0)
-    {
-      xfree (interpreter_p);
-      interpreter_p = xstrdup (INTERP_TUI);
-    }
+  if (interpreter_p == INTERP_CONSOLE)
+    interpreter_p = INTERP_TUI;
 
-  /* If changing this, remember to update cli-interp.c as well.  */
-  gdb::observers::normal_stop.attach (tui_on_normal_stop, "tui-interp");
-  gdb::observers::signal_received.attach (tui_on_signal_received, "tui-interp");
-  gdb::observers::end_stepping_range.attach (tui_on_end_stepping_range,
-					     "tui-interp");
-  gdb::observers::signal_exited.attach (tui_on_signal_exited, "tui-interp");
-  gdb::observers::exited.attach (tui_on_exited, "tui-interp");
-  gdb::observers::no_history.attach (tui_on_no_history, "tui-interp");
-  gdb::observers::sync_execution_done.attach (tui_on_sync_execution_done,
-					      "tui-interp");
-  gdb::observers::command_error.attach (tui_on_command_error, "tui-interp");
-  gdb::observers::user_selected_context_changed.attach
-    (tui_on_user_selected_context_changed, "tui-interp");
+  /* There are no observers here because the CLI interpreter's
+     observers work for the TUI interpreter as well.  See
+     cli-interp.c.  */
 }

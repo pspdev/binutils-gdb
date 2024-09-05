@@ -1,6 +1,6 @@
 /* GDB-specific functions for operating on agent expressions.
 
-   Copyright (C) 1998-2021 Free Software Foundation, Inc.
+   Copyright (C) 1998-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "symtab.h"
 #include "symfile.h"
 #include "gdbtypes.h"
@@ -25,7 +24,7 @@
 #include "value.h"
 #include "expression.h"
 #include "command.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "frame.h"
 #include "target.h"
 #include "ax.h"
@@ -210,7 +209,7 @@ gen_trace_static_fields (struct agent_expr *ax,
 
   for (i = type->num_fields () - 1; i >= nbases; i--)
     {
-      if (field_is_static (&type->field (i)))
+      if (type->field (i).is_static ())
 	{
 	  gen_static_field (ax, &value, type, i);
 	  if (value.optimized_out)
@@ -221,7 +220,7 @@ gen_trace_static_fields (struct agent_expr *ax,
 	      {
 		/* Initialize the TYPE_LENGTH if it is a typedef.  */
 		check_typedef (value.type);
-		ax_const_l (ax, TYPE_LENGTH (value.type));
+		ax_const_l (ax, value.type->length ());
 		ax_simple (ax, aop_trace);
 	      }
 	      break;
@@ -255,7 +254,7 @@ gen_traced_pop (struct agent_expr *ax, struct axs_value *value)
   int string_trace = 0;
   if (ax->trace_string
       && value->type->code () == TYPE_CODE_PTR
-      && c_textual_element_type (check_typedef (TYPE_TARGET_TYPE (value->type)),
+      && c_textual_element_type (check_typedef (value->type->target_type ()),
 				 's'))
     string_trace = 1;
 
@@ -292,7 +291,7 @@ gen_traced_pop (struct agent_expr *ax, struct axs_value *value)
 		 "const8 SIZE trace" is also three bytes, does the same
 		 thing, and the simplest code which generates that will also
 		 work correctly for objects with large sizes.  */
-	      ax_const_l (ax, TYPE_LENGTH (value->type));
+	      ax_const_l (ax, value->type->length ());
 	      ax_simple (ax, aop_trace);
 	    }
 	}
@@ -337,7 +336,7 @@ gen_sign_extend (struct agent_expr *ax, struct type *type)
 {
   /* Do we need to sign-extend this?  */
   if (!type->is_unsigned ())
-    ax_ext (ax, TYPE_LENGTH (type) * TARGET_CHAR_BIT);
+    ax_ext (ax, type->length () * TARGET_CHAR_BIT);
 }
 
 
@@ -347,12 +346,22 @@ gen_sign_extend (struct agent_expr *ax, struct type *type)
 static void
 gen_extend (struct agent_expr *ax, struct type *type)
 {
-  int bits = TYPE_LENGTH (type) * TARGET_CHAR_BIT;
+  int bits = type->length () * TARGET_CHAR_BIT;
 
   /* I just had to.  */
   ((type->is_unsigned () ? ax_zero_ext : ax_ext) (ax, bits));
 }
 
+/* A helper that returns the target type if TYPE is a range type, or
+   otherwise just returns TYPE.  */
+
+static struct type *
+strip_range_type (struct type *type)
+{
+  if (type->code () == TYPE_CODE_RANGE)
+    return type->target_type ();
+  return type;
+}
 
 /* Assume that the top of the stack contains a value of type "pointer
    to TYPE"; generate code to fetch its value.  Note that TYPE is the
@@ -363,11 +372,10 @@ gen_fetch (struct agent_expr *ax, struct type *type)
   if (ax->tracing)
     {
       /* Record the area of memory we're about to fetch.  */
-      ax_trace_quick (ax, TYPE_LENGTH (type));
+      ax_trace_quick (ax, type->length ());
     }
 
-  if (type->code () == TYPE_CODE_RANGE)
-    type = TYPE_TARGET_TYPE (type);
+  type = strip_range_type (type);
 
   switch (type->code ())
     {
@@ -380,7 +388,7 @@ gen_fetch (struct agent_expr *ax, struct type *type)
     case TYPE_CODE_BOOL:
       /* It's a scalar value, so we know how to dereference it.  How
 	 many bytes long is it?  */
-      switch (TYPE_LENGTH (type))
+      switch (type->length ())
 	{
 	case 8 / TARGET_CHAR_BIT:
 	  ax_simple (ax, aop_ref8);
@@ -400,8 +408,7 @@ gen_fetch (struct agent_expr *ax, struct type *type)
 	     implementing something we should be (this code's fault).
 	     In any case, it's a bug the user shouldn't see.  */
 	default:
-	  internal_error (__FILE__, __LINE__,
-			  _("gen_fetch: strange size"));
+	  internal_error (_("gen_fetch: strange size"));
 	}
 
       gen_sign_extend (ax, type);
@@ -499,7 +506,7 @@ gen_offset (struct agent_expr *ax, int offset)
 static void
 gen_sym_offset (struct agent_expr *ax, struct symbol *var)
 {
-  gen_offset (ax, SYMBOL_VALUE (var));
+  gen_offset (ax, var->value_longest ());
 }
 
 
@@ -510,37 +517,34 @@ static void
 gen_var_ref (struct agent_expr *ax, struct axs_value *value, struct symbol *var)
 {
   /* Dereference any typedefs.  */
-  value->type = check_typedef (SYMBOL_TYPE (var));
+  value->type = check_typedef (var->type ());
   value->optimized_out = 0;
 
-  if (SYMBOL_COMPUTED_OPS (var) != NULL)
-    {
-      SYMBOL_COMPUTED_OPS (var)->tracepoint_var_ref (var, ax, value);
-      return;
-    }
+  if (const symbol_computed_ops *computed_ops = var->computed_ops ();
+      computed_ops != nullptr)
+    return computed_ops->tracepoint_var_ref (var, ax, value);
 
   /* I'm imitating the code in read_var_value.  */
-  switch (SYMBOL_CLASS (var))
+  switch (var->aclass ())
     {
     case LOC_CONST:		/* A constant, like an enum value.  */
-      ax_const_l (ax, (LONGEST) SYMBOL_VALUE (var));
+      ax_const_l (ax, (LONGEST) var->value_longest ());
       value->kind = axs_rvalue;
       break;
 
     case LOC_LABEL:		/* A goto label, being used as a value.  */
-      ax_const_l (ax, (LONGEST) SYMBOL_VALUE_ADDRESS (var));
+      ax_const_l (ax, (LONGEST) var->value_address ());
       value->kind = axs_rvalue;
       break;
 
     case LOC_CONST_BYTES:
-      internal_error (__FILE__, __LINE__,
-		      _("gen_var_ref: LOC_CONST_BYTES "
+      internal_error (_("gen_var_ref: LOC_CONST_BYTES "
 			"symbols are not supported"));
 
       /* Variable at a fixed location in memory.  Easy.  */
     case LOC_STATIC:
       /* Push the address of the variable.  */
-      ax_const_l (ax, SYMBOL_VALUE_ADDRESS (var));
+      ax_const_l (ax, var->value_address ());
       value->kind = axs_lvalue_memory;
       break;
 
@@ -571,7 +575,7 @@ gen_var_ref (struct agent_expr *ax, struct axs_value *value, struct symbol *var)
       break;
 
     case LOC_BLOCK:
-      ax_const_l (ax, BLOCK_ENTRY_PC (SYMBOL_BLOCK_VALUE (var)));
+      ax_const_l (ax, var->value_block ()->entry_pc ());
       value->kind = axs_rvalue;
       break;
 
@@ -580,8 +584,7 @@ gen_var_ref (struct agent_expr *ax, struct axs_value *value, struct symbol *var)
 	 this as an lvalue or rvalue, the caller will generate the
 	 right code.  */
       value->kind = axs_lvalue_register;
-      value->u.reg
-	= SYMBOL_REGISTER_OPS (var)->register_number (var, ax->gdbarch);
+      value->u.reg = var->register_ops ()->register_number (var, ax->gdbarch);
       break;
 
       /* A lot like LOC_REF_ARG, but the pointer lives directly in a
@@ -589,27 +592,26 @@ gen_var_ref (struct agent_expr *ax, struct axs_value *value, struct symbol *var)
 	 because it's just like any other case where the thing
 	 has a real address.  */
     case LOC_REGPARM_ADDR:
-      ax_reg (ax,
-	      SYMBOL_REGISTER_OPS (var)->register_number (var, ax->gdbarch));
+      ax_reg (ax, var->register_ops ()->register_number (var, ax->gdbarch));
       value->kind = axs_lvalue_memory;
       break;
 
     case LOC_UNRESOLVED:
       {
-	struct bound_minimal_symbol msym
-	  = lookup_minimal_symbol (var->linkage_name (), NULL, NULL);
-
+	bound_minimal_symbol msym
+	  = lookup_minimal_symbol (current_program_space,
+				   var->linkage_name ());
 	if (!msym.minsym)
 	  error (_("Couldn't resolve symbol `%s'."), var->print_name ());
 
 	/* Push the address of the variable.  */
-	ax_const_l (ax, BMSYMBOL_VALUE_ADDRESS (msym));
+	ax_const_l (ax, msym.value_address ());
 	value->kind = axs_lvalue_memory;
       }
       break;
 
     case LOC_COMPUTED:
-      gdb_assert_not_reached (_("LOC_COMPUTED variable missing a method"));
+      gdb_assert_not_reached ("LOC_COMPUTED variable missing a method");
 
     case LOC_OPTIMIZED_OUT:
       /* Flag this, but don't say anything; leave it up to callers to
@@ -735,7 +737,7 @@ gen_usual_unary (struct agent_expr *ax, struct axs_value *value)
 	 are no longer an lvalue.  */
     case TYPE_CODE_ARRAY:
       {
-	struct type *elements = TYPE_TARGET_TYPE (value->type);
+	struct type *elements = value->type->target_type ();
 
 	value->type = lookup_pointer_type (elements);
 	value->kind = axs_rvalue;
@@ -761,8 +763,8 @@ gen_usual_unary (struct agent_expr *ax, struct axs_value *value)
 static int
 type_wider_than (struct type *type1, struct type *type2)
 {
-  return (TYPE_LENGTH (type1) > TYPE_LENGTH (type2)
-	  || (TYPE_LENGTH (type1) == TYPE_LENGTH (type2)
+  return (type1->length () > type2->length ()
+	  || (type1->length () == type2->length ()
 	      && type1->is_unsigned ()
 	      && !type2->is_unsigned ()));
 }
@@ -784,12 +786,12 @@ gen_conversion (struct agent_expr *ax, struct type *from, struct type *to)
 
   /* If we're converting to a narrower type, then we need to clear out
      the upper bits.  */
-  if (TYPE_LENGTH (to) < TYPE_LENGTH (from))
+  if (to->length () < from->length ())
     gen_extend (ax, to);
 
   /* If the two values have equal width, but different signednesses,
      then we need to extend.  */
-  else if (TYPE_LENGTH (to) == TYPE_LENGTH (from))
+  else if (to->length () == from->length ())
     {
       if (from->is_unsigned () != to->is_unsigned ())
 	gen_extend (ax, to);
@@ -797,7 +799,7 @@ gen_conversion (struct agent_expr *ax, struct type *from, struct type *to)
 
   /* If we're converting to a wider type, and becoming unsigned, then
      we need to zero out any possible sign bits.  */
-  else if (TYPE_LENGTH (to) > TYPE_LENGTH (from))
+  else if (to->length () > from->length ())
     {
       if (to->is_unsigned ())
 	gen_extend (ax, to);
@@ -811,7 +813,6 @@ static int
 is_nontrivial_conversion (struct type *from, struct type *to)
 {
   agent_expr_up ax (new agent_expr (NULL, 0));
-  int nontrivial;
 
   /* Actually generate the code, and see if anything came out.  At the
      moment, it would be trivial to replicate the code in
@@ -820,8 +821,7 @@ is_nontrivial_conversion (struct type *from, struct type *to)
      way allows this function to be independent of the logic in
      gen_conversion.  */
   gen_conversion (ax.get (), from, to);
-  nontrivial = ax->len > 0;
-  return nontrivial;
+  return !ax->buf.empty ();
 }
 
 
@@ -834,9 +834,12 @@ static void
 gen_usual_arithmetic (struct agent_expr *ax, struct axs_value *value1,
 		      struct axs_value *value2)
 {
+  struct type *type1 = strip_range_type (value1->type);
+  struct type *type2 = strip_range_type (value2->type);
+
   /* Do the usual binary conversions.  */
-  if (value1->type->code () == TYPE_CODE_INT
-      && value2->type->code () == TYPE_CODE_INT)
+  if (type1->code () == TYPE_CODE_INT
+      && type2->code () == TYPE_CODE_INT)
     {
       /* The ANSI integral promotions seem to work this way: Order the
 	 integer types by size, and then by signedness: an n-bit
@@ -844,18 +847,18 @@ gen_usual_arithmetic (struct agent_expr *ax, struct axs_value *value1,
 	 type.  Promote to the "wider" of the two types, and always
 	 promote at least to int.  */
       struct type *target = max_type (builtin_type (ax->gdbarch)->builtin_int,
-				      max_type (value1->type, value2->type));
+				      max_type (type1, type2));
 
       /* Deal with value2, on the top of the stack.  */
-      gen_conversion (ax, value2->type, target);
+      gen_conversion (ax, type2, target);
 
       /* Deal with value1, not on the top of the stack.  Don't
 	 generate the `swap' instructions if we're not actually going
 	 to do anything.  */
-      if (is_nontrivial_conversion (value1->type, target))
+      if (is_nontrivial_conversion (type1, target))
 	{
 	  ax_simple (ax, aop_swap);
-	  gen_conversion (ax, value1->type, target);
+	  gen_conversion (ax, type1, target);
 	  ax_simple (ax, aop_swap);
 	}
 
@@ -894,6 +897,7 @@ gen_cast (struct agent_expr *ax, struct axs_value *value, struct type *type)
   require_rvalue (ax, value);
   /* Dereference typedefs.  */
   type = check_typedef (type);
+  type = strip_range_type (type);
 
   switch (type->code ())
     {
@@ -946,11 +950,11 @@ gen_cast (struct agent_expr *ax, struct axs_value *value, struct type *type)
 static void
 gen_scale (struct agent_expr *ax, enum agent_op op, struct type *type)
 {
-  struct type *element = TYPE_TARGET_TYPE (type);
+  struct type *element = type->target_type ();
 
-  if (TYPE_LENGTH (element) != 1)
+  if (element->length () != 1)
     {
-      ax_const_l (ax, TYPE_LENGTH (element));
+      ax_const_l (ax, element->length ());
       ax_simple (ax, op);
     }
 }
@@ -961,8 +965,8 @@ static void
 gen_ptradd (struct agent_expr *ax, struct axs_value *value,
 	    struct axs_value *value1, struct axs_value *value2)
 {
-  gdb_assert (pointer_type (value1->type));
-  gdb_assert (value2->type->code () == TYPE_CODE_INT);
+  gdb_assert (value1->type->is_pointer_or_reference ());
+  gdb_assert (strip_range_type (value2->type)->code () == TYPE_CODE_INT);
 
   gen_scale (ax, aop_mul, value1->type);
   ax_simple (ax, aop_add);
@@ -977,8 +981,8 @@ static void
 gen_ptrsub (struct agent_expr *ax, struct axs_value *value,
 	    struct axs_value *value1, struct axs_value *value2)
 {
-  gdb_assert (pointer_type (value1->type));
-  gdb_assert (value2->type->code () == TYPE_CODE_INT);
+  gdb_assert (value1->type->is_pointer_or_reference ());
+  gdb_assert (strip_range_type (value2->type)->code () == TYPE_CODE_INT);
 
   gen_scale (ax, aop_mul, value1->type);
   ax_simple (ax, aop_sub);
@@ -994,11 +998,11 @@ gen_ptrdiff (struct agent_expr *ax, struct axs_value *value,
 	     struct axs_value *value1, struct axs_value *value2,
 	     struct type *result_type)
 {
-  gdb_assert (pointer_type (value1->type));
-  gdb_assert (pointer_type (value2->type));
+  gdb_assert (value1->type->is_pointer_or_reference ());
+  gdb_assert (value2->type->is_pointer_or_reference ());
 
-  if (TYPE_LENGTH (TYPE_TARGET_TYPE (value1->type))
-      != TYPE_LENGTH (TYPE_TARGET_TYPE (value2->type)))
+  if (value1->type->target_type ()->length ()
+      != value2->type->target_type ()->length ())
     error (_("\
 First argument of `-' is a pointer, but second argument is neither\n\
 an integer nor a pointer of the same type."));
@@ -1014,7 +1018,7 @@ gen_equal (struct agent_expr *ax, struct axs_value *value,
 	   struct axs_value *value1, struct axs_value *value2,
 	   struct type *result_type)
 {
-  if (pointer_type (value1->type) || pointer_type (value2->type))
+  if (value1->type->is_pointer_or_reference () || value2->type->is_pointer_or_reference ())
     ax_simple (ax, aop_equal);
   else
     gen_binop (ax, value, value1, value2,
@@ -1028,7 +1032,7 @@ gen_less (struct agent_expr *ax, struct axs_value *value,
 	  struct axs_value *value1, struct axs_value *value2,
 	  struct type *result_type)
 {
-  if (pointer_type (value1->type) || pointer_type (value2->type))
+  if (value1->type->is_pointer_or_reference () || value2->type->is_pointer_or_reference ())
     ax_simple (ax, aop_less_unsigned);
   else
     gen_binop (ax, value, value1, value2,
@@ -1050,14 +1054,15 @@ gen_binop (struct agent_expr *ax, struct axs_value *value,
 	   int may_carry, const char *name)
 {
   /* We only handle INT op INT.  */
-  if ((value1->type->code () != TYPE_CODE_INT)
-      || (value2->type->code () != TYPE_CODE_INT))
+  struct type *type1 = strip_range_type (value1->type);
+  if ((type1->code () != TYPE_CODE_INT)
+      || (strip_range_type (value2->type)->code () != TYPE_CODE_INT))
     error (_("Invalid combination of types in %s."), name);
 
-  ax_simple (ax, value1->type->is_unsigned () ? op_unsigned : op);
+  ax_simple (ax, type1->is_unsigned () ? op_unsigned : op);
   if (may_carry)
-    gen_extend (ax, value1->type);	/* catch overflow */
-  value->type = value1->type;
+    gen_extend (ax, type1);	/* catch overflow */
+  value->type = type1;
   value->kind = axs_rvalue;
 }
 
@@ -1066,8 +1071,9 @@ static void
 gen_logical_not (struct agent_expr *ax, struct axs_value *value,
 		 struct type *result_type)
 {
-  if (value->type->code () != TYPE_CODE_INT
-      && value->type->code () != TYPE_CODE_PTR)
+  struct type *type = strip_range_type (value->type);
+  if (type->code () != TYPE_CODE_INT
+      && type->code () != TYPE_CODE_PTR)
     error (_("Invalid type of operand to `!'."));
 
   ax_simple (ax, aop_log_not);
@@ -1078,11 +1084,12 @@ gen_logical_not (struct agent_expr *ax, struct axs_value *value,
 static void
 gen_complement (struct agent_expr *ax, struct axs_value *value)
 {
-  if (value->type->code () != TYPE_CODE_INT)
+  struct type *type = strip_range_type (value->type);
+  if (type->code () != TYPE_CODE_INT)
     error (_("Invalid type of operand to `~'."));
 
   ax_simple (ax, aop_bit_not);
-  gen_extend (ax, value->type);
+  gen_extend (ax, type);
 }
 
 
@@ -1095,16 +1102,15 @@ gen_deref (struct axs_value *value)
 {
   /* The caller should check the type, because several operators use
      this, and we don't know what error message to generate.  */
-  if (!pointer_type (value->type))
-    internal_error (__FILE__, __LINE__,
-		    _("gen_deref: expected a pointer"));
+  if (!value->type->is_pointer_or_reference ())
+    internal_error (_("gen_deref: expected a pointer"));
 
   /* We've got an rvalue now, which is a pointer.  We want to yield an
      lvalue, whose address is exactly that pointer.  So we don't
      actually emit any code; we just change the type from "Pointer to
      T" to "T", and mark the value as an lvalue in memory.  Leave it
      to the consumer to actually dereference it.  */
-  value->type = check_typedef (TYPE_TARGET_TYPE (value->type));
+  value->type = check_typedef (value->type->target_type ());
   if (value->type->code () == TYPE_CODE_VOID)
     error (_("Attempt to dereference a generic pointer."));
   value->kind = ((value->type->code () == TYPE_CODE_FUNC)
@@ -1200,8 +1206,7 @@ gen_bitfield_ref (struct agent_expr *ax, struct axs_value *value,
 
   /* Can we fetch the number of bits requested at all?  */
   if ((end - start) > ((1 << num_ops) * 8))
-    internal_error (__FILE__, __LINE__,
-		    _("gen_bitfield_ref: bitfield too wide"));
+    internal_error (_("gen_bitfield_ref: bitfield too wide"));
 
   /* Note that we know here that we only need to try each opcode once.
      That may not be true on machines with weird byte sizes.  */
@@ -1307,17 +1312,17 @@ gen_primitive_field (struct agent_expr *ax, struct axs_value *value,
 		     int offset, int fieldno, struct type *type)
 {
   /* Is this a bitfield?  */
-  if (TYPE_FIELD_PACKED (type, fieldno))
+  if (type->field (fieldno).is_packed ())
     gen_bitfield_ref (ax, value, type->field (fieldno).type (),
 		      (offset * TARGET_CHAR_BIT
-		       + TYPE_FIELD_BITPOS (type, fieldno)),
+		       + type->field (fieldno).loc_bitpos ()),
 		      (offset * TARGET_CHAR_BIT
-		       + TYPE_FIELD_BITPOS (type, fieldno)
-		       + TYPE_FIELD_BITSIZE (type, fieldno)));
+		       + type->field (fieldno).loc_bitpos ()
+		       + type->field (fieldno).bitsize ()));
   else
     {
       gen_offset (ax, offset
-		  + TYPE_FIELD_BITPOS (type, fieldno) / TARGET_CHAR_BIT);
+		  + type->field (fieldno).loc_bitpos () / TARGET_CHAR_BIT);
       value->kind = axs_lvalue_memory;
       value->type = type->field (fieldno).type ();
     }
@@ -1337,7 +1342,7 @@ gen_struct_ref_recursive (struct agent_expr *ax, struct axs_value *value,
 
   for (i = type->num_fields () - 1; i >= nbases; i--)
     {
-      const char *this_name = TYPE_FIELD_NAME (type, i);
+      const char *this_name = type->field (i).name ();
 
       if (this_name)
 	{
@@ -1347,7 +1352,7 @@ gen_struct_ref_recursive (struct agent_expr *ax, struct axs_value *value,
 		 "this") will have been generated already, which will
 		 be unnecessary but not harmful if the static field is
 		 being handled as a global.  */
-	      if (field_is_static (&type->field (i)))
+	      if (type->field (i).is_static ())
 		{
 		  gen_static_field (ax, value, type, i);
 		  if (value->optimized_out)
@@ -1362,8 +1367,7 @@ gen_struct_ref_recursive (struct agent_expr *ax, struct axs_value *value,
 	    }
 #if 0 /* is this right? */
 	  if (this_name[0] == '\0')
-	    internal_error (__FILE__, __LINE__,
-			    _("find_field: anonymous unions not supported"));
+	    internal_error (_("find_field: anonymous unions not supported"));
 #endif
 	}
     }
@@ -1401,7 +1405,7 @@ gen_struct_ref (struct agent_expr *ax, struct axs_value *value,
   /* Follow pointers until we reach a non-pointer.  These aren't the C
      semantics, but they're what the normal GDB evaluator does, so we
      should at least be consistent.  */
-  while (pointer_type (value->type))
+  while (value->type->is_pointer_or_reference ())
     {
       require_rvalue (ax, value);
       gen_deref (value);
@@ -1438,17 +1442,18 @@ static void
 gen_static_field (struct agent_expr *ax, struct axs_value *value,
 		  struct type *type, int fieldno)
 {
-  if (TYPE_FIELD_LOC_KIND (type, fieldno) == FIELD_LOC_KIND_PHYSADDR)
+  if (type->field (fieldno).loc_kind () == FIELD_LOC_KIND_PHYSADDR)
     {
-      ax_const_l (ax, TYPE_FIELD_STATIC_PHYSADDR (type, fieldno));
+      ax_const_l (ax, type->field (fieldno).loc_physaddr ());
       value->kind = axs_lvalue_memory;
       value->type = type->field (fieldno).type ();
       value->optimized_out = 0;
     }
   else
     {
-      const char *phys_name = TYPE_FIELD_STATIC_PHYSNAME (type, fieldno);
-      struct symbol *sym = lookup_symbol (phys_name, 0, VAR_DOMAIN, 0).symbol;
+      const char *phys_name = type->field (fieldno).loc_physname ();
+      struct symbol *sym = lookup_symbol (phys_name, 0,
+					  SEARCH_VAR_DOMAIN, 0).symbol;
 
       if (sym)
 	{
@@ -1476,16 +1481,15 @@ gen_struct_elt_for_reference (struct agent_expr *ax, struct axs_value *value,
 
   if (t->code () != TYPE_CODE_STRUCT
       && t->code () != TYPE_CODE_UNION)
-    internal_error (__FILE__, __LINE__,
-		    _("non-aggregate type to gen_struct_elt_for_reference"));
+    internal_error (_("non-aggregate type to gen_struct_elt_for_reference"));
 
   for (i = t->num_fields () - 1; i >= TYPE_N_BASECLASSES (t); i--)
     {
-      const char *t_field_name = TYPE_FIELD_NAME (t, i);
+      const char *t_field_name = t->field (i).name ();
 
       if (t_field_name && strcmp (t_field_name, fieldname) == 0)
 	{
-	  if (field_is_static (&t->field (i)))
+	  if (t->field (i).is_static ())
 	    {
 	      gen_static_field (ax, value, t, i);
 	      if (value->optimized_out)
@@ -1494,7 +1498,7 @@ gen_struct_elt_for_reference (struct agent_expr *ax, struct axs_value *value,
 		       fieldname);
 	      return 1;
 	    }
-	  if (TYPE_FIELD_PACKED (t, i))
+	  if (t->field (i).is_packed ())
 	    error (_("pointers to bitfield members not allowed"));
 
 	  /* FIXME we need a way to do "want_address" equivalent */	  
@@ -1540,7 +1544,7 @@ gen_maybe_namespace_elt (struct agent_expr *ax, struct axs_value *value,
 
   sym = cp_lookup_symbol_namespace (namespace_name, name,
 				    block_for_pc (ax->scope),
-				    VAR_DOMAIN);
+				    SEARCH_VAR_DOMAIN);
 
   if (sym.symbol == NULL)
     return 0;
@@ -1569,8 +1573,7 @@ gen_aggregate_elt_ref (struct agent_expr *ax, struct axs_value *value,
       return gen_namespace_elt (ax, value, type, field);
       break;
     default:
-      internal_error (__FILE__, __LINE__,
-		      _("non-aggregate type in gen_aggregate_elt_ref"));
+      internal_error (_("non-aggregate type in gen_aggregate_elt_ref"));
     }
 
   return 0;
@@ -1592,7 +1595,7 @@ operation::generate_ax (struct expression *exp,
       struct value *v = evaluate (nullptr, exp, EVAL_AVOID_SIDE_EFFECTS);
       ax_const_l (ax, value_as_long (v));
       value->kind = axs_rvalue;
-      value->type = check_typedef (value_type (v));
+      value->type = check_typedef (v->type ());
     }
   else
     {
@@ -1621,8 +1624,8 @@ long_const_operation::do_generate_ax (struct expression *exp,
 				      struct axs_value *value,
 				      struct type *cast_type)
 {
-  gen_int_literal (ax, value, std::get<1> (m_storage),
-		   std::get<0> (m_storage));
+  LONGEST val = as_longest ();
+  gen_int_literal (ax, value, val, std::get<0> (m_storage));
 }
 
 void
@@ -1654,8 +1657,7 @@ register_operation::do_generate_ax (struct expression *exp,
 
   reg = user_reg_map_name_to_regnum (ax->gdbarch, name, len);
   if (reg == -1)
-    internal_error (__FILE__, __LINE__,
-		    _("Register $%s not available"), name);
+    internal_error (_("Register $%s not available"), name);
   /* No support for tracing user registers yet.  */
   if (reg >= gdbarch_num_cooked_regs (ax->gdbarch))
     error (_("'%s' is a user-register; "
@@ -1711,10 +1713,10 @@ ternop_cond_operation::do_generate_ax (struct expression *exp,
   std::get<1> (m_storage)->generate_ax (exp, ax, &value2);
   gen_usual_unary (ax, &value2);
   end = ax_goto (ax, aop_goto);
-  ax_label (ax, if1, ax->len);
+  ax_label (ax, if1, ax->buf.size ());
   std::get<2> (m_storage)->generate_ax (exp, ax, &value3);
   gen_usual_unary (ax, &value3);
-  ax_label (ax, end, ax->len);
+  ax_label (ax, end, ax->buf.size ());
   /* This is arbitrary - what if B and C are incompatible types? */
   value->type = value2.type;
   value->kind = value2.kind;
@@ -1753,7 +1755,7 @@ repeat_operation::do_generate_ax (struct expression *exp,
   struct value *v
     = std::get<1> (m_storage)->evaluate (nullptr, exp,
 					 EVAL_AVOID_SIDE_EFFECTS);
-  if (value_type (v)->code () != TYPE_CODE_INT)
+  if (v->type ()->code () != TYPE_CODE_INT)
     error (_("Right operand of `@' must be an integer."));
   int length = value_as_long (v);
   if (length <= 0)
@@ -1803,14 +1805,14 @@ unop_sizeof_operation::do_generate_ax (struct expression *exp,
      only way to find an expression's type is to generate code for it.
      So we generate code for the operand, and then throw it away,
      replacing it with code that simply pushes its size.  */
-  int start = ax->len;
+  int start = ax->buf.size ();
 
   std::get<0> (m_storage)->generate_ax (exp, ax, value);
 
   /* Throw away the code we just generated.  */
-  ax->len = start;
+  ax->buf.resize (start);
 
-  ax_const_l (ax, TYPE_LENGTH (value->type));
+  ax_const_l (ax, value->type->length ());
   value->kind = axs_rvalue;
   value->type = builtin_type (ax->gdbarch)->builtin_int;
 }
@@ -1823,6 +1825,25 @@ unop_cast_operation::do_generate_ax (struct expression *exp,
 {
   std::get<0> (m_storage)->generate_ax (exp, ax, value,
 					std::get<1> (m_storage));
+}
+
+void
+unop_extract_operation::do_generate_ax (struct expression *exp,
+					struct agent_expr *ax,
+					struct axs_value *value,
+					struct type *cast_type)
+{
+  std::get<0> (m_storage)->generate_ax (exp, ax, value);
+
+  struct type *to_type = get_type ();
+
+  if (!is_scalar_type (to_type))
+    error (_("can't generate agent expression to extract non-scalar type"));
+
+  if (to_type->is_unsigned ())
+    gen_extend (ax, to_type);
+  else
+    gen_sign_extend (ax, to_type);
 }
 
 void
@@ -1851,7 +1872,7 @@ unop_memval_type_operation::do_generate_ax (struct expression *exp,
   struct value *val
     = std::get<0> (m_storage)->evaluate (nullptr, exp,
 					 EVAL_AVOID_SIDE_EFFECTS);
-  struct type *type = value_type (val);
+  struct type *type = val->type ();
 
   std::get<1> (m_storage)->generate_ax (exp, ax, value);
 
@@ -1876,7 +1897,7 @@ op_this_operation::do_generate_ax (struct expression *exp,
   const struct language_defn *lang;
 
   b = block_for_pc (ax->scope);
-  func = block_linkage_function (b);
+  func = b->linkage_function ();
   lang = language_def (func->language ());
 
   sym = lookup_language_this (lang, b).symbol;
@@ -1901,8 +1922,7 @@ assign_operation::do_generate_ax (struct expression *exp,
     error (_("May only assign to trace state variables"));
 
   internalvar_operation *ivarop
-    = dynamic_cast<internalvar_operation *> (subop);
-  gdb_assert (ivarop != nullptr);
+    = gdb::checked_static_cast<internalvar_operation *> (subop);
 
   const char *name = internalvar_name (ivarop->get_internalvar ());
   struct trace_state_variable *tsv;
@@ -1931,8 +1951,7 @@ assign_modify_operation::do_generate_ax (struct expression *exp,
     error (_("May only assign to trace state variables"));
 
   internalvar_operation *ivarop
-    = dynamic_cast<internalvar_operation *> (subop);
-  gdb_assert (ivarop != nullptr);
+    = gdb::checked_static_cast<internalvar_operation *> (subop);
 
   const char *name = internalvar_name (ivarop->get_internalvar ());
   struct trace_state_variable *tsv;
@@ -1971,7 +1990,7 @@ unop_cast_type_operation::do_generate_ax (struct expression *exp,
   struct value *val
     = std::get<0> (m_storage)->evaluate (nullptr, exp,
 					 EVAL_AVOID_SIDE_EFFECTS);
-  std::get<1> (m_storage)->generate_ax (exp, ax, value, value_type (val));
+  std::get<1> (m_storage)->generate_ax (exp, ax, value, val->type ());
 }
 
 void
@@ -2008,18 +2027,18 @@ logical_and_operation::do_generate_ax (struct expression *exp,
   gen_usual_unary (ax, &value1);
   if1 = ax_goto (ax, aop_if_goto);
   go1 = ax_goto (ax, aop_goto);
-  ax_label (ax, if1, ax->len);
+  ax_label (ax, if1, ax->buf.size ());
   std::get<1> (m_storage)->generate_ax (exp, ax, &value2);
   gen_usual_unary (ax, &value2);
   if2 = ax_goto (ax, aop_if_goto);
   go2 = ax_goto (ax, aop_goto);
-  ax_label (ax, if2, ax->len);
+  ax_label (ax, if2, ax->buf.size ());
   ax_const_l (ax, 1);
   end = ax_goto (ax, aop_goto);
-  ax_label (ax, go1, ax->len);
-  ax_label (ax, go2, ax->len);
+  ax_label (ax, go1, ax->buf.size ());
+  ax_label (ax, go2, ax->buf.size ());
   ax_const_l (ax, 0);
-  ax_label (ax, end, ax->len);
+  ax_label (ax, end, ax->buf.size ());
   value->kind = axs_rvalue;
   value->type = builtin_type (ax->gdbarch)->builtin_int;
 }
@@ -2042,10 +2061,10 @@ logical_or_operation::do_generate_ax (struct expression *exp,
   if2 = ax_goto (ax, aop_if_goto);
   ax_const_l (ax, 0);
   end = ax_goto (ax, aop_goto);
-  ax_label (ax, if1, ax->len);
-  ax_label (ax, if2, ax->len);
+  ax_label (ax, if1, ax->buf.size ());
+  ax_label (ax, if2, ax->buf.size ());
   ax_const_l (ax, 1);
-  ax_label (ax, end, ax->len);
+  ax_label (ax, end, ax->buf.size ());
   value->kind = axs_rvalue;
   value->type = builtin_type (ax->gdbarch)->builtin_int;
 }
@@ -2069,26 +2088,26 @@ gen_expr_binop_rest (struct expression *exp,
   switch (op)
     {
     case BINOP_ADD:
-      if (value1->type->code () == TYPE_CODE_INT
-	  && pointer_type (value2->type))
+      if (strip_range_type (value1->type)->code () == TYPE_CODE_INT
+	  && value2->type->is_pointer_or_reference ())
 	{
 	  /* Swap the values and proceed normally.  */
 	  ax_simple (ax, aop_swap);
 	  gen_ptradd (ax, value, value2, value1);
 	}
-      else if (pointer_type (value1->type)
-	       && value2->type->code () == TYPE_CODE_INT)
+      else if (value1->type->is_pointer_or_reference ()
+	       && strip_range_type (value2->type)->code () == TYPE_CODE_INT)
 	gen_ptradd (ax, value, value1, value2);
       else
 	gen_binop (ax, value, value1, value2,
 		   aop_add, aop_add, 1, "addition");
       break;
     case BINOP_SUB:
-      if (pointer_type (value1->type)
-	  && value2->type->code () == TYPE_CODE_INT)
+      if (value1->type->is_pointer_or_reference ()
+	  && strip_range_type (value2->type)->code () == TYPE_CODE_INT)
 	gen_ptrsub (ax,value, value1, value2);
-      else if (pointer_type (value1->type)
-	       && pointer_type (value2->type))
+      else if (value1->type->is_pointer_or_reference ()
+	       && value2->type->is_pointer_or_reference ())
 	/* FIXME --- result type should be ptrdiff_t */
 	gen_ptrdiff (ax, value, value1, value2,
 		     builtin_type (ax->gdbarch)->builtin_long);
@@ -2197,8 +2216,7 @@ gen_expr_binop_rest (struct expression *exp,
     default:
       /* We should only list operators in the outer case statement
 	 that we actually handle in the inner case statement.  */
-      internal_error (__FILE__, __LINE__,
-		      _("gen_expr: op case sets don't match"));
+      internal_error (_("gen_expr: op case sets don't match"));
     }
 }
 
@@ -2237,8 +2255,7 @@ gen_expr_structop (struct expression *exp,
   else
     /* If this `if' chain doesn't handle it, then the case list
        shouldn't mention it, and we shouldn't be here.  */
-    internal_error (__FILE__, __LINE__,
-		    _("gen_expr: unhandled struct case"));
+    internal_error (_("gen_expr: unhandled struct case"));
 }
 
 /* A helper function that emits a unary operation.  */
@@ -2285,7 +2302,7 @@ gen_expr_unop (struct expression *exp,
     case UNOP_IND:
       lhs->generate_ax (exp, ax, value);
       gen_usual_unary (ax, value);
-      if (!pointer_type (value->type))
+      if (!value->type->is_pointer_or_reference ())
 	error (_("Argument of unary `*' is not a pointer."));
       gen_deref (value);
       break;
@@ -2314,7 +2331,7 @@ gen_trace_for_var (CORE_ADDR scope, struct gdbarch *gdbarch,
   agent_expr_up ax (new agent_expr (gdbarch, scope));
   struct axs_value value;
 
-  ax->tracing = 1;
+  ax->tracing = true;
   ax->trace_string = trace_string;
   gen_var_ref (ax.get (), &value, var);
 
@@ -2347,7 +2364,7 @@ gen_trace_for_expr (CORE_ADDR scope, struct expression *expr,
   agent_expr_up ax (new agent_expr (expr->gdbarch, scope));
   struct axs_value value;
 
-  ax->tracing = 1;
+  ax->tracing = true;
   ax->trace_string = trace_string;
   value.optimized_out = 0;
   expr->op->generate_ax (expr, ax.get (), &value);
@@ -2374,7 +2391,7 @@ gen_eval_for_expr (CORE_ADDR scope, struct expression *expr)
   agent_expr_up ax (new agent_expr (expr->gdbarch, scope));
   struct axs_value value;
 
-  ax->tracing = 0;
+  ax->tracing = false;
   value.optimized_out = 0;
   expr->op->generate_ax (expr, ax.get (), &value);
 
@@ -2393,7 +2410,7 @@ gen_trace_for_return_address (CORE_ADDR scope, struct gdbarch *gdbarch,
   agent_expr_up ax (new agent_expr (gdbarch, scope));
   struct axs_value value;
 
-  ax->tracing = 1;
+  ax->tracing = true;
   ax->trace_string = trace_string;
 
   gdbarch_gen_return_address (gdbarch, ax.get (), &value, scope);
@@ -2422,7 +2439,7 @@ gen_printf (CORE_ADDR scope, struct gdbarch *gdbarch,
   int tem;
 
   /* We're computing values, not doing side effects.  */
-  ax->tracing = 0;
+  ax->tracing = false;
 
   /* Evaluate and push the args on the stack in reverse order,
      for simplicity of collecting them on the target side.  */
@@ -2491,7 +2508,7 @@ agent_eval_command_one (const char *exp, int eval, CORE_ADDR pc)
 }
 
 static void
-agent_command_1 (const char *exp, int eval)
+maint_agent_command_1 (const char *exp, int eval)
 {
   /* We don't deal with overlay debugging at the moment.  We need to
      think more carefully about this.  If you copy this code into
@@ -2507,9 +2524,9 @@ agent_command_1 (const char *exp, int eval)
     {
       struct linespec_result canonical;
 
-      event_location_up location
-	= new_linespec_location (&exp, symbol_name_match_type::WILD);
-      decode_line_full (location.get (), DECODE_LINE_FUNFIRSTLINE, NULL,
+      location_spec_up locspec
+	= new_linespec_location_spec (&exp, symbol_name_match_type::WILD);
+      decode_line_full (locspec.get (), DECODE_LINE_FUNFIRSTLINE, NULL,
 			NULL, 0, &canonical,
 			NULL, NULL);
       exp = skip_spaces (exp);
@@ -2529,9 +2546,9 @@ agent_command_1 (const char *exp, int eval)
 }
 
 static void
-agent_command (const char *exp, int from_tty)
+maint_agent_command (const char *exp, int from_tty)
 {
-  agent_command_1 (exp, 0);
+  maint_agent_command_1 (exp, 0);
 }
 
 /* Parse the given expression, compile it into an agent expression
@@ -2539,9 +2556,9 @@ agent_command (const char *exp, int from_tty)
    expression.  */
 
 static void
-agent_eval_command (const char *exp, int from_tty)
+maint_agent_eval_command (const char *exp, int from_tty)
 {
-  agent_command_1 (exp, 1);
+  maint_agent_command_1 (exp, 1);
 }
 
 /* Parse the given expression, compile it into an agent expression
@@ -2550,7 +2567,7 @@ agent_eval_command (const char *exp, int from_tty)
 static void
 maint_agent_printf_command (const char *cmdrest, int from_tty)
 {
-  struct frame_info *fi = get_current_frame ();	/* need current scope */
+  frame_info_ptr fi = get_current_frame ();	/* need current scope */
   const char *format_start, *format_end;
 
   /* We don't deal with overlay debugging at the moment.  We need to
@@ -2592,7 +2609,8 @@ maint_agent_printf_command (const char *cmdrest, int from_tty)
       const char *cmd1;
 
       cmd1 = cmdrest;
-      expression_up expr = parse_exp_1 (&cmd1, 0, (struct block *) 0, 1);
+      expression_up expr = parse_exp_1 (&cmd1, 0, (struct block *) 0,
+					PARSER_COMMA_TERMINATES);
       argvec.push_back (expr.release ());
       cmdrest = cmd1;
       if (*cmdrest == ',')
@@ -2620,7 +2638,7 @@ void _initialize_ax_gdb ();
 void
 _initialize_ax_gdb ()
 {
-  add_cmd ("agent", class_maintenance, agent_command,
+  add_cmd ("agent", class_maintenance, maint_agent_command,
 	   _("\
 Translate an expression into remote agent bytecode for tracing.\n\
 Usage: maint agent [-at LOCATION,] EXPRESSION\n\
@@ -2628,7 +2646,7 @@ If -at is given, generate remote agent bytecode for this location.\n\
 If not, generate remote agent bytecode for current frame pc address."),
 	   &maintenancelist);
 
-  add_cmd ("agent-eval", class_maintenance, agent_eval_command,
+  add_cmd ("agent-eval", class_maintenance, maint_agent_eval_command,
 	   _("\
 Translate an expression into remote agent bytecode for evaluation.\n\
 Usage: maint agent-eval [-at LOCATION,] EXPRESSION\n\

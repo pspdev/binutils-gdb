@@ -31,15 +31,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
-#include "targ-vals.h"
-
-#ifndef TARGET_O_BINARY
-#define TARGET_O_BINARY 0
-#endif
-
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>		/* For SEEK_SET etc.  */
-#endif
 
 #include "armdefs.h"
 #include "armos.h"
@@ -107,7 +99,6 @@ ARMul_OSInit (ARMul_State * state)
 #ifndef NOOS
 #ifndef VALIDATE
   ARMword instr, i, j;
-  struct OSblock *OSptr = (struct OSblock *) state->OSptr;
 
   if (state->OSptr == NULL)
     {
@@ -119,7 +110,6 @@ ARMul_OSInit (ARMul_State * state)
 	}
     }
 
-  OSptr = (struct OSblock *) state->OSptr;
   state->Reg[13] = ADDRSUPERSTACK;			/* Set up a stack for the current mode...  */
   ARMul_SetReg (state, SVC32MODE,   13, ADDRSUPERSTACK);/* ...and for supervisor mode...  */
   ARMul_SetReg (state, ABORT32MODE, 13, ADDRSUPERSTACK);/* ...and for abort 32 mode...  */
@@ -188,7 +178,17 @@ ARMul_OSInit (ARMul_State * state)
    return TRUE;
 }
 
-static int translate_open_mode[] =
+/* These are libgloss defines, but seem to be common across all supported ARM
+   targets at the moment.  These should get moved to the callback open_map.  */
+#define TARGET_O_BINARY 0
+#define TARGET_O_APPEND 0x8
+#define TARGET_O_CREAT 0x200
+#define TARGET_O_RDONLY 0x0
+#define TARGET_O_RDWR 0x2
+#define TARGET_O_TRUNC 0x400
+#define TARGET_O_WRONLY 0x1
+
+static const int translate_open_mode[] =
 {
   TARGET_O_RDONLY,		/* "r"   */
   TARGET_O_RDONLY + TARGET_O_BINARY,	/* "rb"  */
@@ -697,11 +697,13 @@ ARMul_OSHandleSWI (ARMul_State * state, ARMword number)
 	    case AngelSWI_Reason_Remove:
 	      SWIremove (state,
 			 ARMul_ReadWord (state, addr));
+	      break;
 
 	    case AngelSWI_Reason_Rename:
 	      SWIrename (state,
 			 ARMul_ReadWord (state, addr),
 			 ARMul_ReadWord (state, addr + 4));
+	      break;
 	    }
 	}
       else
@@ -830,6 +832,7 @@ ARMul_OSHandleSWI (ARMul_State * state, ARMword number)
 	    }
 	  break;
 	}
+      ATTRIBUTE_FALLTHROUGH;
 
     default:
       unhandled = TRUE;

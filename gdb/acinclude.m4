@@ -15,6 +15,9 @@ m4_include(acx_configure_dir.m4)
 # This gets GDB_AC_TRANSFORM.
 m4_include(transform.m4)
 
+# This get AM_GDB_COMPILER_TYPE.
+m4_include(../gdbsupport/compiler-type.m4)
+
 # This gets AM_GDB_WARNINGS.
 m4_include(../gdbsupport/warning.m4)
 
@@ -40,11 +43,12 @@ m4_include([../config/lib-link.m4])
 m4_include([../config/iconv.m4])
 
 m4_include([../config/zlib.m4])
+m4_include([../config/zstd.m4])
 
 m4_include([../gdbsupport/common.m4])
 
 dnl For libiberty_INIT.
-m4_include(libiberty.m4)
+m4_include(../gdbsupport/libiberty.m4)
 
 dnl For GDB_AC_PTRACE.
 m4_include(../gdbsupport/ptrace.m4)
@@ -225,14 +229,16 @@ AC_DEFUN([GDB_AC_CHECK_BFD], [
   OLD_CFLAGS=$CFLAGS
   OLD_LDFLAGS=$LDFLAGS
   OLD_LIBS=$LIBS
+  OLD_CC=$CC
   # Put the old CFLAGS/LDFLAGS last, in case the user's (C|LD)FLAGS
   # points somewhere with bfd, with -I/foo/lib and -L/foo/lib.  We
   # always want our bfd.
   CFLAGS="-I${srcdir}/../include -I../bfd -I${srcdir}/../bfd $CFLAGS"
-  ZLIBDIR=`echo $zlibdir | sed 's,\$(top_builddir)/,,g'`
-  LDFLAGS="-L../bfd -L../libiberty $ZLIBDIR $LDFLAGS"
-  intl=`echo $LIBINTL | sed 's,${top_builddir}/,,g'`
-  LIBS="-lbfd -liberty -lz $intl $LIBS"
+  LDFLAGS="-L../bfd -L../libiberty $LDFLAGS"
+  # LTLIBINTL because we use libtool as CC below.
+  intl="$(echo "$LTLIBINTL" | sed 's,\$[[{(]top_builddir[)}]]/,,')"
+  LIBS="-lbfd -liberty $intl $LIBS"
+  CC="./libtool --quiet --mode=link $CC"
   AC_CACHE_CHECK(
     [$1],
     [$2],
@@ -248,6 +254,7 @@ AC_DEFUN([GDB_AC_CHECK_BFD], [
        [[$2]=no]
      )]
   )
+  CC=$OLD_CC
   CFLAGS=$OLD_CFLAGS
   LDFLAGS=$OLD_LDFLAGS
   LIBS=$OLD_LIBS])

@@ -1,4 +1,4 @@
-# Copyright (C) 2009-2021 Free Software Foundation, Inc.
+# Copyright (C) 2009-2024 Free Software Foundation, Inc.
 #
 # This file is part of GDB.
 #
@@ -15,8 +15,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import gdb
 import os.path
+
+import gdb
 
 
 class TypeFlag:
@@ -115,7 +116,7 @@ class StructTypePrettyPrinter:
         fields.append(
             "instance_flags = %s" % TypeFlagsPrinter(self.val["m_instance_flags"])
         )
-        fields.append("length = %d" % self.val["length"])
+        fields.append("length = %d" % self.val["m_length"])
         fields.append("main_type = %s" % self.val["main_type"])
         return "\n{" + ",\n ".join(fields) + "}"
 
@@ -153,8 +154,8 @@ class StructMainTypePrettyPrinter:
         """Return an image of the loc component inside the given field
         gdb.Value.
         """
-        loc_val = field_val["loc"]
-        loc_kind = str(field_val["loc_kind"])
+        loc_val = field_val["m_loc"]
+        loc_kind = str(field_val["m_loc_kind"])
         if loc_kind == "FIELD_LOC_KIND_BITPOS":
             return "bitpos = %d" % loc_val["bitpos"]
         elif loc_kind == "FIELD_LOC_KIND_ENUMVAL":
@@ -166,19 +167,19 @@ class StructMainTypePrettyPrinter:
         elif loc_kind == "FIELD_LOC_KIND_DWARF_BLOCK":
             return "dwarf_block = %s" % loc_val["dwarf_block"]
         else:
-            return "loc = ??? (unsupported loc_kind value)"
+            return "m_loc = ??? (unsupported m_loc_kind value)"
 
     def struct_field_img(self, fieldno):
         """Return an image of the main_type field number FIELDNO."""
         f = self.val["flds_bnds"]["fields"][fieldno]
         label = "flds_bnds.fields[%d]:" % fieldno
-        if f["artificial"]:
+        if f["m_artificial"]:
             label += " (artificial)"
         fields = []
-        fields.append("name = %s" % f["name"])
-        fields.append("type = %s" % f["m_type"])
-        fields.append("loc_kind = %s" % f["loc_kind"])
-        fields.append("bitsize = %d" % f["bitsize"])
+        fields.append("m_name = %s" % f["m_name"])
+        fields.append("m_type = %s" % f["m_type"])
+        fields.append("m_loc_kind = %s" % f["m_loc_kind"])
+        fields.append("bitsize = %d" % f["m_bitsize"])
         fields.append(self.struct_field_location_img(f))
         return label + "\n" + "  {" + ",\n   ".join(fields) + "}"
 
@@ -241,9 +242,14 @@ class StructMainTypePrettyPrinter:
                 "scaling_factor: <opaque> (call __gmpz_dump with "
                 " _mp_num and _mp_den fields if needed)"
             )
+        elif type_specific_kind == "TYPE_SPECIFIC_INT":
+            img = "int_stuff = { bit_size = %d, bit_offset = %d }" % (
+                type_specific["int_stuff"]["bit_size"],
+                type_specific["int_stuff"]["bit_offset"],
+            )
         else:
             img = (
-                "type_specific = ??? (unknown type_secific_kind: %s)"
+                "type_specific = ??? (unknown type_specific_kind: %s)"
                 % type_specific_kind
             )
         return img
@@ -255,9 +261,9 @@ class StructMainTypePrettyPrinter:
         fields.append("code = %s" % self.val["code"])
         fields.append("flags = [%s]" % self.flags_to_string())
         fields.append("owner = %s" % self.owner_to_string())
-        fields.append("target_type = %s" % self.val["target_type"])
-        if self.val["nfields"] > 0:
-            for fieldno in range(self.val["nfields"]):
+        fields.append("target_type = %s" % self.val["m_target_type"])
+        if self.val["m_nfields"] > 0:
+            for fieldno in range(self.val["m_nfields"]):
                 fields.append(self.struct_field_img(fieldno))
         if self.val["code"] == gdb.TYPE_CODE_RANGE:
             fields.append(self.bounds_img())
@@ -336,7 +342,7 @@ class IntrusiveListPrinter:
         corresponding intrusive_list_node.
         """
 
-        assert elem_ptr.type.code == gdb.TYPE_CODE_PTR
+        assert elem_ptr.type.strip_typedefs().code == gdb.TYPE_CODE_PTR
 
         if self._uses_member_node():
             # Node as a member: add the member node offset from to the element's
@@ -364,6 +370,35 @@ class IntrusiveListPrinter:
         return self._children_generator()
 
 
+class HtabPrinter:
+    """Pretty-printer for htab_t hash tables."""
+
+    def __init__(self, val):
+        self._val = val
+
+    def display_hint(self):
+        return "array"
+
+    def to_string(self):
+        n = int(self._val["n_elements"]) - int(self._val["n_deleted"])
+        return "htab_t with {} elements".format(n)
+
+    def children(self):
+        size = int(self._val["size"])
+        entries = self._val["entries"]
+
+        child_i = 0
+        for entries_i in range(size):
+            entry = entries[entries_i]
+            # 0 (NULL pointer) means there's nothing, 1 (HTAB_DELETED_ENTRY)
+            # means there was something, but is now deleted.
+            if int(entry) in (0, 1):
+                continue
+
+            yield (str(child_i), entry)
+            child_i += 1
+
+
 def type_lookup_function(val):
     """A routine that returns the correct pretty printer for VAL
     if appropriate.  Returns None otherwise.
@@ -378,6 +413,8 @@ def type_lookup_function(val):
         return CoreAddrPrettyPrinter(val)
     elif tag is not None and tag.startswith("intrusive_list<"):
         return IntrusiveListPrinter(val)
+    elif name == "htab_t":
+        return HtabPrinter(val)
     return None
 
 

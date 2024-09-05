@@ -1,6 +1,6 @@
 /* TID parsing for GDB, the GNU debugger.
 
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "tid-parse.h"
 #include "inferior.h"
 #include "gdbthread.h"
@@ -25,7 +24,7 @@
 
 /* See tid-parse.h.  */
 
-void ATTRIBUTE_NORETURN
+[[noreturn]] void
 invalid_thread_id_error (const char *string)
 {
   error (_("Invalid thread ID: %s"), string);
@@ -151,7 +150,7 @@ tid_range_parser::finished () const
       return m_range_parser.finished ();
     }
 
-  gdb_assert_not_reached (_("unhandled state"));
+  gdb_assert_not_reached ("unhandled state");
 }
 
 /* See tid-parse.h.  */
@@ -168,7 +167,7 @@ tid_range_parser::cur_tok () const
       return m_range_parser.cur_tok ();
     }
 
-  gdb_assert_not_reached (_("unhandled state"));
+  gdb_assert_not_reached ("unhandled state");
 }
 
 void

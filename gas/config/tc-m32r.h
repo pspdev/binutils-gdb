@@ -1,5 +1,5 @@
 /* tc-m32r.h -- Header file for tc-m32r.c.
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -41,6 +41,9 @@ extern const char *m32r_target_format (void);
 
 /* Permit temporary numeric labels.  */
 #define LOCAL_LABELS_FB 1
+
+/* '||' denotes parallel instruction */
+#define DOUBLEBAR_PARALLEL
 
 #define DIFF_EXPR_OK		/* .-foo gets turned into PC relative relocs.  */
 

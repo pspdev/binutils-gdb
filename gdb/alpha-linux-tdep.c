@@ -1,5 +1,5 @@
 /* Target-dependent code for GNU/Linux on Alpha.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "frame.h"
 #include "osabi.h"
 #include "solib-svr4.h"
@@ -126,7 +125,7 @@ alpha_linux_pc_in_sigtramp (struct gdbarch *gdbarch,
 }
 
 static CORE_ADDR
-alpha_linux_sigcontext_addr (struct frame_info *this_frame)
+alpha_linux_sigcontext_addr (const frame_info_ptr &this_frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
   CORE_ADDR pc;
@@ -354,8 +353,6 @@ alpha_linux_gdb_signal_to_target (struct gdbarch *gdbarch,
 static void
 alpha_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep;
-
   linux_init_abi (info, gdbarch, 0);
 
   /* Hook into the DWARF CFI frame unwinder.  */
@@ -364,7 +361,7 @@ alpha_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   /* Hook into the MDEBUG frame unwinder.  */
   alpha_mdebug_init_abi (info, gdbarch);
 
-  tdep = gdbarch_tdep (gdbarch);
+  alpha_gdbarch_tdep *tdep = gdbarch_tdep<alpha_gdbarch_tdep> (gdbarch);
   tdep->dynamic_sigtramp_offset = alpha_linux_sigtramp_offset;
   tdep->sigcontext_addr = alpha_linux_sigcontext_addr;
   tdep->pc_in_sigtramp = alpha_linux_pc_in_sigtramp;
@@ -374,7 +371,7 @@ alpha_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   set_gdbarch_skip_trampoline_code (gdbarch, find_solib_trampoline_target);
 
   set_solib_svr4_fetch_link_map_offsets
-    (gdbarch, svr4_lp64_fetch_link_map_offsets);
+    (gdbarch, linux_lp64_fetch_link_map_offsets);
 
   /* Enable TLS support.  */
   set_gdbarch_fetch_tls_load_module_address (gdbarch,

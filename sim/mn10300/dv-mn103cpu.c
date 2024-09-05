@@ -1,6 +1,6 @@
 /*  This file is part of the program GDB, the GNU debugger.
     
-    Copyright (C) 1998-2021 Free Software Foundation, Inc.
+    Copyright (C) 1998-2024 Free Software Foundation, Inc.
     Contributed by Cygnus Solutions.
     
     This program is free software; you can redistribute it and/or modify
@@ -22,7 +22,11 @@
 #include "defs.h"
 
 #include "sim-main.h"
+#include "sim-fpu.h"
+#include "sim-signal.h"
 #include "hw-main.h"
+
+#include "mn10300-sim.h"
 
 /* DEVICE
 
@@ -113,9 +117,9 @@ struct mn103cpu {
   int pending_nmi;
   int pending_reset;
   /* the visible registers */
-  unsigned16 interrupt_vector[NR_VECTORS];
-  unsigned16 internal_memory_control;
-  unsigned16 cpu_mode;
+  uint16_t interrupt_vector[NR_VECTORS];
+  uint16_t internal_memory_control;
+  uint16_t cpu_mode;
 };
 
 
@@ -357,7 +361,7 @@ mn103cpu_io_read_buffer (struct hw *me,
 			 unsigned nr_bytes)
 {
   struct mn103cpu *controller = hw_data (me);
-  unsigned16 val = 0;
+  uint16_t val = 0;
   enum mn103cpu_regs reg = decode_mn103cpu_addr (me, controller, base);
 
   switch (reg)
@@ -383,7 +387,7 @@ mn103cpu_io_read_buffer (struct hw *me,
     }
 
   if (nr_bytes == 2)
-    *(unsigned16*) dest = H2LE_2 (val);
+    *(uint16_t*) dest = H2LE_2 (val);
 
   return nr_bytes;
 }     
@@ -396,14 +400,14 @@ mn103cpu_io_write_buffer (struct hw *me,
 			  unsigned nr_bytes)
 {
   struct mn103cpu *controller = hw_data (me);
-  unsigned16 val;
+  uint16_t val;
   enum mn103cpu_regs reg;
 
   if (nr_bytes != 2)
     hw_abort (me, "must be two byte write");
 
   reg = decode_mn103cpu_addr (me, controller, base);
-  val = LE2H_2 (* (unsigned16 *) source);
+  val = LE2H_2 (* (uint16_t *) source);
 
   switch (reg)
     {

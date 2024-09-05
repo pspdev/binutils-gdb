@@ -1,5 +1,5 @@
 # ; -*- mode: sh ; -*-
-# Copyright (C) 2013-2021 Free Software Foundation, Inc.
+# Copyright (C) 2013-2024 Free Software Foundation, Inc.
 #
 # This file is part of GDB.
 #
@@ -103,7 +103,7 @@ case ${gdb_host} in
 		# Host: IBM PowerPC running AIX aix-thread.o is not
 		# listed in NATDEPFILES as it is pulled in by
 		# configure.
-		NATDEPFILES="${NATDEPFILES} rs6000-nat.o"
+		NATDEPFILES="${NATDEPFILES} rs6000-aix-nat.o"
 
 		# When compiled with cc, for debugging, this argument
 		# should be passed.  We have no idea who our current
@@ -154,7 +154,8 @@ case ${gdb_host} in
 	case ${gdb_host_cpu} in
 	    aarch64)
 		# Host: FreeBSD/aarch64
-		NATDEPFILES="${NATDEPFILES} aarch64-fbsd-nat.o"
+		NATDEPFILES="${NATDEPFILES} aarch64-nat.o \
+		nat/aarch64-hw-point.o aarch64-fbsd-nat.o"
 		LOADLIBES=
 		;;
 	    arm)
@@ -165,7 +166,8 @@ case ${gdb_host} in
 	    i386)
 		# Host: FreeBSD/i386
 		NATDEPFILES="${NATDEPFILES} x86-nat.o nat/x86-dregs.o \
-		x86-bsd-nat.o i386-bsd-nat.o i386-fbsd-nat.o bsd-kvm.o"
+		nat/x86-xstate.o x86-bsd-nat.o x86-fbsd-nat.o i386-fbsd-nat.o \
+		bsd-kvm.o"
 		;;
 	    mips)
 		# Host: FreeBSD/mips
@@ -192,9 +194,9 @@ case ${gdb_host} in
 	case ${gdb_host_cpu} in
 	    i386)
 		# Host: FreeBSD/amd64
-		NATDEPFILES="${NATDEPFILES} amd64-nat.o amd64-bsd-nat.o \
+		NATDEPFILES="${NATDEPFILES} amd64-nat.o \
 		amd64-fbsd-nat.o bsd-kvm.o x86-nat.o nat/x86-dregs.o \
-		x86-bsd-nat.o"
+		nat/x86-xstate.o x86-bsd-nat.o x86-fbsd-nat.o"
 		;;
 	esac
 	;;
@@ -233,10 +235,11 @@ case ${gdb_host} in
 	case ${gdb_host_cpu} in
 	    aarch64)
 		#  Host: AArch64 based machine running GNU/Linux
-		NATDEPFILES="${NATDEPFILES} aarch64-linux-nat.o \
-		aarch32-linux-nat.o nat/aarch64-linux-hw-point.o \
+		NATDEPFILES="${NATDEPFILES} aarch64-nat.o aarch64-linux-nat.o \
+		aarch32-linux-nat.o nat/aarch64-hw-point.o \
+		nat/aarch64-linux-hw-point.o \
 		nat/aarch64-linux.o \
-		nat/aarch64-sve-linux-ptrace.o \
+		nat/aarch64-scalable-linux-ptrace.o \
 		nat/aarch64-mte-linux-ptrace.o"
 		;;
 	    arc)
@@ -251,12 +254,21 @@ case ${gdb_host} in
 	    i386)
 		# Host: Intel 386 running GNU/Linux.
 		NATDEPFILES="${NATDEPFILES} x86-nat.o nat/x86-dregs.o \
+		nat/x86-xstate.o \
 		i386-linux-nat.o x86-linux-nat.o nat/linux-btrace.o \
-		nat/x86-linux.o nat/x86-linux-dregs.o"
+		nat/x86-linux.o nat/x86-linux-dregs.o nat/i386-linux.o \
+		nat/x86-linux-tdesc.o arch/i386-linux-tdesc.o \
+		arch/x86-linux-tdesc-features.o"
 		;;
 	    ia64)
 		# Host: Intel IA-64 running GNU/Linux
 		NATDEPFILES="${NATDEPFILES} ia64-linux-nat.o"
+		;;
+	    loongarch)
+		# Host: LoongArch, running GNU/Linux.
+		NATDEPFILES="${NATDEPFILES} loongarch-linux-nat.o linux-nat-trad.o \
+		nat/loongarch-hw-point.o nat/loongarch-linux.o \
+		nat/loongarch-linux-hw-point.o"
 		;;
 	    m32r)
 		# Host: M32R based machine running GNU/Linux
@@ -270,6 +282,10 @@ case ${gdb_host} in
 		# Host: Linux/MIPS
 		NATDEPFILES="${NATDEPFILES} linux-nat-trad.o \
 		mips-linux-nat.o nat/mips-linux-watch.o"
+		;;
+	    or1k)
+		# Host: Linux/OpenRISC
+		NATDEPFILES="${NATDEPFILES} or1k-linux-nat.o"
 		;;
 	    pa)
 		# Host: Hewlett-Packard PA-RISC machine, running Linux
@@ -308,10 +324,11 @@ case ${gdb_host} in
 	    i386)
 		# Host: GNU/Linux x86-64
 		NATDEPFILES="${NATDEPFILES} x86-nat.o nat/x86-dregs.o \
-		amd64-nat.o amd64-linux-nat.o x86-linux-nat.o \
+		nat/x86-xstate.o amd64-nat.o amd64-linux-nat.o x86-linux-nat.o \
 		nat/linux-btrace.o \
-		nat/x86-linux.o nat/x86-linux-dregs.o \
-		nat/amd64-linux-siginfo.o"
+		nat/x86-linux.o nat/x86-linux-dregs.o nat/x86-linux-tdesc.o \
+		nat/amd64-linux-siginfo.o arch/x86-linux-tdesc-features.o \
+		arch/i386-linux-tdesc.o arch/amd64-linux-tdesc.o"
 		;;
 	    sparc)
 		# Host: GNU/Linux UltraSPARC
@@ -409,15 +426,6 @@ case ${gdb_host} in
 
 	esac
 	;;
-    nto)
-	case ${gdb_host_cpu} in
-	    i386)
-		# Host: Intel 386 running QNX.
-		NATDEPFILES='nto-procfs.o'
-		NAT_FILE='config/nm-nto.h'
-		;;
-	esac
-	;;
     obsd)
 	case ${gdb_host_cpu} in
 	    i386)
@@ -451,9 +459,8 @@ case ${gdb_host} in
 	case ${gdb_host_cpu} in
 	    i386)
 		# Host: OpenBSD/amd64
-		NATDEPFILES="${NATDEPFILES} obsd-nat.o amd64-nat.o x86-nat.o \
-		x86-bsd-nat.o amd64-bsd-nat.o amd64-obsd-nat.o bsd-kvm.o \
-		nat/x86-dregs.o"
+		NATDEPFILES="${NATDEPFILES} obsd-nat.o amd64-nat.o \
+		x86-bsd-nat.o amd64-bsd-nat.o amd64-obsd-nat.o bsd-kvm.o"
 		LOADLIBES='-lkvm'
 		;;
 	    mips)

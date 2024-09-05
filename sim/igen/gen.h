@@ -1,6 +1,6 @@
 /* The IGEN simulator generator for GDB, the GNU Debugger.
 
-   Copyright 2002-2021 Free Software Foundation, Inc.
+   Copyright 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney.
 
@@ -19,6 +19,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
+#ifndef IGEN_GEN_H
+#define IGEN_GEN_H
 
 typedef struct _opcode_field opcode_field;
 struct _opcode_field
@@ -83,7 +85,7 @@ struct _gen_entry
   gen_entry *parent;		/* parent has the opcode* data */
 
   /* as a table containing entries */
-  decode_table *opcode_rule;
+  const decode_table *opcode_rule;
   opcode_field *opcode;
   int nr_prefetched_words;
   int nr_entries;
@@ -104,8 +106,8 @@ struct _gen_entry
 
 struct _gen_list
 {
-  model_entry *model;
-  insn_table *isa;
+  const model_entry *model;
+  const insn_table *isa;
   gen_entry *table;
   gen_list *next;
 };
@@ -115,9 +117,9 @@ typedef struct _gen_table gen_table;
 struct _gen_table
 {
   /* list of all the instructions */
-  insn_table *isa;
+  const insn_table *isa;
   /* list of all the semantic functions */
-  decode_table *rules;
+  const decode_table *rules;
   /* list of all the generated instruction tables */
   gen_list *tables;
   /* list of all the semantic functions */
@@ -126,25 +128,26 @@ struct _gen_table
 };
 
 
-extern gen_table *make_gen_tables (insn_table *isa, decode_table *rules);
+extern gen_table *make_gen_tables
+  (const insn_table *isa, const decode_table *rules);
 
 
 extern void gen_tables_expand_insns (gen_table *gen);
 
 extern void gen_tables_expand_semantics (gen_table *gen);
 
-extern int gen_entry_depth (gen_entry *table);
+extern int gen_entry_depth (const gen_entry *table);
 
 
 
 /* Traverse the created data structure */
 
 typedef void gen_entry_handler
-  (lf *file, gen_entry *entry, int depth, void *data);
+  (lf *file, const gen_entry *entry, int depth, void *data);
 
 extern void gen_entry_traverse_tree
   (lf *file,
-   gen_entry *table,
+   const gen_entry *table,
    int depth,
    gen_entry_handler * start,
    gen_entry_handler * leaf, gen_entry_handler * end, void *data);
@@ -196,13 +199,16 @@ extern int print_function_name
    const char *basename,
    const char *format_name,
    const char *model_name,
-   opcode_bits *expanded_bits, lf_function_name_prefixes prefix);
+   const opcode_bits *expanded_bits,
+   lf_function_name_prefixes prefix);
 
 extern void print_my_defines
   (lf *file,
-   const char *basename, const char *format_name, opcode_bits *expanded_bits);
+   const char *basename,
+   const char *format_name,
+   const opcode_bits *expanded_bits);
 
-extern void print_itrace (lf *file, insn_entry * insn, int idecode);
+extern void print_itrace (lf *file, const insn_entry *insn, int idecode);
 
 extern void print_sim_engine_abort (lf *file, const char *message);
 
@@ -210,3 +216,5 @@ extern void print_sim_engine_abort (lf *file, const char *message);
 extern void print_include (lf *file, igen_module module);
 extern void print_include_inline (lf *file, igen_module module);
 extern void print_includes (lf *file);
+
+#endif /* IGEN_GEN_H */

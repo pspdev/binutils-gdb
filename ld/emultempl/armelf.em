@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+#   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -67,6 +67,10 @@ fragment <<EOF
 EOF
 fi
 fragment <<EOF
+  link_info.separate_code = DEFAULT_LD_Z_SEPARATE_CODE;
+  link_info.warn_execstack = DEFAULT_LD_WARN_EXECSTACK;
+  link_info.no_warn_rwx_segments = ! DEFAULT_LD_WARN_RWX_SEGMENTS;
+  link_info.default_execstack = DEFAULT_LD_EXECSTACK;
 }
 
 static void
@@ -493,10 +497,7 @@ gld${EMULATION_NAME}_finish (void)
 
       /* Now convert this value into a string and store it in entry_symbol
 	 where the lang_finish() function will pick it up.  */
-      buffer[0] = '0';
-      buffer[1] = 'x';
-
-      sprintf_vma (buffer + 2, val);
+      sprintf (buffer, "0x%" PRIx64, (uint64_t) val);
 
       if (params.thumb_entry_symbol != NULL && entry_symbol.name != NULL
 	  && entry_from_cmdline)
@@ -565,31 +566,6 @@ EOF
 # Define some shell vars to insert bits of code into the standard elf
 # parse_args and list_options functions.
 #
-PARSE_AND_LIST_PROLOGUE='
-#define OPTION_THUMB_ENTRY		301
-#define OPTION_BE8			302
-#define OPTION_TARGET1_REL		303
-#define OPTION_TARGET1_ABS		304
-#define OPTION_TARGET2			305
-#define OPTION_FIX_V4BX			306
-#define OPTION_USE_BLX			307
-#define OPTION_VFP11_DENORM_FIX		308
-#define OPTION_NO_ENUM_SIZE_WARNING	309
-#define OPTION_PIC_VENEER		310
-#define OPTION_FIX_V4BX_INTERWORKING	311
-#define OPTION_STUBGROUP_SIZE		312
-#define OPTION_NO_WCHAR_SIZE_WARNING	313
-#define OPTION_FIX_CORTEX_A8		314
-#define OPTION_NO_FIX_CORTEX_A8		315
-#define OPTION_NO_MERGE_EXIDX_ENTRIES	316
-#define OPTION_FIX_ARM1176		317
-#define OPTION_NO_FIX_ARM1176		318
-#define OPTION_LONG_PLT			319
-#define OPTION_STM32L4XX_FIX		320
-#define OPTION_CMSE_IMPLIB		321
-#define OPTION_IN_IMPLIB		322
-'
-
 PARSE_AND_LIST_SHORTOPTS=p
 
 PARSE_AND_LIST_LONGOPTS='

@@ -1,5 +1,5 @@
 /* BFD back-end for HPPA BSD core files.
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -100,7 +100,7 @@ hppabsd_core_core_file_p (bfd *abfd)
 
   /* Try to read in the u-area.  We will need information from this
      to know how to grok the rest of the core structures.  */
-  val = bfd_bread ((void *) &u, (bfd_size_type) sizeof u, abfd);
+  val = bfd_read (&u, sizeof u, abfd);
   if (val != sizeof u)
     {
       if (bfd_get_error () != bfd_error_system_call)
@@ -213,9 +213,9 @@ swap_abort (void)
 #define	NO_GET ((bfd_vma (*) (const void *)) swap_abort)
 #define	NO_PUT ((void (*) (bfd_vma, void *)) swap_abort)
 #define	NO_GETS ((bfd_signed_vma (*) (const void *)) swap_abort)
-#define	NO_GET64 ((bfd_uint64_t (*) (const void *)) swap_abort)
-#define	NO_PUT64 ((void (*) (bfd_uint64_t, void *)) swap_abort)
-#define	NO_GETS64 ((bfd_int64_t (*) (const void *)) swap_abort)
+#define	NO_GET64 ((uint64_t (*) (const void *)) swap_abort)
+#define	NO_PUT64 ((void (*) (uint64_t, void *)) swap_abort)
+#define	NO_GETS64 ((int64_t (*) (const void *)) swap_abort)
 
 const bfd_target core_hppabsd_vec =
   {

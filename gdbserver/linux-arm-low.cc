@@ -1,5 +1,5 @@
 /* GNU/Linux/ARM specific low level interface, for the remote server for GDB.
-   Copyright (C) 1995-2021 Free Software Foundation, Inc.
+   Copyright (C) 1995-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "server.h"
 #include "linux-low.h"
 #include "arch/arm.h"
 #include "arch/arm-linux.h"
@@ -24,6 +23,7 @@
 #include "linux-aarch32-low.h"
 #include "linux-aarch32-tdesc.h"
 #include "linux-arm-tdesc.h"
+#include "gdbsupport/gdb-checked-static-cast.h"
 
 #include <sys/uio.h>
 /* Don't include elf.h if linux/elf.h got included by gdb_proc_service.h.
@@ -413,9 +413,9 @@ arm_linux_init_hwbp_cap (int pid)
   arm_linux_hwbp_cap.bp_count = (unsigned char)(val & 0xff);
 
   if (arm_linux_hwbp_cap.wp_count > MAX_WPTS)
-    internal_error (__FILE__, __LINE__, "Unsupported number of watchpoints");
+    internal_error ("Unsupported number of watchpoints");
   if (arm_linux_hwbp_cap.bp_count > MAX_BPTS)
-    internal_error (__FILE__, __LINE__, "Unsupported number of breakpoints");
+    internal_error ("Unsupported number of breakpoints");
 }
 
 /* How many hardware breakpoints are available?  */
@@ -819,6 +819,34 @@ arm_target::low_new_fork (process_info *parent, process_info *child)
     child_lwp_info->wpts_changed[i] = 1;
 }
 
+/* For PID, set the address register of hardware breakpoint pair I to
+   ADDRESS.  */
+
+static void
+sethbpregs_hwbp_address (int pid, int i, unsigned int address)
+{
+  PTRACE_TYPE_ARG3 address_reg = (PTRACE_TYPE_ARG3) ((i << 1) + 1);
+
+  errno = 0;
+
+  if (ptrace (PTRACE_SETHBPREGS, pid, address_reg, &address) < 0)
+    perror_with_name (_("Unexpected error updating breakpoint address"));
+}
+
+/* For PID, set the control register of hardware breakpoint pair I to
+   CONTROL.  */
+
+static void
+sethbpregs_hwbp_control (int pid, int i, arm_hwbp_control_t control)
+{
+  PTRACE_TYPE_ARG3 control_reg = (PTRACE_TYPE_ARG3) ((i << 1) + 2);
+
+  errno = 0;
+
+  if (ptrace (PTRACE_SETHBPREGS, pid, control_reg, &control) < 0)
+    perror_with_name (_("Unexpected error setting breakpoint control"));
+}
+
 /* Called when resuming a thread.
    If the debug regs have changed, update the thread's copies.  */
 void
@@ -834,19 +862,32 @@ arm_target::low_prepare_to_resume (lwp_info *lwp)
   for (i = 0; i < arm_linux_get_hw_breakpoint_count (); i++)
     if (lwp_info->bpts_changed[i])
       {
-	errno = 0;
+	unsigned int address = proc_info->bpts[i].address;
+	arm_hwbp_control_t control = proc_info->bpts[i].control;
 
-	if (arm_hwbp_control_is_enabled (proc_info->bpts[i].control))
-	  if (ptrace (PTRACE_SETHBPREGS, pid,
-		      (PTRACE_TYPE_ARG3) ((i << 1) + 1),
-		      &proc_info->bpts[i].address) < 0)
-	    perror_with_name ("Unexpected error setting breakpoint address");
-
-	if (arm_hwbp_control_is_initialized (proc_info->bpts[i].control))
-	  if (ptrace (PTRACE_SETHBPREGS, pid,
-		      (PTRACE_TYPE_ARG3) ((i << 1) + 2),
-		      &proc_info->bpts[i].control) < 0)
-	    perror_with_name ("Unexpected error setting breakpoint");
+	if (!arm_hwbp_control_is_initialized (control))
+	  {
+	    /* Nothing to do.  */
+	  }
+	else if (!arm_hwbp_control_is_enabled (control))
+	  {
+	    /* Disable hardware breakpoint, just write the control
+	       register.  */
+	    sethbpregs_hwbp_control (pid, i, control);
+	  }
+	else
+	  {
+	    /* See arm_linux_nat_target::low_prepare_to_resume for detailed
+	       comment.  */
+	    unsigned int aligned_address = address & ~0x7U;
+	    if (aligned_address != address)
+	      {
+		sethbpregs_hwbp_address (pid, i, aligned_address);
+		sethbpregs_hwbp_control (pid, i, control);
+	      }
+	    sethbpregs_hwbp_address (pid, i, address);
+	    sethbpregs_hwbp_control (pid, i, control);
+	  }
 
 	lwp_info->bpts_changed[i] = 0;
       }
@@ -913,7 +954,8 @@ get_next_pcs_syscall_next_pc (struct arm_get_next_pcs *self)
   CORE_ADDR pc = regcache_read_pc (self->regcache);
   int is_thumb = arm_is_thumb_mode ();
   ULONGEST svc_number = 0;
-  struct regcache *regcache = self->regcache;
+  regcache *regcache
+    = gdb::checked_static_cast<struct regcache *> (self->regcache);
 
   if (is_thumb)
     {
@@ -958,7 +1000,7 @@ get_next_pcs_syscall_next_pc (struct arm_get_next_pcs *self)
 static const struct target_desc *
 arm_read_description (void)
 {
-  unsigned long arm_hwcap = linux_get_hwcap (4);
+  unsigned long arm_hwcap = linux_get_hwcap (current_thread->id.pid (), 4);
 
   if (arm_hwcap & HWCAP_IWMMXT)
     return arm_linux_read_description (ARM_FP_TYPE_IWMMXT);
@@ -1005,9 +1047,9 @@ arm_target::low_arch_setup ()
 
   /* Check if PTRACE_GETREGSET works.  */
   if (ptrace (PTRACE_GETREGSET, tid, NT_PRSTATUS, &iov) == 0)
-    have_ptrace_getregset = 1;
+    have_ptrace_getregset = TRIBOOL_TRUE;
   else
-    have_ptrace_getregset = 0;
+    have_ptrace_getregset = TRIBOOL_FALSE;
 }
 
 bool
@@ -1120,7 +1162,7 @@ arm_target::get_regs_info ()
 {
   const struct target_desc *tdesc = current_process ()->tdesc;
 
-  if (have_ptrace_getregset == 1
+  if (have_ptrace_getregset == TRIBOOL_TRUE
       && (is_aarch32_linux_description (tdesc)
 	  || arm_linux_get_tdesc_fp_type (tdesc) == ARM_FP_TYPE_VFPV3))
     return &regs_info_aarch32;

@@ -1,6 +1,6 @@
 /* This file is part of SIS (SPARC instruction simulator)
 
-   Copyright (C) 1995-2021 Free Software Foundation, Inc.
+   Copyright (C) 1995-2024 Free Software Foundation, Inc.
    Contributed by Jiri Gaisler, European Space Agency
 
    This program is free software; you can redistribute it and/or modify
@@ -62,7 +62,7 @@ int             sis_gdb_break = 1;
 host_callback *sim_callback;
 
 int
-run_sim(struct pstate *sregs, uint64 icount, int dis)
+run_sim(struct pstate *sregs, uint64_t icount, int dis)
 {
     int             mexc, irq;
 
@@ -156,6 +156,21 @@ run_sim(struct pstate *sregs, uint64 icount, int dis)
     return TIME_OUT;
 }
 
+static int ATTRIBUTE_PRINTF (3, 4)
+fprintf_styled (void *stream, enum disassembler_style style,
+		const char *fmt, ...)
+{
+  int ret;
+  FILE *out = (FILE *) stream;
+  va_list args;
+
+  va_start (args, fmt);
+  ret = vfprintf (out, fmt, args);
+  va_end (args);
+
+  return ret;
+}
+
 SIM_DESC
 sim_open (SIM_OPEN_KIND kind, struct host_callback_struct *callback,
 	  struct bfd *abfd, char * const *argv)
@@ -244,7 +259,8 @@ sim_open (SIM_OPEN_KIND kind, struct host_callback_struct *callback,
 #ifdef F_GETFL
     termsave = fcntl(0, F_GETFL, 0);
 #endif
-    INIT_DISASSEMBLE_INFO(dinfo, stdout,(fprintf_ftype)fprintf);
+    INIT_DISASSEMBLE_INFO(dinfo, stdout,(fprintf_ftype)fprintf,
+			  fprintf_styled);
 #ifdef HOST_LITTLE_ENDIAN
     dinfo.endian = BFD_ENDIAN_LITTLE;
 #else
@@ -294,8 +310,9 @@ sim_create_inferior(SIM_DESC sd, bfd *abfd, char * const *argv,
 }
 
 int
-sim_store_register(SIM_DESC sd, int regno, unsigned char *value, int length)
+sim_store_register(SIM_DESC sd, int regno, const void *buf, int length)
 {
+    const unsigned char *value = buf;
     int regval;
 
     regval = (value[0] << 24) | (value[1] << 16)
@@ -306,36 +323,38 @@ sim_store_register(SIM_DESC sd, int regno, unsigned char *value, int length)
 
 
 int
-sim_fetch_register(SIM_DESC sd, int regno, unsigned char *buf, int length)
+sim_fetch_register(SIM_DESC sd, int regno, void *buf, int length)
 {
     get_regi(&sregs, regno, buf);
     return -1;
 }
 
-int
-sim_write (SIM_DESC sd, SIM_ADDR mem, const unsigned char *buf, int length)
+uint64_t
+sim_write (SIM_DESC sd, uint64_t addr, const void *buffer, uint64_t length)
 {
-    int i, len;
+    int i;
+    const unsigned char *data = buffer;
 
     for (i = 0; i < length; i++) {
-	sis_memory_write ((mem + i) ^ EBT, &buf[i], 1);
+	sis_memory_write ((addr + i) ^ EBT, &data[i], 1);
     }
     return length;
 }
 
-int
-sim_read (SIM_DESC sd, SIM_ADDR mem, unsigned char *buf, int length)
+uint64_t
+sim_read (SIM_DESC sd, uint64_t addr, void *buffer, uint64_t length)
 {
-    int i, len;
+    int i;
+    unsigned char *data = buffer;
 
     for (i = 0; i < length; i++) {
-	sis_memory_read ((mem + i) ^ EBT, &buf[i], 1);
+	sis_memory_read ((addr + i) ^ EBT, &data[i], 1);
     }
     return length;
 }
 
 void
-sim_info(SIM_DESC sd, int verbose)
+sim_info(SIM_DESC sd, bool verbose)
 {
     show_stat(&sregs);
 }
@@ -400,13 +419,13 @@ flush_windows (void)
 
   for (win = invwin; ; win = (win - 1) & PSR_CWP)
     {
-      uint32 sp;
+      uint32_t sp;
       int i;
 
       sp = sregs.r[(win * 16 + 14) & 0x7f];
 #if 1
       if (sis_verbose > 2) {
-	uint32 fp = sregs.r[(win * 16 + 30) & 0x7f];
+	uint32_t fp = sregs.r[(win * 16 + 30) & 0x7f];
 	printf("flush_window: win %d, sp %x, fp %x\n", win, sp, fp);
       }
 #endif

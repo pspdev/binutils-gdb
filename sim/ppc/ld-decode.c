@@ -23,6 +23,7 @@
 #include "lf.h"
 #include "table.h"
 #include "ld-decode.h"
+#include "dumpf.h"
 
 
 enum {
@@ -70,7 +71,7 @@ force_decode_gen_type(const char *type)
 
 
 decode_table *
-load_decode_table(char *file_name,
+load_decode_table(const char *file_name,
 		  int hi_bit_nr)
 {
   table *file = table_open(file_name, nr_decode_fields, 0);
@@ -120,7 +121,7 @@ dump_decode_rule(decode_table *rule,
     dumpf(indent, " (special_mask 0x%x)\n", rule->special_mask);
     dumpf(indent, " (special_value 0x%x)\n", rule->special_value);
     dumpf(indent, " (special_constant 0x%x)\n", rule->special_constant);
-    dumpf(indent, " (next 0x%x)\n", rule->next);
+    dumpf(indent, " (next %p)\n", rule->next);
   }
   dumpf(indent, " )\n");
 }
@@ -143,7 +144,7 @@ main(int argc, char **argv)
 {
   decode_table *rules;
   if (argc != 3)
-    error("Usage: decode <decode-file> <hi-bit-nr>\n");
+    ERROR("Usage: decode <decode-file> <hi-bit-nr>\n");
   rules = load_decode_table(argv[1], a2i(argv[2]));
   dump_decode_rules(rules, 0);
   return 0;

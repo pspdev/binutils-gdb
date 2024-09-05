@@ -1,6 +1,6 @@
 /* BSD user-level threads support.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "extract-store-integer.h"
 #include "gdbcore.h"
 #include "gdbthread.h"
 #include "inferior.h"
@@ -29,7 +29,7 @@
 #include "symfile.h"
 #include "target.h"
 
-#include "gdb_obstack.h"
+#include "gdbsupport/gdb_obstack.h"
 
 #include "bsd-uthread.h"
 
@@ -70,24 +70,24 @@ static bsd_uthread_target bsd_uthread_ops;
 
 /* Architecture-specific operations.  */
 
-/* Per-architecture data key.  */
-static struct gdbarch_data *bsd_uthread_data;
-
 struct bsd_uthread_ops
 {
   /* Supply registers for an inactive thread to a register cache.  */
-  void (*supply_uthread)(struct regcache *, int, CORE_ADDR);
+  void (*supply_uthread)(struct regcache *, int, CORE_ADDR) = nullptr;
 
   /* Collect registers for an inactive thread from a register cache.  */
-  void (*collect_uthread)(const struct regcache *, int, CORE_ADDR);
+  void (*collect_uthread)(const struct regcache *, int, CORE_ADDR) = nullptr;
 };
 
-static void *
-bsd_uthread_init (struct obstack *obstack)
-{
-  struct bsd_uthread_ops *ops;
+/* Per-architecture data key.  */
+static const registry<gdbarch>::key<struct bsd_uthread_ops> bsd_uthread_data;
 
-  ops = OBSTACK_ZALLOC (obstack, struct bsd_uthread_ops);
+static struct bsd_uthread_ops *
+get_bsd_uthread (struct gdbarch *gdbarch)
+{
+  struct bsd_uthread_ops *ops = bsd_uthread_data.get (gdbarch);
+  if (ops == nullptr)
+    ops = bsd_uthread_data.emplace (gdbarch);
   return ops;
 }
 
@@ -99,8 +99,7 @@ bsd_uthread_set_supply_uthread (struct gdbarch *gdbarch,
 				void (*supply_uthread) (struct regcache *,
 							int, CORE_ADDR))
 {
-  struct bsd_uthread_ops *ops
-    = (struct bsd_uthread_ops *) gdbarch_data (gdbarch, bsd_uthread_data);
+  struct bsd_uthread_ops *ops = get_bsd_uthread (gdbarch);
 
   ops->supply_uthread = supply_uthread;
 }
@@ -113,8 +112,7 @@ bsd_uthread_set_collect_uthread (struct gdbarch *gdbarch,
 			 void (*collect_uthread) (const struct regcache *,
 						  int, CORE_ADDR))
 {
-  struct bsd_uthread_ops *ops
-    = (struct bsd_uthread_ops *) gdbarch_data (gdbarch, bsd_uthread_data);
+  struct bsd_uthread_ops *ops = get_bsd_uthread (gdbarch);
 
   ops->collect_uthread = collect_uthread;
 }
@@ -127,7 +125,7 @@ bsd_uthread_set_collect_uthread (struct gdbarch *gdbarch,
 static void
 bsd_uthread_check_magic (CORE_ADDR addr)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  bfd_endian byte_order = gdbarch_byte_order (current_inferior ()->arch ());
   ULONGEST magic = read_memory_unsigned_integer (addr, 4, byte_order);
 
   if (magic != BSD_UTHREAD_PTHREAD_MAGIC)
@@ -151,19 +149,18 @@ static int bsd_uthread_thread_next_offset = -1;
 static int bsd_uthread_thread_ctx_offset;
 
 /* Name of shared threads library.  */
-static const char *bsd_uthread_solib_name;
+static std::string bsd_uthread_solib_name;
 
-/* Non-zero if the thread startum implemented by this module is active.  */
+/* Non-zero if the thread stratum implemented by this module is active.  */
 static int bsd_uthread_active;
 
 static CORE_ADDR
 bsd_uthread_lookup_address (const char *name, struct objfile *objfile)
 {
-  struct bound_minimal_symbol sym;
-
-  sym = lookup_minimal_symbol (name, NULL, objfile);
+  bound_minimal_symbol sym
+    = lookup_minimal_symbol (current_program_space, name, objfile);
   if (sym.minsym)
-    return BMSYMBOL_VALUE_ADDRESS (sym);
+    return sym.value_address ();
 
   return 0;
 }
@@ -171,7 +168,7 @@ bsd_uthread_lookup_address (const char *name, struct objfile *objfile)
 static int
 bsd_uthread_lookup_offset (const char *name, struct objfile *objfile)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  bfd_endian byte_order = gdbarch_byte_order (current_inferior ()->arch ());
   CORE_ADDR addr;
 
   addr = bsd_uthread_lookup_address (name, objfile);
@@ -184,7 +181,8 @@ bsd_uthread_lookup_offset (const char *name, struct objfile *objfile)
 static CORE_ADDR
 bsd_uthread_read_memory_address (CORE_ADDR addr)
 {
-  struct type *ptr_type = builtin_type (target_gdbarch ())->builtin_data_ptr;
+  type *ptr_type
+    = builtin_type (current_inferior ()->arch ())->builtin_data_ptr;
   return read_memory_typed_address (addr, ptr_type);
 }
 
@@ -195,9 +193,8 @@ bsd_uthread_read_memory_address (CORE_ADDR addr)
 static int
 bsd_uthread_activate (struct objfile *objfile)
 {
-  struct gdbarch *gdbarch = target_gdbarch ();
-  struct bsd_uthread_ops *ops
-    = (struct bsd_uthread_ops *) gdbarch_data (gdbarch, bsd_uthread_data);
+  gdbarch *gdbarch = current_inferior ()->arch ();
+  struct bsd_uthread_ops *ops = get_bsd_uthread (gdbarch);
 
   /* Skip if the thread stratum has already been activated.  */
   if (bsd_uthread_active)
@@ -247,7 +244,7 @@ bsd_uthread_target::close ()
   bsd_uthread_thread_state_offset = 0;
   bsd_uthread_thread_next_offset = 0;
   bsd_uthread_thread_ctx_offset = 0;
-  bsd_uthread_solib_name = NULL;
+  bsd_uthread_solib_name.clear ();
 }
 
 /* Deactivate the thread stratum implemented by this module.  */
@@ -277,19 +274,19 @@ static const char * const bsd_uthread_solib_names[] =
 };
 
 static void
-bsd_uthread_solib_loaded (struct so_list *so)
+bsd_uthread_solib_loaded (solib &so)
 {
   const char * const *names = bsd_uthread_solib_names;
 
   for (names = bsd_uthread_solib_names; *names; names++)
     {
-      if (startswith (so->so_original_name, *names))
+      if (startswith (so.so_original_name, *names))
 	{
 	  solib_read_symbols (so, 0);
 
-	  if (bsd_uthread_activate (so->objfile))
+	  if (bsd_uthread_activate (so.objfile))
 	    {
-	      bsd_uthread_solib_name = so->so_original_name;
+	      bsd_uthread_solib_name = so.so_original_name;
 	      return;
 	    }
 	}
@@ -297,12 +294,12 @@ bsd_uthread_solib_loaded (struct so_list *so)
 }
 
 static void
-bsd_uthread_solib_unloaded (struct so_list *so)
+bsd_uthread_solib_unloaded (program_space *pspace, const solib &so)
 {
-  if (!bsd_uthread_solib_name)
+  if (bsd_uthread_solib_name.empty ())
     return;
 
-  if (strcmp (so->so_original_name, bsd_uthread_solib_name) == 0)
+  if (so.so_original_name == bsd_uthread_solib_name)
     bsd_uthread_deactivate ();
 }
 
@@ -317,8 +314,7 @@ void
 bsd_uthread_target::fetch_registers (struct regcache *regcache, int regnum)
 {
   struct gdbarch *gdbarch = regcache->arch ();
-  struct bsd_uthread_ops *uthread_ops
-    = (struct bsd_uthread_ops *) gdbarch_data (gdbarch, bsd_uthread_data);
+  struct bsd_uthread_ops *uthread_ops = get_bsd_uthread (gdbarch);
   ptid_t ptid = regcache->ptid ();
   CORE_ADDR addr = ptid.tid ();
   CORE_ADDR active_addr;
@@ -349,8 +345,7 @@ void
 bsd_uthread_target::store_registers (struct regcache *regcache, int regnum)
 {
   struct gdbarch *gdbarch = regcache->arch ();
-  struct bsd_uthread_ops *uthread_ops
-    = (struct bsd_uthread_ops *) gdbarch_data (gdbarch, bsd_uthread_data);
+  struct bsd_uthread_ops *uthread_ops = get_bsd_uthread (gdbarch);
   ptid_t ptid = regcache->ptid ();
   CORE_ADDR addr = ptid.tid ();
   CORE_ADDR active_addr;
@@ -379,7 +374,7 @@ ptid_t
 bsd_uthread_target::wait (ptid_t ptid, struct target_waitstatus *status,
 			  target_wait_flags options)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  bfd_endian byte_order = gdbarch_byte_order (current_inferior ()->arch ());
   CORE_ADDR addr;
   process_stratum_target *beneath
     = as_process_stratum_target (this->beneath ());
@@ -389,8 +384,8 @@ bsd_uthread_target::wait (ptid_t ptid, struct target_waitstatus *status,
 
   /* If the process is no longer alive, there's no point in figuring
      out the thread ID.  It will fail anyway.  */
-  if (status->kind == TARGET_WAITKIND_SIGNALLED
-      || status->kind == TARGET_WAITKIND_EXITED)
+  if (status->kind () == TARGET_WAITKIND_SIGNALLED
+      || status->kind () == TARGET_WAITKIND_EXITED)
     return ptid;
 
   /* Fetch the corresponding thread ID, and augment the returned
@@ -420,7 +415,7 @@ bsd_uthread_target::wait (ptid_t ptid, struct target_waitstatus *status,
     thread_change_ptid (beneath, inferior_ptid, ptid);
 
   /* Don't let the core see a ptid without a corresponding thread.  */
-  thread_info *thread = find_thread_ptid (beneath, ptid);
+  thread_info *thread = beneath->find_thread (ptid);
   if (thread == NULL || thread->state == THREAD_EXITED)
     add_thread (beneath, ptid);
 
@@ -437,7 +432,7 @@ bsd_uthread_target::resume (ptid_t ptid, int step, enum gdb_signal sig)
 bool
 bsd_uthread_target::thread_alive (ptid_t ptid)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  bfd_endian byte_order = gdbarch_byte_order (current_inferior ()->arch ());
   CORE_ADDR addr = ptid.tid ();
 
   if (addr != 0)
@@ -471,7 +466,7 @@ bsd_uthread_target::update_thread_list ()
 
       process_stratum_target *proc_target
 	= as_process_stratum_target (this->beneath ());
-      thread_info *thread = find_thread_ptid (proc_target, ptid);
+      thread_info *thread = proc_target->find_thread (ptid);
       if (thread == nullptr || thread->state == THREAD_EXITED)
 	{
 	  /* If INFERIOR_PTID doesn't have a tid member yet, then ptid
@@ -518,7 +513,7 @@ static const char * const bsd_uthread_state[] =
 const char *
 bsd_uthread_target::extra_thread_info (thread_info *info)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  bfd_endian byte_order = gdbarch_byte_order (current_inferior ()->arch ());
   CORE_ADDR addr = info->ptid.tid ();
 
   if (addr != 0)
@@ -538,8 +533,9 @@ std::string
 bsd_uthread_target::pid_to_str (ptid_t ptid)
 {
   if (ptid.tid () != 0)
-    return string_printf ("process %d, thread 0x%lx",
-			  ptid.pid (), ptid.tid ());
+    return string_printf ("process %d, thread 0x%s",
+			  ptid.pid (),
+			  phex_nz (ptid.tid (), sizeof (ULONGEST)));
 
   return normal_pid_to_str (ptid);
 }
@@ -548,8 +544,6 @@ void _initialize_bsd_uthread ();
 void
 _initialize_bsd_uthread ()
 {
-  bsd_uthread_data = gdbarch_data_register_pre_init (bsd_uthread_init);
-
   gdb::observers::inferior_created.attach (bsd_uthread_inferior_created,
 					   "bsd-uthread");
   gdb::observers::solib_loaded.attach (bsd_uthread_solib_loaded,

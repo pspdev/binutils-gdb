@@ -1,7 +1,7 @@
 /* Functions to deal with the inferior being executed on GDB or
    GDBserver.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,11 +26,6 @@
 /* Return the exec wrapper to be used when starting the inferior, or NULL
    otherwise.  */
 extern const char *get_exec_wrapper ();
-
-/* Return the name of the executable file as a string.
-   ERR nonzero means get error if there is none specified;
-   otherwise return 0 in that case.  */
-extern const char *get_exec_file (int err);
 
 /* Return the inferior's current working directory.
 

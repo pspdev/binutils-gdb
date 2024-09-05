@@ -1,6 +1,6 @@
 /* Simulator for Analog Devices Blackfin processors.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
    Contributed by Analog Devices, Inc.
 
    This file is part of simulators.
@@ -34,10 +34,11 @@
 #include "sim/callback.h"
 #include "gdb/signals.h"
 #include "sim-main.h"
+#include "sim-options.h"
 #include "sim-syscall.h"
 #include "sim-hw.h"
 
-#include "targ-vals.h"
+#include "bfin-sim.h"
 
 /* The numbers here do not matter.  They just need to be unique.  They also
    need not be static across releases -- they're used internally only.  The
@@ -70,7 +71,7 @@
 #include "elf/external.h"
 #include "elf/internal.h"
 #include "elf/bfin.h"
-#include "elf-bfd.h"
+#include "bfd/elf-bfd.h"
 
 #include "dv-bfin_cec.h"
 #include "dv-bfin_mmu.h"
@@ -102,7 +103,6 @@ void
 bfin_syscall (SIM_CPU *cpu)
 {
   SIM_DESC sd = CPU_STATE (cpu);
-  char * const *argv = (void *)STATE_PROG_ARGV (sd);
   host_callback *cb = STATE_CALLBACK (sd);
   bu32 args[6];
   CB_SYSCALL sc;
@@ -134,8 +134,8 @@ bfin_syscall (SIM_CPU *cpu)
       sc.arg5 = args[4] = GET_LONG (DREG (0) + 16);
       sc.arg6 = args[5] = GET_LONG (DREG (0) + 20);
     }
-  sc.p1 = (PTR) sd;
-  sc.p2 = (PTR) cpu;
+  sc.p1 = sd;
+  sc.p2 = cpu;
   sc.read_mem = sim_syscall_read_mem;
   sc.write_mem = sim_syscall_write_mem;
 
@@ -145,39 +145,6 @@ bfin_syscall (SIM_CPU *cpu)
     case CB_SYS_exit:
       tbuf += sprintf (tbuf, "exit(%i)", args[0]);
       sim_engine_halt (sd, cpu, NULL, PCREG, sim_exited, sc.arg1);
-
-#ifdef CB_SYS_argc
-    case CB_SYS_argc:
-      tbuf += sprintf (tbuf, "argc()");
-      sc.result = countargv ((char **)argv);
-      break;
-    case CB_SYS_argnlen:
-      {
-      tbuf += sprintf (tbuf, "argnlen(%u)", args[0]);
-	if (sc.arg1 < countargv ((char **)argv))
-	  sc.result = strlen (argv[sc.arg1]);
-	else
-	  sc.result = -1;
-      }
-      break;
-    case CB_SYS_argn:
-      {
-	tbuf += sprintf (tbuf, "argn(%u)", args[0]);
-	if (sc.arg1 < countargv ((char **)argv))
-	  {
-	    const char *argn = argv[sc.arg1];
-	    int len = strlen (argn);
-	    int written = sc.write_mem (cb, &sc, sc.arg2, argn, len + 1);
-	    if (written == len + 1)
-	      sc.result = sc.arg2;
-	    else
-	      sc.result = -1;
-	  }
-	else
-	  sc.result = -1;
-      }
-      break;
-#endif
 
     case CB_SYS_gettimeofday:
       {
@@ -228,7 +195,7 @@ bfin_syscall (SIM_CPU *cpu)
       else
 	{
 	  sc.result = -1;
-	  sc.errcode = TARGET_EINVAL;
+	  sc.errcode = cb_host_to_target_errno (cb, EINVAL);
 	}
       break;
 
@@ -245,7 +212,7 @@ bfin_syscall (SIM_CPU *cpu)
 	if (sc.arg4 & 0x20 /*MAP_ANONYMOUS*/)
 	  /* XXX: We don't handle zeroing, but default is all zeros.  */;
 	else if (args[4] >= MAX_CALLBACK_FDS)
-	  sc.errcode = TARGET_ENOSYS;
+	  sc.errcode = cb_host_to_target_errno (cb, ENOSYS);
 	else
 	  {
 #ifdef HAVE_PREAD
@@ -255,11 +222,11 @@ bfin_syscall (SIM_CPU *cpu)
 	    if (pread (cb->fdmap[args[4]], data, sc.arg2, args[5] << 12) == sc.arg2)
 	      sc.write_mem (cb, &sc, heap, data, sc.arg2);
 	    else
-	      sc.errcode = TARGET_EINVAL;
+	      sc.errcode = cb_host_to_target_errno (cb, EINVAL);
 
 	    free (data);
 #else
-	    sc.errcode = TARGET_ENOSYS;
+	    sc.errcode = cb_host_to_target_errno (cb, ENOSYS);
 #endif
 	  }
 
@@ -288,7 +255,7 @@ bfin_syscall (SIM_CPU *cpu)
       if (sc.arg1 >= MAX_CALLBACK_FDS || sc.arg2 >= MAX_CALLBACK_FDS)
 	{
 	  sc.result = -1;
-	  sc.errcode = TARGET_EINVAL;
+	  sc.errcode = cb_host_to_target_errno (cb, EINVAL);
 	}
       else
 	{
@@ -304,7 +271,7 @@ bfin_syscall (SIM_CPU *cpu)
       if (sc.arg2)
 	{
 	  sc.result = -1;
-	  sc.errcode = TARGET_EINVAL;
+	  sc.errcode = cb_host_to_target_errno (cb, EINVAL);
 	}
       else
 	{
@@ -327,7 +294,7 @@ bfin_syscall (SIM_CPU *cpu)
       if (sc.arg1 >= MAX_CALLBACK_FDS)
 	{
 	  sc.result = -1;
-	  sc.errcode = TARGET_EINVAL;
+	  sc.errcode = cb_host_to_target_errno (cb, EINVAL);
 	}
       else
 	{
@@ -376,7 +343,7 @@ bfin_syscall (SIM_CPU *cpu)
       if (getcwd (p, sc.arg2) == NULL)
 	{
 	  sc.result = -1;
-	  sc.errcode = TARGET_EINVAL;
+	  sc.errcode = cb_host_to_target_errno (cb, EINVAL);
 	}
       else
 	{
@@ -429,12 +396,14 @@ bfin_syscall (SIM_CPU *cpu)
       goto sys_finish;
     case CB_SYS_setuid:
       sc.arg1 &= 0xffff;
+      ATTRIBUTE_FALLTHROUGH;
     case CB_SYS_setuid32:
       tbuf += sprintf (tbuf, "setuid(%u)", args[0]);
       sc.result = setuid (sc.arg1);
       goto sys_finish;
     case CB_SYS_setgid:
       sc.arg1 &= 0xffff;
+      ATTRIBUTE_FALLTHROUGH;
     case CB_SYS_setgid32:
       tbuf += sprintf (tbuf, "setgid(%u)", args[0]);
       sc.result = setgid (sc.arg1);
@@ -446,7 +415,7 @@ bfin_syscall (SIM_CPU *cpu)
       if (sc.arg1 != getpid ())
 	{
 	  sc.result = -1;
-	  sc.errcode = TARGET_EPERM;
+	  sc.errcode = cb_host_to_target_errno (cb, EPERM);
 	}
       else
 	{
@@ -455,7 +424,7 @@ bfin_syscall (SIM_CPU *cpu)
 	  goto sys_finish;
 #else
 	  sc.result = -1;
-	  sc.errcode = TARGET_ENOSYS;
+	  sc.errcode = cb_host_to_target_errno (cb, ENOSYS);
 #endif
 	}
       break;
@@ -678,8 +647,6 @@ free_state (SIM_DESC sd)
 static void
 bfin_initialize_cpu (SIM_DESC sd, SIM_CPU *cpu)
 {
-  memset (&cpu->state, 0, sizeof (cpu->state));
-
   PROFILE_TOTAL_INSN_COUNT (CPU_PROFILE_DATA (cpu)) = 0;
 
   bfin_model_cpu_init (sd, cpu);
@@ -709,7 +676,8 @@ sim_open (SIM_OPEN_KIND kind, host_callback *callback,
   current_target_byte_order = BFD_ENDIAN_LITTLE;
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
-  if (sim_cpu_alloc_all (sd, 1) != SIM_RC_OK)
+  if (sim_cpu_alloc_all_extra (sd, 0, sizeof (struct bfin_cpu_state))
+      != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -738,14 +706,11 @@ sim_open (SIM_OPEN_KIND kind, host_callback *callback,
     {
       bu16 emuexcpt = 0x25;
       sim_do_commandf (sd, "memory-size 0x%x", BFIN_DEFAULT_MEM_SIZE);
-      sim_write (sd, 0, (void *)&emuexcpt, 2);
+      sim_write (sd, 0, &emuexcpt, 2);
     }
 
   /* Check for/establish the a reference program image.  */
-  if (sim_analyze_program (sd,
-			   (STATE_PROG_ARGV (sd) != NULL
-			    ? *STATE_PROG_ARGV (sd)
-			    : NULL), abfd) != SIM_RC_OK)
+  if (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -807,7 +772,7 @@ bfin_fdpic_load (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd, bu32 *sp,
     goto skip_fdpic_init;
   if (bfd_seek (abfd, 0, SEEK_SET) != 0)
     goto skip_fdpic_init;
-  if (bfd_bread (&ehdr, sizeof (ehdr), abfd) != sizeof (ehdr))
+  if (bfd_read (&ehdr, sizeof (ehdr), abfd) != sizeof (ehdr))
     goto skip_fdpic_init;
   iehdr = elf_elfheader (abfd);
   if (!(iehdr->e_flags & EF_BFIN_FDPIC))
@@ -829,7 +794,7 @@ bfin_fdpic_load (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd, bu32 *sp,
   /* Push the Ehdr onto the stack.  */
   *sp -= sizeof (ehdr);
   elf_addrs[3] = *sp;
-  sim_write (sd, *sp, (void *)&ehdr, sizeof (ehdr));
+  sim_write (sd, *sp, &ehdr, sizeof (ehdr));
   if (STATE_OPEN_KIND (sd) == SIM_OPEN_DEBUG)
     sim_io_printf (sd, " Elf_Ehdr: %#x\n", *sp);
 
@@ -846,7 +811,7 @@ bfin_fdpic_load (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd, bu32 *sp,
       if (bfd_seek (abfd, iehdr->e_phoff, SEEK_SET) != 0)
 	goto skip_fdpic_init;
       data = xmalloc (phdr_size);
-      if (bfd_bread (data, phdr_size, abfd) != phdr_size)
+      if (bfd_read (data, phdr_size, abfd) != phdr_size)
 	goto skip_fdpic_init;
       *sp -= phdr_size;
       elf_addrs[1] = *sp;
@@ -880,7 +845,7 @@ bfin_fdpic_load (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd, bu32 *sp,
 	  memset (data + filesz, 0, memsz - filesz);
 
 	if (bfd_seek (abfd, p->p_offset, SEEK_SET) == 0
-	    && bfd_bread (data, filesz, abfd) == filesz)
+	    && bfd_read (data, filesz, abfd) == filesz)
 	  sim_write (sd, paddr, data, memsz);
 
 	free (data);
@@ -888,9 +853,9 @@ bfin_fdpic_load (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd, bu32 *sp,
 	max_load_addr = max (paddr + memsz, max_load_addr);
 
 	*sp -= 12;
-	sim_write (sd, *sp+0, (void *)&paddr, 4); /* loadseg.addr  */
-	sim_write (sd, *sp+4, (void *)&vaddr, 4); /* loadseg.p_vaddr  */
-	sim_write (sd, *sp+8, (void *)&memsz, 4); /* loadseg.p_memsz  */
+	sim_write (sd, *sp+0, &paddr, 4); /* loadseg.addr  */
+	sim_write (sd, *sp+4, &vaddr, 4); /* loadseg.p_vaddr  */
+	sim_write (sd, *sp+8, &memsz, 4); /* loadseg.p_memsz  */
 	++nsegs;
       }
     else if (phdrs[i].p_type == PT_DYNAMIC)
@@ -906,7 +871,7 @@ bfin_fdpic_load (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd, bu32 *sp,
 
 	*ldso_path = xmalloc (len);
 	if (bfd_seek (abfd, off, SEEK_SET) != 0
-	    || bfd_bread (*ldso_path, len, abfd) != len)
+	    || bfd_read (*ldso_path, len, abfd) != len)
 	  {
 	    free (*ldso_path);
 	    *ldso_path = NULL;
@@ -923,7 +888,7 @@ bfin_fdpic_load (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd, bu32 *sp,
   /* Push the summary loadmap info onto the stack last.  */
   *sp -= 4;
   sim_write (sd, *sp+0, null, 2); /* loadmap.version  */
-  sim_write (sd, *sp+2, (void *)&nsegs, 2); /* loadmap.nsegs  */
+  sim_write (sd, *sp+2, &nsegs, 2); /* loadmap.nsegs  */
 
   ret = true;
  skip_fdpic_init:
@@ -1047,16 +1012,14 @@ bfin_user_init (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd,
   if (auxvt)
     {
 # define AT_PUSH(at, val) \
-  auxvt_size += 8; \
   sp -= 4; \
   auxvt = (val); \
-  sim_write (sd, sp, (void *)&auxvt, 4); \
+  sim_write (sd, sp, &auxvt, 4); \
   sp -= 4; \
   auxvt = (at); \
-  sim_write (sd, sp, (void *)&auxvt, 4)
+  sim_write (sd, sp, &auxvt, 4)
       unsigned int egid = getegid (), gid = getgid ();
       unsigned int euid = geteuid (), uid = getuid ();
-      bu32 auxvt_size = 0;
       AT_PUSH (AT_NULL, 0);
       AT_PUSH (AT_SECURE, egid != gid || euid != uid);
       AT_PUSH (AT_EGID, egid);
@@ -1081,15 +1044,15 @@ bfin_user_init (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd,
   SET_SPREG (sp);
 
   /* First push the argc value.  */
-  sim_write (sd, sp, (void *)&argc, 4);
+  sim_write (sd, sp, &argc, 4);
   sp += 4;
 
   /* Then the actual argv strings so we know where to point argv[].  */
   for (i = 0; i < argc; ++i)
     {
       unsigned len = strlen (argv[i]) + 1;
-      sim_write (sd, sp_flat, (void *)argv[i], len);
-      sim_write (sd, sp, (void *)&sp_flat, 4);
+      sim_write (sd, sp_flat, argv[i], len);
+      sim_write (sd, sp, &sp_flat, 4);
       sp_flat += len;
       sp += 4;
     }
@@ -1100,8 +1063,8 @@ bfin_user_init (SIM_DESC sd, SIM_CPU *cpu, struct bfd *abfd,
   for (i = 0; i < envc; ++i)
     {
       unsigned len = strlen (env[i]) + 1;
-      sim_write (sd, sp_flat, (void *)env[i], len);
-      sim_write (sd, sp, (void *)&sp_flat, 4);
+      sim_write (sd, sp_flat, env[i], len);
+      sim_write (sd, sp, &sp_flat, 4);
       sp_flat += len;
       sp += 4;
     }
@@ -1131,7 +1094,7 @@ bfin_os_init (SIM_DESC sd, SIM_CPU *cpu, char * const *argv)
       while (argv[i])
 	{
 	  bu32 len = strlen (argv[i]);
-	  sim_write (sd, cmdline, (void *)argv[i], len);
+	  sim_write (sd, cmdline, argv[i], len);
 	  cmdline += len;
 	  sim_write (sd, cmdline, &byte, 1);
 	  ++cmdline;
@@ -1156,7 +1119,8 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
 		     char * const *argv, char * const *env)
 {
   SIM_CPU *cpu = STATE_CPU (sd, 0);
-  SIM_ADDR addr;
+  host_callback *cb = STATE_CALLBACK (sd);
+  bfd_vma addr;
 
   /* Set the PC.  */
   if (abfd != NULL)
@@ -1174,6 +1138,15 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
       freeargv (STATE_PROG_ARGV (sd));
       STATE_PROG_ARGV (sd) = dupargv (argv);
     }
+
+  if (STATE_PROG_ENVP (sd) != env)
+    {
+      freeargv (STATE_PROG_ENVP (sd));
+      STATE_PROG_ENVP (sd) = dupargv (env);
+    }
+
+  cb->argv = STATE_PROG_ARGV (sd);
+  cb->envp = STATE_PROG_ENVP (sd);
 
   switch (STATE_ENVIRONMENT (sd))
     {

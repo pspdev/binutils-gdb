@@ -1,6 +1,6 @@
 /* The IGEN simulator generator for GDB, the GNU Debugger.
 
-   Copyright 2002-2021 Free Software Foundation, Inc.
+   Copyright 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney.
 
@@ -19,6 +19,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
+#ifndef IGEN_GEN_IDECODE_H
+#define IGEN_GEN_IDECODE_H
 
 void print_idecode_issue_function_header
   (lf *file,
@@ -28,9 +30,11 @@ void print_idecode_issue_function_header
 void print_idecode_globals (lf *file);
 
 void print_idecode_lookups
-  (lf *file, gen_entry *table, cache_entry *cache_rules);
+  (lf *file,
+   const gen_entry *table,
+   cache_entry *cache_rules);
 
-void print_idecode_body (lf *file, gen_entry *table, const char *result);
+void print_idecode_body (lf *file, const gen_entry *table, const char *result);
 
 
 
@@ -40,4 +44,8 @@ void print_idecode_body (lf *file, gen_entry *table, const char *result);
    hardware isn't disabled */
 
 extern void print_idecode_validate
-  (lf *file, insn_entry * instruction, insn_opcodes *opcode_paths);
+  (lf *file,
+   const insn_entry *instruction,
+   const insn_opcodes *opcode_paths);
+
+#endif /* IGEN_GEN_IDECODE_H */

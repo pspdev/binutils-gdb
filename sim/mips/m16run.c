@@ -11,10 +11,10 @@
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
- 
+
     You should have received a copy of the GNU General Public License
     along with this program; if not, see <http://www.gnu.org/licenses/>.
- 
+
     */
 
 /* This must come before any other includes.  */
@@ -24,6 +24,7 @@
 #include "m16_idecode.h"
 #include "m32_idecode.h"
 #include "bfd.h"
+#include "sim-engine.h"
 
 
 #define SD sd
@@ -56,10 +57,6 @@ sim_engine_run (SIM_DESC sd,
 	  m32_instruction_word instruction_0 = IMEM32 (cia);
 	  nia = m32_idecode_issue (sd, instruction_0, cia);
 	}
-
-#if defined (ENGINE_ISSUE_POSTFIX_HOOK)
-      ENGINE_ISSUE_POSTFIX_HOOK ();
-#endif
 
       /* Update the instruction address */
       cia = nia;

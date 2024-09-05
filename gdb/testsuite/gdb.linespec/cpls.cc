@@ -1,6 +1,6 @@
 /* This testcase is part of GDB, the GNU debugger.
 
-   Copyright 2017-2021 Free Software Foundation, Inc.
+   Copyright 2017-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -56,16 +56,17 @@ struct overload2_arg9 {};
 struct overload2_arga {};
 
 #define GEN_OVERLOAD2_FUNCTIONS(ARG1, ARG2)		\
-  void							\
+  void __attribute__ ((used))				\
   overload2_function (ARG1)				\
   {}							\
 							\
   struct struct_overload2_test				\
   {							\
-    void overload2_function (ARG2);			\
+    void __attribute__ ((used))				\
+      overload2_function (ARG2);			\
   };							\
 							\
-  void							\
+  void __attribute__ ((used))				\
   struct_overload2_test::overload2_function (ARG2)	\
   {}
 
@@ -99,23 +100,25 @@ namespace ns_overload2_test
 /* Code for the overload-3 test.  */
 
 #define GEN_OVERLOAD3_FUNCTIONS(ARG1, ARG2)		\
-  void							\
+  void __attribute__ ((used))				\
   overload3_function (ARG1)				\
   {}							\
-  void							\
+  void __attribute__ ((used))				\
   overload3_function (ARG2)				\
   {}							\
 							\
   struct struct_overload3_test				\
   {							\
-    void overload3_function (ARG1);			\
-    void overload3_function (ARG2);			\
+    void __attribute__ ((used))				\
+      overload3_function (ARG1);			\
+    void __attribute__ ((used))				\
+      overload3_function (ARG2);			\
   };							\
 							\
-  void							\
+  void __attribute__ ((used))				\
   struct_overload3_test::overload3_function (ARG1)	\
   {}							\
-  void							\
+  void __attribute__ ((used))				\
   struct_overload3_test::overload3_function (ARG2)	\
   {}
 
@@ -146,7 +149,7 @@ namespace ns_overload3_test
   }
 }
 
-/* Code for the template-overload tests.  */
+/* Code for the template-function_foo (template parameter completion) tests.  */
 
 template <typename T>
 struct template_struct
@@ -162,6 +165,113 @@ T template_struct<T>::template_overload_fn (T t)
 
 template_struct<int> template_struct_int;
 template_struct<long> template_struct_long;
+
+/* Code for the template-parameter-overload test.  */
+
+template <typename T>
+void foo (T c) {}
+
+template <typename T1, typename T2>
+void foo (T1 a, T2 b) {}
+
+template <typename T>
+struct a
+{
+  void method () {}
+};
+
+template <typename T>
+struct b
+{
+  void method () {}
+};
+
+template <typename T>
+struct c
+{
+  void method () {}
+};
+
+template <typename T>
+struct d
+{
+  void method () {};
+};
+
+template <typename T1, typename T2>
+struct A
+{
+  void method () {}
+};
+
+template <typename T1, typename T2>
+struct B
+{
+  void method () {}
+};
+
+namespace n
+{
+  struct na {};
+  struct nb {};
+
+  template <typename T1, typename T2>
+  struct NA {};
+
+  template <typename T1, typename T2>
+  struct NB {};
+};
+
+static void
+template_function_foo ()
+{
+  a<a<int>> aa;
+  aa.method ();
+  a<b<int>> ab;
+  ab.method ();
+  c<c<int>> cc;
+  cc.method ();
+  c<d<int>> cd;
+  cd.method ();
+  foo (aa);
+  foo (ab);
+  foo (cc);
+  foo (cd);
+  foo (aa, ab);
+  foo (aa, cc);
+  foo (aa, cd);
+
+  A<a<b<int>>, c<d<int>>> Aabcd;
+  Aabcd.method ();
+  foo (Aabcd);
+
+  A<a<b<int>>, a<a<int>>> Aabaa;
+  Aabaa.method ();
+  foo (Aabaa);
+
+  A<a<b<int>>, a<b<int>>> Aabab;
+  Aabab.method ();
+  foo (Aabab);
+
+  B<a<b<int>>, c<d<int>>> Babcd;
+  Babcd.method ();
+  foo (Babcd);
+
+  foo (Aabcd, Babcd);
+  foo (Aabcd, Aabaa);
+  foo (Aabcd, Aabab);
+
+  n::na na;
+  n::nb nb;
+  foo (na, nb);
+  a<n::na> ana;
+  b<n::nb> bnb;
+  foo (ana, bnb);
+
+  n::NA<n::na, n::nb> NAnanb;
+  n::NB<n::na, n::nb> Nbnanb;
+  foo (NAnanb, Nbnanb);
+}
 
 /* Code for the template2-ret-type tests.  */
 
@@ -236,15 +346,15 @@ namespace ns2_incomplete_scope_colon_test
 
 namespace
 {
-  void anon_ns_function ()
+  void __attribute__ ((used)) anon_ns_function ()
   {}
 
   struct anon_ns_struct
   {
-    void anon_ns_function ();
+    void __attribute__ ((used)) anon_ns_function ();
   };
 
-  void
+  void __attribute__ ((used))
   anon_ns_struct::anon_ns_function ()
   {}
 }
@@ -254,15 +364,15 @@ namespace the_anon_ns_wrapper_ns
 
 namespace
 {
-  void anon_ns_function ()
+  void __attribute__ ((used)) anon_ns_function ()
   {}
 
   struct anon_ns_struct
   {
-    void anon_ns_function ();
+    void __attribute__ ((used)) anon_ns_function ();
   };
 
-  void
+  void __attribute__ ((used))
   anon_ns_struct::anon_ns_function ()
   {}
 }
@@ -381,6 +491,7 @@ main ()
   template2_struct_inst.template2_fn<int, int> ();
   template_struct_int.template_overload_fn(0);
   template_struct_long.template_overload_fn(0);
+  template_function_foo ();
 
   return 0;
 }

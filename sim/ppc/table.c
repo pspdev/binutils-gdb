@@ -24,14 +24,12 @@
 #include <fcntl.h>
 #include <ctype.h>
 
-#include "build-config.h"
 #include "misc.h"
 #include "lf.h"
 #include "table.h"
+#include "dumpf.h"
 
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
-#endif
 #include <stdlib.h>
 
 typedef struct _open_table open_table;
@@ -101,7 +99,7 @@ table_push (table *root,
       /* free (dup_name); */
       if (include->next == NULL)
 	{
-	  error ("Problem opening file `%s'\n", file_name);
+	  ERROR ("Problem opening file `%s'\n", file_name);
 	  perror (file_name);
 	  exit (1);
 	}
@@ -208,7 +206,7 @@ table_entry_read(table *root)
   /* break the line into its colon delimitered fields */
   for (field = 0; field < file->nr_fields-1; field++) {
     entry->fields[field] = file->pos;
-    while(*file->pos && *file->pos != ':' && *file->pos != '\n')
+    while(*file->pos && *file->pos != ':' && *file->pos != '\n' && *file->pos != '\r')
       file->pos++;
     if (*file->pos == ':') {
       *file->pos = '\0';
@@ -219,7 +217,11 @@ table_entry_read(table *root)
   /* any trailing stuff not the last field */
   ASSERT(field == file->nr_fields-1);
   entry->fields[field] = file->pos;
-  while (*file->pos && *file->pos != '\n') {
+  while (*file->pos && *file->pos != '\n' && *file->pos != '\r') {
+    file->pos++;
+  }
+  if (*file->pos == '\r') {
+    *file->pos = '\0';
     file->pos++;
   }
   if (*file->pos == '\n') {
@@ -243,7 +245,7 @@ table_entry_read(table *root)
     file->pos++;
     for (field = 0; field < file->nr_model_fields-1; field++) {
       model->fields[field] = file->pos;
-      while(*file->pos && *file->pos != ':' && *file->pos != '\n')
+      while(*file->pos && *file->pos != ':' && *file->pos != '\n' && *file->pos != '\r')
 	file->pos++;
       if (*file->pos == ':') {
 	*file->pos = '\0';
@@ -254,7 +256,11 @@ table_entry_read(table *root)
     /* any trailing stuff not the last field */
     ASSERT(field == file->nr_model_fields-1);
     model->fields[field] = file->pos;
-    while (*file->pos && *file->pos != '\n') {
+    while (*file->pos && *file->pos != '\n' && *file->pos != '\r') {
+      file->pos++;
+    }
+    if (*file->pos == '\r') {
+      *file->pos = '\0';
       file->pos++;
     }
     if (*file->pos == '\n') {
@@ -274,13 +280,13 @@ table_entry_read(table *root)
     do {
       do {
 	file->pos++;
-      } while (*file->pos != '\0' && *file->pos != '\n');
-      if (*file->pos == '\n') {
+      } while (*file->pos != '\0' && *file->pos != '\n' && *file->pos != '\r');
+      if (*file->pos == '\n' || *file->pos == '\r') {
 	char *save_pos = ++file->pos;
 	int extra_lines = 0;
 	file->line_nr++;
 	/* Allow tab indented to have blank lines */
-	while (*save_pos == '\n') {
+	while (*save_pos == '\n' || *save_pos == '\r') {
 	  save_pos++;
 	  extra_lines++;
 	}
@@ -290,7 +296,7 @@ table_entry_read(table *root)
 	}
       }
     } while (*file->pos != '\0' && *file->pos == '\t');
-    if (file->pos[-1] == '\n')
+    if (file->pos[-1] == '\n' || file->pos[-1] == '\r')
       file->pos[-1] = '\0';
   }
   else
@@ -335,7 +341,7 @@ extern void
 table_entry_print_cpp_line_nr(lf *file,
 			      table_entry *entry)
 {
-  lf_print__external_reference(file, entry->line_nr, entry->file_name);
+  lf_print__external_ref(file, entry->line_nr, entry->file_name);
 }
 
 

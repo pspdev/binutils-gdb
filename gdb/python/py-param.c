@@ -1,6 +1,6 @@
 /* GDB parameters implemented in Python
 
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,15 +18,59 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 
-#include "defs.h"
 #include "value.h"
 #include "python-internal.h"
 #include "charset.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "cli/cli-decode.h"
 #include "completer.h"
 #include "language.h"
 #include "arch-utils.h"
+
+/* Python parameter types as in PARM_CONSTANTS below.  */
+
+enum py_param_types
+{
+  param_boolean,
+  param_auto_boolean,
+  param_uinteger,
+  param_integer,
+  param_string,
+  param_string_noescape,
+  param_optional_filename,
+  param_filename,
+  param_zinteger,
+  param_zuinteger,
+  param_zuinteger_unlimited,
+  param_enum,
+};
+
+/* Translation from Python parameters to GDB variable types.  Keep in the
+   same order as PARAM_TYPES due to C++'s lack of designated initializers.  */
+
+static const struct
+{
+  /* The type of the parameter.  */
+  enum var_types type;
+
+  /* Extra literals, such as `unlimited', accepted in lieu of a number.  */
+  const literal_def *extra_literals;
+}
+param_to_var[] =
+{
+  { var_boolean },
+  { var_auto_boolean },
+  { var_uinteger, uinteger_unlimited_literals },
+  { var_integer, integer_unlimited_literals },
+  { var_string },
+  { var_string_noescape },
+  { var_optional_filename },
+  { var_filename },
+  { var_integer },
+  { var_uinteger },
+  { var_pinteger, pinteger_unlimited_literals },
+  { var_enum }
+};
 
 /* Parameter constants and their values.  */
 static struct {
@@ -34,18 +78,18 @@ static struct {
   int value;
 } parm_constants[] =
 {
-  { "PARAM_BOOLEAN", var_boolean }, /* ARI: var_boolean */
-  { "PARAM_AUTO_BOOLEAN", var_auto_boolean },
-  { "PARAM_UINTEGER", var_uinteger },
-  { "PARAM_INTEGER", var_integer },
-  { "PARAM_STRING", var_string },
-  { "PARAM_STRING_NOESCAPE", var_string_noescape },
-  { "PARAM_OPTIONAL_FILENAME", var_optional_filename },
-  { "PARAM_FILENAME", var_filename },
-  { "PARAM_ZINTEGER", var_zinteger },
-  { "PARAM_ZUINTEGER", var_zuinteger },
-  { "PARAM_ZUINTEGER_UNLIMITED", var_zuinteger_unlimited },
-  { "PARAM_ENUM", var_enum },
+  { "PARAM_BOOLEAN", param_boolean }, /* ARI: param_boolean */
+  { "PARAM_AUTO_BOOLEAN", param_auto_boolean },
+  { "PARAM_UINTEGER", param_uinteger },
+  { "PARAM_INTEGER", param_integer },
+  { "PARAM_STRING", param_string },
+  { "PARAM_STRING_NOESCAPE", param_string_noescape },
+  { "PARAM_OPTIONAL_FILENAME", param_optional_filename },
+  { "PARAM_FILENAME", param_filename },
+  { "PARAM_ZINTEGER", param_zinteger },
+  { "PARAM_ZUINTEGER", param_zuinteger },
+  { "PARAM_ZUINTEGER_UNLIMITED", param_zuinteger_unlimited },
+  { "PARAM_ENUM", param_enum },
   { NULL, 0 }
 };
 
@@ -64,8 +108,9 @@ union parmpy_variable
   /* Hold an unsigned integer value, for uinteger.  */
   unsigned int uintval;
 
-  /* Hold a string, for the various string types.  */
-  char *stringval;
+  /* Hold a string, for the various string types.  The std::string is
+     new-ed.  */
+  std::string *stringval;
 
   /* Hold a string, for enums.  */
   const char *cstringval;
@@ -79,6 +124,9 @@ struct parmpy_object
   /* The type of the parameter.  */
   enum var_types type;
 
+  /* Extra literals, such as `unlimited', accepted in lieu of a number.  */
+  const literal_def *extra_literals;
+
   /* The value of the parameter.  */
   union parmpy_variable value;
 
@@ -87,6 +135,31 @@ struct parmpy_object
      NULL-terminated.  */
   const char **enumeration;
 };
+
+/* Wraps a setting around an existing parmpy_object.  This abstraction
+   is used to manipulate the value in S->VALUE in a type safe manner using
+   the setting interface.  */
+
+static setting
+make_setting (parmpy_object *s)
+{
+  enum var_types type = s->type;
+
+  if (var_type_uses<bool> (type))
+    return setting (type, &s->value.boolval);
+  else if (var_type_uses<int> (type))
+    return setting (type, &s->value.intval, s->extra_literals);
+  else if (var_type_uses<auto_boolean> (type))
+    return setting (type, &s->value.autoboolval);
+  else if (var_type_uses<unsigned int> (type))
+    return setting (type, &s->value.uintval, s->extra_literals);
+  else if (var_type_uses<std::string> (type))
+    return setting (type, s->value.stringval);
+  else if (var_type_uses<const char *> (type))
+    return setting (type, &s->value.cstringval);
+  else
+    gdb_assert_not_reached ("unhandled var type");
+}
 
 extern PyTypeObject parmpy_object_type
     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("parmpy_object");
@@ -101,16 +174,12 @@ static PyObject *show_doc_cst;
 static PyObject *
 get_attr (PyObject *obj, PyObject *attr_name)
 {
-  if (PyString_Check (attr_name)
-#ifdef IS_PY3K
+  if (PyUnicode_Check (attr_name)
       && ! PyUnicode_CompareWithASCIIString (attr_name, "value"))
-#else
-      && ! strcmp (PyString_AsString (attr_name), "value"))
-#endif
     {
       parmpy_object *self = (parmpy_object *) obj;
 
-      return gdbpy_parameter_value (self->type, &self->value);
+      return gdbpy_parameter_value (make_setting (self));
     }
 
   return PyObject_GenericGetAttr (obj, attr_name);
@@ -139,13 +208,7 @@ set_parameter_value (parmpy_object *self, PyObject *value)
 	  return -1;
 	}
       if (value == Py_None)
-	{
-	  xfree (self->value.stringval);
-	  if (self->type == var_optional_filename)
-	    self->value.stringval = xstrdup ("");
-	  else
-	    self->value.stringval = NULL;
-	}
+	self->value.stringval->clear ();
       else
 	{
 	  gdb::unique_xmalloc_ptr<char>
@@ -153,8 +216,7 @@ set_parameter_value (parmpy_object *self, PyObject *value)
 	  if (string == NULL)
 	    return -1;
 
-	  xfree (self->value.stringval);
-	  self->value.stringval = string.release ();
+	  *self->value.stringval = string.get ();
 	}
       break;
 
@@ -221,64 +283,98 @@ set_parameter_value (parmpy_object *self, PyObject *value)
 	}
       break;
 
-    case var_integer:
-    case var_zinteger:
     case var_uinteger:
-    case var_zuinteger:
-    case var_zuinteger_unlimited:
+    case var_integer:
+    case var_pinteger:
       {
-	long l;
-	int ok;
+	const literal_def *extra_literals = self->extra_literals;
+	enum tribool allowed = TRIBOOL_UNKNOWN;
+	enum var_types var_type = self->type;
+	std::string buffer = "";
+	size_t count = 0;
+	LONGEST val;
 
-	if (! PyInt_Check (value))
+	if (extra_literals != nullptr)
 	  {
-	    PyErr_SetString (PyExc_RuntimeError,
-			     _("The value must be integer."));
-	    return -1;
+	    gdb::unique_xmalloc_ptr<char>
+	      str (python_string_to_host_string (value));
+	    const char *s = str != nullptr ? str.get () : nullptr;
+	    PyErr_Clear ();
+
+	    for (const literal_def *l = extra_literals;
+		 l->literal != nullptr;
+		 l++, count++)
+	      {
+		if (count != 0)
+		  buffer += ", ";
+		buffer = buffer + "'" + l->literal + "'";
+		if (allowed == TRIBOOL_UNKNOWN
+		    && ((value == Py_None && !strcmp ("unlimited", l->literal))
+			|| (s != nullptr && !strcmp (s, l->literal))))
+		  {
+		    val = l->use;
+		    allowed = TRIBOOL_TRUE;
+		  }
+	      }
 	  }
 
-	if (! gdb_py_int_as_long (value, &l))
-	  return -1;
-
-	switch (self->type)
+	if (allowed == TRIBOOL_UNKNOWN)
 	  {
-	  case var_uinteger:
-	    if (l == 0)
-	      l = UINT_MAX;
-	    /* Fall through.  */
-	  case var_zuinteger:
-	    ok = (l >= 0 && l <= UINT_MAX);
-	    break;
+	    val = PyLong_AsLongLong (value);
 
-	  case var_zuinteger_unlimited:
-	    ok = (l >= -1 && l <= INT_MAX);
-	    break;
+	    if (PyErr_Occurred ())
+	      {
+		if (extra_literals == nullptr)
+		  PyErr_SetString (PyExc_RuntimeError,
+				   _("The value must be integer."));
+		else if (count > 1)
+		  PyErr_SetString (PyExc_RuntimeError,
+				   string_printf (_("integer or one of: %s"),
+						  buffer.c_str ()).c_str ());
+		else
+		  PyErr_SetString (PyExc_RuntimeError,
+				   string_printf (_("integer or %s"),
+						  buffer.c_str ()).c_str ());
+		return -1;
+	      }
 
-	  case var_integer:
-	    ok = (l >= INT_MIN && l <= INT_MAX);
-	    if (l == 0)
-	      l = INT_MAX;
-	    break;
 
-	  case var_zinteger:
-	    ok = (l >= INT_MIN && l <= INT_MAX);
-	    break;
+	    if (extra_literals != nullptr)
+	      for (const literal_def *l = extra_literals;
+		   l->literal != nullptr;
+		   l++)
+		{
+		  if (l->val.has_value () && val == *l->val)
+		    {
+		      allowed = TRIBOOL_TRUE;
+		      val = l->use;
+		      break;
+		    }
+		  else if (val == l->use)
+		    allowed = TRIBOOL_FALSE;
+		}
+	    }
 
-	  default:
-	    gdb_assert_not_reached ("unknown var_ constant");
+	if (allowed == TRIBOOL_UNKNOWN)
+	  {
+	    if (val > UINT_MAX || val < INT_MIN
+		|| (var_type == var_uinteger && val < 0)
+		|| (var_type == var_integer && val > INT_MAX)
+		|| (var_type == var_pinteger && val < 0)
+		|| (var_type == var_pinteger && val > INT_MAX))
+	      allowed = TRIBOOL_FALSE;
 	  }
-
-	if (! ok)
+	if (allowed == TRIBOOL_FALSE)
 	  {
 	    PyErr_SetString (PyExc_RuntimeError,
 			     _("Range exceeded."));
 	    return -1;
 	  }
 
-	if (self->type == var_uinteger || self->type == var_zuinteger)
-	  self->value.uintval = (unsigned) l;
+	if (self->type == var_uinteger)
+	  self->value.uintval = (unsigned) val;
 	else
-	  self->value.intval = (int) l;
+	  self->value.intval = (int) val;
 	break;
       }
 
@@ -295,12 +391,8 @@ set_parameter_value (parmpy_object *self, PyObject *value)
 static int
 set_attr (PyObject *obj, PyObject *attr_name, PyObject *val)
 {
-  if (PyString_Check (attr_name)
-#ifdef IS_PY3K
+  if (PyUnicode_Check (attr_name)
       && ! PyUnicode_CompareWithASCIIString (attr_name, "value"))
-#else
-      && ! strcmp (PyString_AsString (attr_name), "value"))
-#endif
     {
       if (!val)
 	{
@@ -314,13 +406,58 @@ set_attr (PyObject *obj, PyObject *attr_name, PyObject *val)
   return PyObject_GenericSetAttr (obj, attr_name, val);
 }
 
+/* Build up the path to command C, but drop the first component of the
+   command prefix.  This is only intended for use with the set/show
+   parameters this file deals with, the first prefix should always be
+   either 'set' or 'show'.
+
+   As an example, if this full command is 'set prefix_a prefix_b command'
+   this function will return the string 'prefix_a prefix_b command'.  */
+
+static std::string
+full_cmd_name_without_first_prefix (struct cmd_list_element *c)
+{
+  std::vector<std::string> components
+    = c->command_components ();
+  gdb_assert (components.size () > 1);
+  std::string result = components[1];
+  for (int i = 2; i < components.size (); ++i)
+    result += " " + components[i];
+  return result;
+}
+
+/* The different types of documentation string.  */
+
+enum doc_string_type
+{
+  doc_string_set,
+  doc_string_show,
+  doc_string_description
+};
+
 /* A helper function which returns a documentation string for an
    object. */
 
 static gdb::unique_xmalloc_ptr<char>
-get_doc_string (PyObject *object, PyObject *attr)
+get_doc_string (PyObject *object, enum doc_string_type doc_type,
+		const char *cmd_name)
 {
   gdb::unique_xmalloc_ptr<char> result;
+
+  PyObject *attr = nullptr;
+  switch (doc_type)
+    {
+    case doc_string_set:
+      attr = set_doc_cst;
+      break;
+    case doc_string_show:
+      attr = show_doc_cst;
+      break;
+    case doc_string_description:
+      attr = gdbpy_doc_cst;
+      break;
+    }
+  gdb_assert (attr != nullptr);
 
   if (PyObject_HasAttr (object, attr))
     {
@@ -331,10 +468,25 @@ get_doc_string (PyObject *object, PyObject *attr)
 	  result = python_string_to_host_string (ds_obj.get ());
 	  if (result == NULL)
 	    gdbpy_print_stack ();
+	  else if (doc_type == doc_string_description)
+	    result = gdbpy_fix_doc_string_indentation (std::move (result));
 	}
     }
-  if (! result)
-    result.reset (xstrdup (_("This command is not documented.")));
+
+  if (result == nullptr)
+    {
+      if (doc_type == doc_string_description)
+	result.reset (xstrdup (_("This command is not documented.")));
+      else
+	{
+	  if (doc_type == doc_string_show)
+	    result = xstrprintf (_("Show the current value of '%s'."),
+				 cmd_name);
+	  else
+	    result = xstrprintf (_("Set the current value of '%s'."),
+				 cmd_name);
+	}
+    }
   return result;
 }
 
@@ -379,8 +531,8 @@ get_set_value (const char *args, int from_tty,
   PyObject *obj = (PyObject *) c->context ();
   gdb::unique_xmalloc_ptr<char> set_doc_string;
 
-  gdbpy_enter enter_py (get_current_arch (), current_language);
-  gdbpy_ref<> set_doc_func (PyString_FromString ("get_set_string"));
+  gdbpy_enter enter_py;
+  gdbpy_ref<> set_doc_func (PyUnicode_FromString ("get_set_string"));
 
   if (set_doc_func == NULL)
     {
@@ -397,7 +549,7 @@ get_set_value (const char *args, int from_tty,
 
   const char *str = set_doc_string.get ();
   if (str != nullptr && str[0] != '\0')
-    fprintf_filtered (gdb_stdout, "%s\n", str);
+    gdb_printf ("%s\n", str);
 }
 
 /* A callback function that is registered against the respective
@@ -414,8 +566,8 @@ get_show_value (struct ui_file *file, int from_tty,
   PyObject *obj = (PyObject *) c->context ();
   gdb::unique_xmalloc_ptr<char> show_doc_string;
 
-  gdbpy_enter enter_py (get_current_arch (), current_language);
-  gdbpy_ref<> show_doc_func (PyString_FromString ("get_show_string"));
+  gdbpy_enter enter_py;
+  gdbpy_ref<> show_doc_func (PyUnicode_FromString ("get_show_string"));
 
   if (show_doc_func == NULL)
     {
@@ -425,7 +577,7 @@ get_show_value (struct ui_file *file, int from_tty,
 
   if (PyObject_HasAttr (obj, show_doc_func.get ()))
     {
-      gdbpy_ref<> val_obj (PyString_FromString (value));
+      gdbpy_ref<> val_obj (PyUnicode_FromString (value));
 
       if (val_obj == NULL)
 	{
@@ -441,15 +593,19 @@ get_show_value (struct ui_file *file, int from_tty,
 	  return;
 	}
 
-      fprintf_filtered (file, "%s\n", show_doc_string.get ());
+      gdb_printf (file, "%s\n", show_doc_string.get ());
     }
   else
     {
-      /* We have to preserve the existing < GDB 7.3 API.  If a
-	 callback function does not exist, then attempt to read the
-	 show_doc attribute.  */
-      show_doc_string  = get_doc_string (obj, show_doc_cst);
-      fprintf_filtered (file, "%s %s\n", show_doc_string.get (), value);
+      /* If there is no 'get_show_string' callback then we want to show
+	 something sensible here.  In older versions of GDB (< 7.3) we
+	 didn't support 'get_show_string', and instead we just made use of
+	 GDB's builtin use of the show_doc.  However, GDB's builtin
+	 show_doc adjustment is not i18n friendly, so, instead, we just
+	 print this generic string.  */
+      std::string cmd_path = full_cmd_name_without_first_prefix (c);
+      gdb_printf (file, _("The current value of '%s' is \"%s\".\n"),
+		  cmd_path.c_str (), value);
     }
 }
 
@@ -457,7 +613,8 @@ get_show_value (struct ui_file *file, int from_tty,
 /* A helper function that dispatches to the appropriate add_setshow
    function.  */
 static void
-add_setshow_generic (int parmclass, enum command_class cmdclass,
+add_setshow_generic (enum var_types type, const literal_def *extra_literals,
+		     enum command_class cmdclass,
 		     gdb::unique_xmalloc_ptr<char> cmd_name,
 		     parmpy_object *self,
 		     const char *set_doc, const char *show_doc,
@@ -467,7 +624,7 @@ add_setshow_generic (int parmclass, enum command_class cmdclass,
 {
   set_show_commands commands;
 
-  switch (parmclass)
+  switch (type)
     {
     case var_boolean:
       commands = add_setshow_boolean_cmd (cmd_name.get (), cmdclass,
@@ -487,28 +644,38 @@ add_setshow_generic (int parmclass, enum command_class cmdclass,
 
     case var_uinteger:
       commands = add_setshow_uinteger_cmd (cmd_name.get (), cmdclass,
-					   &self->value.uintval, set_doc,
+					   &self->value.uintval,
+					   extra_literals, set_doc,
 					   show_doc, help_doc, get_set_value,
 					   get_show_value, set_list, show_list);
       break;
 
     case var_integer:
       commands = add_setshow_integer_cmd (cmd_name.get (), cmdclass,
-					  &self->value.intval, set_doc,
+					  &self->value.intval,
+					  extra_literals, set_doc,
 					  show_doc, help_doc, get_set_value,
 					  get_show_value, set_list, show_list);
       break;
 
+    case var_pinteger:
+      commands = add_setshow_pinteger_cmd (cmd_name.get (), cmdclass,
+					   &self->value.intval,
+					   extra_literals, set_doc,
+					   show_doc, help_doc, get_set_value,
+					   get_show_value, set_list, show_list);
+      break;
+
     case var_string:
       commands = add_setshow_string_cmd (cmd_name.get (), cmdclass,
-					 &self->value.stringval, set_doc,
+					 self->value.stringval, set_doc,
 					 show_doc, help_doc, get_set_value,
 					 get_show_value, set_list, show_list);
       break;
 
     case var_string_noescape:
       commands = add_setshow_string_noescape_cmd (cmd_name.get (), cmdclass,
-						  &self->value.stringval,
+						  self->value.stringval,
 						  set_doc, show_doc, help_doc,
 						  get_set_value, get_show_value,
 						  set_list, show_list);
@@ -516,7 +683,7 @@ add_setshow_generic (int parmclass, enum command_class cmdclass,
 
     case var_optional_filename:
       commands = add_setshow_optional_filename_cmd (cmd_name.get (), cmdclass,
-						    &self->value.stringval,
+						    self->value.stringval,
 						    set_doc, show_doc, help_doc,
 						    get_set_value,
 						    get_show_value, set_list,
@@ -525,43 +692,19 @@ add_setshow_generic (int parmclass, enum command_class cmdclass,
 
     case var_filename:
       commands = add_setshow_filename_cmd (cmd_name.get (), cmdclass,
-					   &self->value.stringval, set_doc,
+					   self->value.stringval, set_doc,
 					   show_doc, help_doc, get_set_value,
 					   get_show_value, set_list, show_list);
-      break;
-
-    case var_zinteger:
-      commands = add_setshow_zinteger_cmd (cmd_name.get (), cmdclass,
-					   &self->value.intval, set_doc,
-					   show_doc, help_doc, get_set_value,
-					   get_show_value, set_list, show_list);
-      break;
-
-    case var_zuinteger:
-      commands = add_setshow_zuinteger_cmd (cmd_name.get (), cmdclass,
-					    &self->value.uintval, set_doc,
-					    show_doc, help_doc, get_set_value,
-					    get_show_value, set_list,
-					    show_list);
-      break;
-
-    case var_zuinteger_unlimited:
-      commands = add_setshow_zuinteger_unlimited_cmd (cmd_name.get (), cmdclass,
-						      &self->value.intval,
-						      set_doc, show_doc,
-						      help_doc, get_set_value,
-						      get_show_value, set_list,
-						      show_list);
       break;
 
     case var_enum:
+      /* Initialize the value, just in case.  */
+      self->value.cstringval = self->enumeration[0];
       commands = add_setshow_enum_cmd (cmd_name.get (), cmdclass,
 				       self->enumeration,
 				       &self->value.cstringval, set_doc,
 				       show_doc, help_doc, get_set_value,
 				       get_show_value, set_list, show_list);
-      /* Initialize the value, just in case.  */
-      self->value.cstringval = self->enumeration[0];
       break;
 
     default:
@@ -663,6 +806,8 @@ parmpy_init (PyObject *self, PyObject *args, PyObject *kwds)
   int parmclass, cmdtype;
   PyObject *enum_values = NULL;
   struct cmd_list_element **set_list, **show_list;
+  const literal_def *extra_literals;
+  enum var_types type;
 
   if (! PyArg_ParseTuple (args, "sii|O", &name, &cmdtype, &parmclass,
 			  &enum_values))
@@ -679,34 +824,40 @@ parmpy_init (PyObject *self, PyObject *args, PyObject *kwds)
       return -1;
     }
 
-  if (parmclass != var_boolean /* ARI: var_boolean */
-      && parmclass != var_auto_boolean
-      && parmclass != var_uinteger && parmclass != var_integer
-      && parmclass != var_string && parmclass != var_string_noescape
-      && parmclass != var_optional_filename && parmclass != var_filename
-      && parmclass != var_zinteger && parmclass != var_zuinteger
-      && parmclass != var_zuinteger_unlimited && parmclass != var_enum)
+  if (parmclass != param_boolean /* ARI: param_boolean */
+      && parmclass != param_auto_boolean
+      && parmclass != param_uinteger && parmclass != param_integer
+      && parmclass != param_string && parmclass != param_string_noescape
+      && parmclass != param_optional_filename && parmclass != param_filename
+      && parmclass != param_zinteger && parmclass != param_zuinteger
+      && parmclass != param_zuinteger_unlimited && parmclass != param_enum)
     {
       PyErr_SetString (PyExc_RuntimeError,
 		       _("Invalid parameter class argument."));
       return -1;
     }
 
-  if (enum_values && parmclass != var_enum)
+  if (enum_values && parmclass != param_enum)
     {
       PyErr_SetString (PyExc_RuntimeError,
 		       _("Only PARAM_ENUM accepts a fourth argument."));
       return -1;
     }
-  if (parmclass == var_enum)
+  if (parmclass == param_enum)
     {
       if (! compute_enum_values (obj, enum_values))
 	return -1;
     }
   else
     obj->enumeration = NULL;
-  obj->type = (enum var_types) parmclass;
+  type = param_to_var[parmclass].type;
+  extra_literals = param_to_var[parmclass].extra_literals;
+  obj->type = type;
+  obj->extra_literals = extra_literals;
   memset (&obj->value, 0, sizeof (obj->value));
+
+  if (var_type_uses<std::string> (obj->type))
+    obj->value.stringval = new std::string;
 
   gdb::unique_xmalloc_ptr<char> cmd_name
     = gdbpy_parse_command_name (name, &set_list, &setlist);
@@ -717,15 +868,16 @@ parmpy_init (PyObject *self, PyObject *args, PyObject *kwds)
   if (cmd_name == nullptr)
     return -1;
 
-  set_doc = get_doc_string (self, set_doc_cst);
-  show_doc = get_doc_string (self, show_doc_cst);
-  doc = get_doc_string (self, gdbpy_doc_cst);
+  set_doc = get_doc_string (self, doc_string_set, name);
+  show_doc = get_doc_string (self, doc_string_show, name);
+  doc = get_doc_string (self, doc_string_description, cmd_name.get ());
 
   Py_INCREF (self);
 
   try
     {
-      add_setshow_generic (parmclass, (enum command_class) cmdtype,
+      add_setshow_generic (type, extra_literals,
+			   (enum command_class) cmdtype,
 			   std::move (cmd_name), obj,
 			   set_doc.get (), show_doc.get (),
 			   doc.get (), set_list, show_list);
@@ -733,17 +885,25 @@ parmpy_init (PyObject *self, PyObject *args, PyObject *kwds)
   catch (const gdb_exception &except)
     {
       Py_DECREF (self);
-      gdbpy_convert_exception (except);
-      return -1;
+      GDB_PY_SET_HANDLE_EXCEPTION (except);
     }
 
   return 0;
 }
 
-
+/* Deallocate function for a gdb.Parameter.  */
+
+static void
+parmpy_dealloc (PyObject *obj)
+{
+  parmpy_object *parm_obj = (parmpy_object *) obj;
+
+  if (var_type_uses<std::string> (parm_obj->type))
+    delete parm_obj->value.stringval;
+}
 
 /* Initialize the 'parameters' module.  */
-int
+static int CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION
 gdbpy_initialize_parameters (void)
 {
   int i;
@@ -752,10 +912,10 @@ gdbpy_initialize_parameters (void)
   if (PyType_Ready (&parmpy_object_type) < 0)
     return -1;
 
-  set_doc_cst = PyString_FromString ("set_doc");
+  set_doc_cst = PyUnicode_FromString ("set_doc");
   if (! set_doc_cst)
     return -1;
-  show_doc_cst = PyString_FromString ("show_doc");
+  show_doc_cst = PyUnicode_FromString ("show_doc");
   if (! show_doc_cst)
     return -1;
 
@@ -771,6 +931,8 @@ gdbpy_initialize_parameters (void)
 				 (PyObject *) &parmpy_object_type);
 }
 
+GDBPY_INITIALIZE_FILE (gdbpy_initialize_parameters);
+
 
 
 PyTypeObject parmpy_object_type =
@@ -779,7 +941,7 @@ PyTypeObject parmpy_object_type =
   "gdb.Parameter",		  /*tp_name*/
   sizeof (parmpy_object),	  /*tp_basicsize*/
   0,				  /*tp_itemsize*/
-  0,				  /*tp_dealloc*/
+  parmpy_dealloc,		  /*tp_dealloc*/
   0,				  /*tp_print*/
   0,				  /*tp_getattr*/
   0,				  /*tp_setattr*/

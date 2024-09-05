@@ -1,4 +1,4 @@
-# Copyright 2015-2021 Free Software Foundation, Inc.
+# Copyright 2015-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,19 +18,10 @@ load_lib dwarf.exp
 # DW_AT_high_pc but with DW_AT_ranges instead.
 
 # This test can only be run on targets which support DWARF-2 and use gas.
-if {![dwarf2_support]} {
-    verbose "Skipping $gdb_test_file_name."
-    return 0
-}
+require dwarf2_support
 
 # The .c files use __attribute__.
-if [get_compiler_info] {
-    return -1
-}
-if !$gcc_compiled {
-    verbose "Skipping $gdb_test_file_name."
-    return 0
-}
+require is_c_compiler_gcc
 
 standard_testfile .c -dw.S
 
@@ -52,7 +43,7 @@ Dwarf::assemble $asm_file {
     # this information being correct (w.r.t. funtion / argument types)
     # just so long as the compilation using makes use of the
     # .debug_ranges data then the test achieves its objective.
-    cu {} {
+    cu { label cu_label } {
 	compile_unit {
 	    {language @DW_LANG_C}
 	    {name dw-ranges-base.c}
@@ -84,29 +75,23 @@ Dwarf::assemble $asm_file {
 	# table data associated with it.  We do make use of the fake
 	# line numbers that we pick here in the tests below.
 	program {
-	    {DW_LNE_set_address [lindex $main_func 0]}
-	    {DW_LNS_advance_line 10}
-	    {DW_LNS_copy}
-	    {DW_LNS_advance_pc [lindex $main_func 1]}
-	    {DW_LNS_advance_line 19}
-	    {DW_LNS_copy}
-	    {DW_LNE_end_sequence}
+	    DW_LNE_set_address [lindex $main_func 0]
+	    DW_LNS_advance_line 10
+	    DW_LNS_copy
+	    DW_LNS_advance_pc [lindex $main_func 1]
+	    DW_LNE_end_sequence
 
-	    {DW_LNE_set_address [lindex $frame2_func 0]}
-	    {DW_LNS_advance_line 20}
-	    {DW_LNS_copy}
-	    {DW_LNS_advance_pc [lindex $frame2_func 1]}
-	    {DW_LNS_advance_line 29}
-	    {DW_LNS_copy}
-	    {DW_LNE_end_sequence}
+	    DW_LNE_set_address [lindex $frame2_func 0]
+	    DW_LNS_advance_line 20
+	    DW_LNS_copy
+	    DW_LNS_advance_pc [lindex $frame2_func 1]
+	    DW_LNE_end_sequence
 
-	    {DW_LNE_set_address [lindex $frame3_func 0]}
-	    {DW_LNS_advance_line 30}
-	    {DW_LNS_copy}
-	    {DW_LNS_advance_pc [lindex $frame3_func 1]}
-	    {DW_LNS_advance_line 39}
-	    {DW_LNS_copy}
-	    {DW_LNE_end_sequence}
+	    DW_LNE_set_address [lindex $frame3_func 0]
+	    DW_LNS_advance_line 30
+	    DW_LNS_copy
+	    DW_LNS_advance_pc [lindex $frame3_func 1]
+	    DW_LNE_end_sequence
 	}
     }
 
@@ -122,6 +107,12 @@ Dwarf::assemble $asm_file {
 	    base [lindex $frame3_func 0]
 	    range 0 [lindex $frame3_func 1]
 	}
+    }
+
+    aranges {} cu_label {
+	arange {} [lindex $main_func 0] [lindex $main_func 1]
+	arange {} [lindex $frame2_func 0] [lindex $frame2_func 1]
+	arange {} [lindex $frame3_func 0] [lindex $frame3_func 1]
     }
 }
 
@@ -148,7 +139,7 @@ set prev -1
 set seq_count 0
 gdb_test_multiple "maint info line-table gdb.dwarf2/dw2-ranges-base.c" \
     "count END markers in line table" {
-	-re "^$decimal\[ \t\]+$decimal\[ \t\]+$hex\(\[ \t\]+Y\)? *\r\n" {
+	-re "^$decimal\[ \t\]+$decimal\[ \t\]+$hex\[ \t\]+$hex\(\[ \t\]+Y\)? *\r\n" {
 	    if { $prev != -1 } {
 		gdb_assert "$prev == 1" \
 		    "prev of normal entry at $seq_count is end marker"
@@ -157,7 +148,7 @@ gdb_test_multiple "maint info line-table gdb.dwarf2/dw2-ranges-base.c" \
 	    incr seq_count
 	    exp_continue
 	}
-	-re "^$decimal\[ \t\]+END\[ \t\]+$hex\(\[ \t\]+Y\)? *\r\n" {
+	-re "^$decimal\[ \t\]+END\[ \t\]+$hex\[ \t\]+$hex\(\[ \t\]+Y\)? *\r\n" {
 	    if { $prev != -1 } {
 		gdb_assert "$prev == 0" \
 		    "prev of end marker at $seq_count is normal entry"
@@ -167,13 +158,17 @@ gdb_test_multiple "maint info line-table gdb.dwarf2/dw2-ranges-base.c" \
 	    incr end_seq_count
 	    exp_continue
 	}
+	-re "^\r\n" {
+	    # Empty lines between tables.
+	    exp_continue
+	}
 	-re "^$gdb_prompt $" {
 	    gdb_assert [expr $end_seq_count == 3] $gdb_test_name
 	}
 	-re ".*linetable: \\(\\(struct linetable \\*\\) 0x0\\):\r\nNo line table.\r\n" {
 	    exp_continue
 	}
-	-re ".*linetable: \\(\\(struct linetable \\*\\) $hex\\):\r\nINDEX\[ \t\]+LINE\[ \t\]+ADDRESS\[ \t\]+IS-STMT *\r\n" {
+	-re ".*linetable: \\(\\(struct linetable \\*\\) $hex\\):\r\nINDEX\[ \t\]+LINE\[ \t\]+REL-ADDRESS\[ \t\]+UNREL-ADDRESS\[ \t\]+IS-STMT\[ \t\]PROLOGUE-END\[ \t\]EPILOGUE-BEGIN *\r\n" {
 	    exp_continue
 	}
     }

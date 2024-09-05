@@ -1,4 +1,4 @@
-/* Copyright (C) 2017-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2017-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +19,9 @@
 #define COMMON_ARRAY_VIEW_H
 
 #include "traits.h"
+#include <algorithm>
 #include <type_traits>
+#include "gdbsupport/gdb_assert.h"
 
 /* An array_view is an abstraction that provides a non-owning view
    over a sequence of contiguous objects.
@@ -139,9 +141,10 @@ public:
   template<typename Container,
 	   typename = Requires<gdb::Not<IsDecayedT<Container>>>,
 	   typename
-	     = Requires<std::is_convertible
-			<decltype (std::declval<Container> ().data ()),
-			 T *>>,
+	     = Requires<DecayedConvertible
+			<typename std::remove_pointer
+			 <decltype (std::declval<Container> ().data ())
+			 >::type>>,
 	   typename
 	     = Requires<std::is_convertible
 			<decltype (std::declval<Container> ().size ()),
@@ -150,21 +153,30 @@ public:
     : m_array (c.data ()), m_size (c.size ())
   {}
 
-  /* Observer methods.  Some of these can't be constexpr until we
-     require C++14.  */
-  /*constexpr14*/ T *data () noexcept { return m_array; }
+  /* Observer methods.  */
+  constexpr T *data () noexcept { return m_array; }
   constexpr const T *data () const noexcept { return m_array; }
 
-  /*constexpr14*/ T *begin () noexcept { return m_array; }
+  constexpr T *begin () noexcept { return m_array; }
   constexpr const T *begin () const noexcept { return m_array; }
 
-  /*constexpr14*/ T *end () noexcept { return m_array + m_size; }
+  constexpr T *end () noexcept { return m_array + m_size; }
   constexpr const T *end () const noexcept { return m_array + m_size; }
 
-  /*constexpr14*/ reference operator[] (size_t index) noexcept
-  { return m_array[index]; }
+  constexpr reference operator[] (size_t index) noexcept
+  {
+#if defined(_GLIBCXX_DEBUG)
+    gdb_assert (index < m_size);
+#endif
+    return m_array[index];
+  }
   constexpr const_reference operator[] (size_t index) const noexcept
-  { return m_array[index]; }
+  {
+#if defined(_GLIBCXX_DEBUG)
+    gdb_assert (index < m_size);
+#endif
+    return m_array[index];
+  }
 
   constexpr size_type size () const noexcept { return m_size; }
   constexpr bool empty () const noexcept { return m_size == 0; }
@@ -172,18 +184,44 @@ public:
   /* Slice an array view.  */
 
   /* Return a new array view over SIZE elements starting at START.  */
+  [[nodiscard]]
   constexpr array_view<T> slice (size_type start, size_type size) const noexcept
-  { return {m_array + start, size}; }
+  {
+#if defined(_GLIBCXX_DEBUG)
+    gdb_assert (start + size <= m_size);
+#endif
+    return {m_array + start, size};
+  }
 
   /* Return a new array view over all the elements after START,
      inclusive.  */
+  [[nodiscard]]
   constexpr array_view<T> slice (size_type start) const noexcept
-  { return {m_array + start, size () - start}; }
+  {
+#if defined(_GLIBCXX_DEBUG)
+    gdb_assert (start <= m_size);
+#endif
+    return {m_array + start, size () - start};
+  }
 
 private:
   T *m_array;
   size_type m_size;
 };
+
+/* Copy the contents referenced by the array view SRC to the array view DEST.
+
+   The two array views must have the same length.  */
+
+template <typename U, typename T>
+void copy (gdb::array_view<U> src, gdb::array_view<T> dest)
+{
+  gdb_assert (dest.size () == src.size ());
+  if (dest.data () < src.data ())
+    std::copy (src.begin (), src.end (), dest.begin ());
+  else if (dest.data () > src.data ())
+    std::copy_backward (src.begin (), src.end (), dest.end ());
+}
 
 /* Compare LHS and RHS for (deep) equality.  That is, whether LHS and
    RHS have the same sizes, and whether each pair of elements of LHS
@@ -242,7 +280,7 @@ operator!= (const gdb::array_view<T> &lhs, const gdb::array_view<T> &rhs)
      foo (1, 2, gdb::array_view<value *>(values, nargs));
 
    Or, better, using make_array_view, which has the advantage of
-   inferring the arrav_view element's type:
+   inferring the array_view element's type:
 
      foo (1, 2, gdb::make_array_view (values, nargs));
 */

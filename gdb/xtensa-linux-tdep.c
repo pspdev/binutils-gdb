@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux on Xtensa processors.
 
-   Copyright (C) 2007-2021 Free Software Foundation, Inc.
+   Copyright (C) 2007-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "xtensa-tdep.h"
 #include "osabi.h"
 #include "linux-tdep.h"
@@ -99,7 +98,7 @@ xtensa_linux_gdb_signal_to_target (struct gdbarch *gdbarch,
 static void
 xtensa_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  xtensa_gdbarch_tdep *tdep = gdbarch_tdep<xtensa_gdbarch_tdep> (gdbarch);
 
   if (tdep->num_nopriv_regs < tdep->num_regs)
     {
@@ -113,7 +112,7 @@ xtensa_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   linux_init_abi (info, gdbarch, 0);
 
   set_solib_svr4_fetch_link_map_offsets
-    (gdbarch, svr4_ilp32_fetch_link_map_offsets);
+    (gdbarch, linux_ilp32_fetch_link_map_offsets);
 
   set_gdbarch_gdb_signal_from_target (gdbarch,
 				      xtensa_linux_gdb_signal_from_target);

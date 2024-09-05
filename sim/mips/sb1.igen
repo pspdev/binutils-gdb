@@ -1,12 +1,12 @@
 // -*- C -*-
 
 // Simulator definition for the Broadcom SiByte SB-1 CPU extensions.
-// Copyright (C) 2002-2021 Free Software Foundation, Inc.
+// Copyright (C) 2002-2024 Free Software Foundation, Inc.
 // Contributed by Ed Satterthwaite and Chris Demetriou, of Broadcom
 // Corporation (SiByte).
 //
 // This file is part of GDB, the GNU debugger.
-// 
+//
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation; either version 3 of the License, or
@@ -172,7 +172,7 @@
 
 
 011110,5.FMTSEL,5.VT,5.VS,00000,110101:MDMX:64::PABSDIFC.fmt
-"pabsdifc.%<FMTSEL> v<VS>,v<VT>"
+"pabsdifc.%s<FMTSEL> v<VS>,v<VT>"
 *sb1:
 {
   check_mdmx (SD_, instruction_0);

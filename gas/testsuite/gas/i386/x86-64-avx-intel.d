@@ -7,8 +7,8 @@
 Disassembly of section .text:
 
 0+ <_start>:
-[ 	]*[a-f0-9]+:	c5 fc 77             	vzeroall 
-[ 	]*[a-f0-9]+:	c5 f8 77             	vzeroupper 
+[ 	]*[a-f0-9]+:	c5 fc 77             	vzeroall
+[ 	]*[a-f0-9]+:	c5 f8 77             	vzeroupper
 [ 	]*[a-f0-9]+:	c5 f8 ae 11          	vldmxcsr DWORD PTR \[rcx\]
 [ 	]*[a-f0-9]+:	c5 f8 ae 19          	vstmxcsr DWORD PTR \[rcx\]
 [ 	]*[a-f0-9]+:	c4 e2 5d 2d 31       	vmaskmovpd ymm6,ymm4,YMMWORD PTR \[rcx\]
@@ -2855,9 +2855,7 @@ Disassembly of section .text:
 [ 	]*[a-f0-9]+:	c4 e1 fb 2c 09       	vcvttsd2si rcx,QWORD PTR \[rcx\]
 [ 	]*[a-f0-9]+:	c4 e1 db 2a f1       	vcvtsi2sd xmm6,xmm4,rcx
 [ 	]*[a-f0-9]+:	c4 e1 db 2a 31       	vcvtsi2sd xmm6,xmm4,QWORD PTR \[rcx\]
-[ 	]*[a-f0-9]+:	c4 e1 db 2a 31       	vcvtsi2sd xmm6,xmm4,QWORD PTR \[rcx\]
 [ 	]*[a-f0-9]+:	c4 e1 da 2a f1       	vcvtsi2ss xmm6,xmm4,rcx
-[ 	]*[a-f0-9]+:	c4 e1 da 2a 31       	vcvtsi2ss xmm6,xmm4,QWORD PTR \[rcx\]
 [ 	]*[a-f0-9]+:	c4 e1 da 2a 31       	vcvtsi2ss xmm6,xmm4,QWORD PTR \[rcx\]
 [ 	]*[a-f0-9]+:	c4 e3 d9 22 f1 07    	vpinsrq xmm6,xmm4,rcx,0x7
 [ 	]*[a-f0-9]+:	c4 e3 d9 22 31 07    	vpinsrq xmm6,xmm4,QWORD PTR \[rcx\],0x7

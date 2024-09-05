@@ -1,4 +1,4 @@
-# Copyright 2014-2021 Free Software Foundation, Inc.
+# Copyright 2014-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,9 +15,7 @@
 load_lib dwarf.exp
 
 # This test can only be run on targets which support DWARF-2 and use gas.
-if {![dwarf2_support]} {
-    return 0
-}
+require dwarf2_support
 
 standard_testfile main.c -dw.S
 
@@ -37,13 +35,13 @@ Dwarf::assemble $asm_file {
             integer_label: DW_TAG_base_type {
                 {DW_AT_byte_size 4 DW_FORM_sdata}
                 {DW_AT_encoding  @DW_ATE_signed}
-                {DW_AT_name      integer}
+                {DW_AT_name      int}
             }
 
             uinteger_label: DW_TAG_base_type {
                 {DW_AT_byte_size 4 DW_FORM_sdata}
                 {DW_AT_encoding  @DW_ATE_unsigned}
-                {DW_AT_name      {unsigned integer}}
+		{DW_AT_name      {unsigned int}}
             }
 
 	    DW_TAG_enumeration_type {
@@ -79,5 +77,5 @@ gdb_test "print sizeof(enum E)" " = 4"
 gdb_test "ptype enum EU" "type = enum EU {TWO = 2}" \
     "ptype EU in enum C"
 gdb_test_no_output "set lang c++"
-gdb_test "ptype enum EU" "type = enum EU : unsigned integer {TWO = 2}" \
+gdb_test "ptype enum EU" "type = enum EU : unsigned int {TWO = 2}" \
     "ptype EU in C++"

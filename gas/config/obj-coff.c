@@ -1,5 +1,5 @@
 /* coff object file format
-   Copyright (C) 1989-2021 Free Software Foundation, Inc.
+   Copyright (C) 1989-2024 Free Software Foundation, Inc.
 
    This file is part of GAS.
 
@@ -238,7 +238,7 @@ fetch_coff_debug_section (void)
     {
       const asymbol *s;
 
-      s = bfd_make_debug_symbol (stdoutput, NULL, 0);
+      s = bfd_make_debug_symbol (stdoutput);
       gas_assert (s != 0);
       debug_section = s->section;
     }
@@ -316,7 +316,7 @@ c_symbol_merge (symbolS *debug, symbolS *normal)
 }
 
 void
-c_dot_file_symbol (const char *filename, int appfile ATTRIBUTE_UNUSED)
+c_dot_file_symbol (const char *filename)
 {
   symbolS *symbolP;
 
@@ -447,11 +447,11 @@ coff_add_linesym (symbolS *sym)
 }
 
 static void
-obj_coff_ln (int appline)
+obj_coff_ln (int ignore ATTRIBUTE_UNUSED)
 {
   int l;
 
-  if (! appline && def_symbol_in_progress != NULL)
+  if (def_symbol_in_progress != NULL)
     {
       as_warn (_(".ln pseudo-op inside .def/.endef: ignored."));
       demand_empty_rest_of_line ();
@@ -460,9 +460,9 @@ obj_coff_ln (int appline)
 
   l = get_absolute_expression ();
 
-  /* If there is no lineno symbol, treat a .ln
-     directive as if it were a .appline directive.  */
-  if (appline || current_lineno_sym == NULL)
+  /* If there is no lineno symbol, treat a .ln directive
+     as if it were a (no longer existing) .appline one.  */
+  if (current_lineno_sym == NULL)
     new_logical_line ((char *) NULL, l - 1);
   else
     add_lineno (frag_now, frag_now_fix (), l);
@@ -473,8 +473,7 @@ obj_coff_ln (int appline)
 
     if (listing)
       {
-	if (! appline)
-	  l += coff_line_base - 1;
+	l += coff_line_base - 1;
 	listing_source_line (l);
       }
   }
@@ -1705,7 +1704,7 @@ coff_adjust_symtab (void)
 {
   if (symbol_rootP == NULL
       || S_GET_STORAGE_CLASS (symbol_rootP) != C_FILE)
-    c_dot_file_symbol ("fake", 0);
+    c_dot_file_symbol ("fake");
 }
 
 void
@@ -1726,7 +1725,8 @@ coff_frob_section (segT sec)
   bfd_vma align_power = (bfd_vma) sec->alignment_power + OCTETS_PER_BYTE_POWER;
   bfd_vma mask = ((bfd_vma) 1 << align_power) - 1;
 
-  if (size & mask)
+  if (!do_not_pad_sections_to_alignment
+      && (size & mask) != 0)
     {
       bfd_vma new_size;
       fragS *last;
@@ -1741,7 +1741,10 @@ coff_frob_section (segT sec)
       while (fragp->fr_next != last)
 	fragp = fragp->fr_next;
       last->fr_address = size;
-      fragp->fr_offset += new_size - size;
+      if ((new_size - size) % fragp->fr_var == 0)
+	fragp->fr_offset += (new_size - size) / fragp->fr_var;
+      else
+	abort ();
     }
 #endif
 
@@ -1801,11 +1804,10 @@ coff_frob_section (segT sec)
 }
 
 void
-obj_coff_init_stab_section (segT seg)
+obj_coff_init_stab_section (segT stab ATTRIBUTE_UNUSED, segT stabstr)
 {
   const char *file;
   char *p;
-  char *stabstr_name;
   unsigned int stroff;
 
   /* Make space for this first symbol.  */
@@ -1813,8 +1815,7 @@ obj_coff_init_stab_section (segT seg)
   /* Zero it out.  */
   memset (p, 0, 12);
   file = as_where ((unsigned int *) NULL);
-  stabstr_name = concat (seg->name, "str", (char *) NULL);
-  stroff = get_stab_string_offset (file, stabstr_name, true);
+  stroff = get_stab_string_offset (file, stabstr);
   know (stroff == 1);
   md_number_to_chars (p, stroff, 4);
 }
@@ -1849,7 +1850,6 @@ symbol_dump (void)
 const pseudo_typeS coff_pseudo_table[] =
 {
   {"ABORT", s_abort, 0},
-  {"appline", obj_coff_ln, 1},
   /* We accept the .bss directive for backward compatibility with
      earlier versions of gas.  */
   {"bss", obj_coff_bss, 0},
@@ -1908,6 +1908,7 @@ const struct format_ops coff_format_ops =
   0,	/* dfl_leading_underscore */
   1,	/* emit_section_symbols */
   0,    /* begin */
+  0,	/* end.  */
   c_dot_file_symbol,
   coff_frob_symbol,
   0,	/* frob_file */

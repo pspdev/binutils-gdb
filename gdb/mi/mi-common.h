@@ -1,5 +1,5 @@
 /* Interface for common GDB/MI data
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,12 +19,8 @@
 #ifndef MI_MI_COMMON_H
 #define MI_MI_COMMON_H
 
-#include "interps.h"
-
-struct mi_console_file;
-
 /* Represents the reason why GDB is sending an asynchronous command to
-   the front end.  NOTE: When modifing this, don't forget to update
+   the front end.  NOTE: When modifying this, don't forget to update
    gdb.texinfo!  */
 enum async_reply_reason
 {
@@ -46,56 +42,11 @@ enum async_reply_reason
   EXEC_ASYNC_SYSCALL_ENTRY,
   EXEC_ASYNC_SYSCALL_RETURN,
   EXEC_ASYNC_EXEC,
+  EXEC_ASYNC_NO_HISTORY,
   /* This is here only to represent the number of enums.  */
   EXEC_ASYNC_LAST
 };
 
 const char *async_reason_lookup (enum async_reply_reason reason);
-
-/* An MI interpreter.  */
-
-class mi_interp final : public interp
-{
-public:
-  mi_interp (const char *name)
-    : interp (name)
-  {}
-
-  void init (bool top_level) override;
-  void resume () override;
-  void suspend () override;
-  gdb_exception exec (const char *command_str) override;
-  ui_out *interp_ui_out () override;
-  void set_logging (ui_file_up logfile, bool logging_redirect,
-		    bool debug_redirect) override;
-  void pre_command_loop () override;
-
-  /* MI's output channels */
-  mi_console_file *out;
-  mi_console_file *err;
-  mi_console_file *log;
-  mi_console_file *targ;
-  mi_console_file *event_channel;
-
-  /* Raw console output.  */
-  struct ui_file *raw_stdout;
-
-  /* Raw logfile output.  */
-  struct ui_file *raw_stdlog;
-
-  /* Save the original value of raw_stdout and raw_stdlog here when logging, and
-     the file which we need to delete, so we can restore correctly when
-     done.  */
-  struct ui_file *saved_raw_stdout;
-  struct ui_file *saved_raw_stdlog;
-  struct ui_file *saved_raw_file_to_delete;
-
-
-  /* MI's builder.  */
-  struct ui_out *mi_uiout;
-
-  /* MI's CLI builder (wraps OUT).  */
-  struct ui_out *cli_uiout;
-};
 
 #endif /* MI_MI_COMMON_H */

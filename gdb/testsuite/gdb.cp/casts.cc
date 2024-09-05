@@ -1,3 +1,5 @@
+#include <cstdint>
+
 struct A
 {
   int a;
@@ -34,6 +36,38 @@ struct DoublyDerived : public VirtuallyDerived,
 {
 };
 
+struct Left
+{
+  int left;
+};
+
+struct Right
+{
+  int right;
+};
+
+struct LeftRight : public Left, public Right
+{
+};
+
+struct VirtualLeft
+{
+  virtual ~VirtualLeft () {}
+
+  int left;
+};
+
+struct VirtualRight
+{
+  virtual ~VirtualRight () {}
+
+  int right;
+};
+
+struct VirtualLeftRight : public VirtualLeft, public VirtualRight
+{
+};
+
 int
 main (int argc, char **argv)
 {
@@ -47,6 +81,24 @@ main (int argc, char **argv)
 
   Alpha *ad = &derived;
   Alpha *add = &doublyderived;
+
+  LeftRight gd;
+  gd.left = 23;
+  gd.right = 27;
+  unsigned long long gd_value = (unsigned long long) (std::uintptr_t)&gd;
+  unsigned long long r_value = (unsigned long long) (Right *) &gd;
+
+  LeftRight *lr = &gd;
+  Left *l = lr;
+  Right *r = lr;
+  LeftRight *lr_l = reinterpret_cast<LeftRight *>(l);
+  LeftRight *lr_r = reinterpret_cast<LeftRight *>(r);
+  Left *l_lr = reinterpret_cast<Left *>(lr);
+  Right *r_lr = reinterpret_cast<Right *>(lr);
+
+  VirtualLeftRight *vlr = new VirtualLeftRight ();
+  VirtualLeft *vl = vlr;
+  VirtualRight *vr = vlr;
 
   return 0;  /* breakpoint spot: casts.exp: 1 */
 }

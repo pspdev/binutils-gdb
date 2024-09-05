@@ -1,4 +1,4 @@
-# Copyright 2014-2021 Free Software Foundation, Inc.
+# Copyright 2014-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,6 +14,15 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # This file is part of the gdb testsuite
+
+# The allow_hw_watchpoint_tests checks if watchpoints are supported by the
+# processor.  On PowerPC, the check runs a small test program under gdb
+# to determine if the Power processor supports HW watchpoints.  The check
+# must be done before starting the test so as to not disrupt the execution
+# of the actual test.
+# Disable hardware watchpoints if the target does not support them.
+
+set allow_hw_watchpoint_tests_p [allow_hw_watchpoint_tests]
 
 standard_testfile
 
@@ -35,9 +44,9 @@ proc watch { expr } {
 proc expect_watchpoint { expr old new } {
     with_test_prefix "$expr: $old->$new" {
 	set expr_re [string_to_regexp $expr]
-	gdb_test "print $expr" "\\$\\d+ = $old\\s" "print expression before"
+	gdb_test "print $expr" "\\$\\d+ = $old" "print expression before"
 	gdb_test "continue" "$expr_re\\s.*Old value = $old\\s+New value = $new\\s.*"
-	gdb_test "print $expr" "\\$\\d+ = $new\\s" "print expression after"
+	gdb_test "print $expr" "\\$\\d+ = $new" "print expression after"
     }
 }
 
@@ -92,8 +101,8 @@ proc test_regular_watch {} {
 }
 
 # Disable hardware watchpoints if the target does not support them.
-if [target_info exists gdb,no_hardware_watchpoints] {
-    gdb_test_no_output "set can-use-hw-watchpoints 0"
+if {!$allow_hw_watchpoint_tests_p} {
+    gdb_test_no_output "set can-use-hw-watchpoints 0" ""
 }
 
 test_watch_location

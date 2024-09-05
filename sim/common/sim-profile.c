@@ -1,5 +1,5 @@
 /* Default profiling support.
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2024 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
 This file is part of GDB, the GNU debugger.
@@ -20,14 +20,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 /* This must come before any other includes.  */
 #include "defs.h"
 
+#include <ctype.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "ansidecl.h"
+
 #include "sim-main.h"
 #include "sim-io.h"
 #include "sim-options.h"
 #include "sim-assert.h"
-
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
 
 #if !WITH_PROFILE_PC_P
 static unsigned int _profile_stub;
@@ -608,7 +611,7 @@ profile_pc_init (SIM_DESC sd)
 }
 
 static void
-profile_print_pc (sim_cpu *cpu, int verbose)
+profile_print_pc (sim_cpu *cpu, bool verbose)
 {
   SIM_DESC sd = CPU_STATE (cpu);
   PROFILE_DATA *profile = CPU_PROFILE_DATA (cpu);
@@ -690,7 +693,7 @@ profile_print_pc (sim_cpu *cpu, int verbose)
       {
 	int ok;
 	/* FIXME: what if the target has a 64 bit PC? */
-	unsigned32 header[3];
+	uint32_t header[3];
 	unsigned loop;
 	if (PROFILE_PC_END (profile) != 0)
 	  {
@@ -715,7 +718,7 @@ profile_print_pc (sim_cpu *cpu, int verbose)
 	     ok && (loop < PROFILE_PC_NR_BUCKETS (profile));
 	     loop++)
 	  {
-	    signed16 sample;
+	    int16_t sample;
 	    if (PROFILE_PC_COUNT (profile) [loop] >= 0xffff)
 	      sample = 0xffff;
 	    else
@@ -755,7 +758,7 @@ profile_insn_init (SIM_DESC sd)
 }
 
 static void
-profile_print_insn (sim_cpu *cpu, int verbose)
+profile_print_insn (sim_cpu *cpu, bool verbose)
 {
   unsigned int i, n, total, max_val, max_name_len;
   SIM_DESC sd = CPU_STATE (cpu);
@@ -828,7 +831,7 @@ profile_print_insn (sim_cpu *cpu, int verbose)
 #if WITH_PROFILE_MEMORY_P
 
 static void
-profile_print_memory (sim_cpu *cpu, int verbose)
+profile_print_memory (sim_cpu *cpu, bool verbose)
 {
   unsigned int i, n;
   unsigned int total_read, total_write;
@@ -902,7 +905,7 @@ profile_print_memory (sim_cpu *cpu, int verbose)
 #if WITH_PROFILE_CORE_P
 
 static void
-profile_print_core (sim_cpu *cpu, int verbose)
+profile_print_core (sim_cpu *cpu, bool verbose)
 {
   unsigned int total;
   unsigned int max_val;
@@ -959,7 +962,7 @@ profile_print_core (sim_cpu *cpu, int verbose)
 #if WITH_PROFILE_MODEL_P
 
 static void
-profile_print_model (sim_cpu *cpu, int verbose)
+profile_print_model (sim_cpu *cpu, bool verbose)
 {
   SIM_DESC sd = CPU_STATE (cpu);
   PROFILE_DATA *data = CPU_PROFILE_DATA (cpu);
@@ -1107,7 +1110,7 @@ profile_print_addr_ranges (sim_cpu *cpu)
    section titles.  */
 
 static void
-profile_info (SIM_DESC sd, int verbose)
+profile_info (SIM_DESC sd, bool verbose)
 {
   int i,c;
   int print_title_p = 0;

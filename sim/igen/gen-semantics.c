@@ -1,6 +1,6 @@
 /* The IGEN simulator generator for GDB, the GNU Debugger.
 
-   Copyright 2002-2021 Free Software Foundation, Inc.
+   Copyright 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney.
 
@@ -41,7 +41,7 @@ static void
 print_semantic_function_header (lf *file,
 				const char *basename,
 				const char *format_name,
-				opcode_bits *expanded_bits,
+				const opcode_bits *expanded_bits,
 				int is_function_definition,
 				int nr_prefetched_words)
 {
@@ -83,9 +83,10 @@ print_semantic_function_header (lf *file,
 
 void
 print_semantic_declaration (lf *file,
-			    insn_entry * insn,
-			    opcode_bits *expanded_bits,
-			    insn_opcodes *opcodes, int nr_prefetched_words)
+			    const insn_entry *insn,
+			    const opcode_bits *expanded_bits,
+			    const insn_opcodes *opcodes,
+			    int nr_prefetched_words)
 {
   print_semantic_function_header (file,
 				  insn->name,
@@ -143,8 +144,9 @@ print_idecode_invalid (lf *file, const char *result, invalid_type type)
 
 void
 print_semantic_body (lf *file,
-		     insn_entry * instruction,
-		     opcode_bits *expanded_bits, insn_opcodes *opcodes)
+		     const insn_entry *instruction,
+		     const opcode_bits *expanded_bits,
+		     const insn_opcodes *opcodes)
 {
   /* validate the instruction, if a cache this has already been done */
   if (!options.gen.icache)
@@ -260,10 +262,17 @@ print_semantic_body (lf *file,
     {
       /* true code */
       lf_printf (file, "{\n");
-      lf_indent (file, +2);
+      /* NB: Do not indent the code.  If the .igen source files cause a compiler
+	 warning, the diagnostics can read the line from the original source,
+	 but use column offsets from the generated files, causing columns to be
+	 misaligned.  It makes the generated code slightly more difficult to
+	 read, but accurate compiler diagnostics relative to the original source
+	 are more important here.
+      lf_indent (file, +2); */
       lf_print__line_ref (file, instruction->code->line);
       table_print_code (file, instruction->code);
-      lf_indent (file, -2);
+      /* NB: Disabled -- see above.
+      lf_indent (file, -2); */
       lf_printf (file, "}\n");
       lf_print__internal_ref (file);
     }
@@ -300,10 +309,11 @@ print_semantic_body (lf *file,
 
 static void
 print_c_semantic (lf *file,
-		  insn_entry * instruction,
-		  opcode_bits *expanded_bits,
-		  insn_opcodes *opcodes,
-		  cache_entry *cache_rules, int nr_prefetched_words)
+		  const insn_entry *instruction,
+		  const opcode_bits *expanded_bits,
+		  const insn_opcodes *opcodes,
+		  cache_entry *cache_rules,
+		  int nr_prefetched_words)
 {
 
   lf_printf (file, "{\n");
@@ -348,10 +358,11 @@ print_c_semantic (lf *file,
 
 static void
 print_c_semantic_function (lf *file,
-			   insn_entry * instruction,
-			   opcode_bits *expanded_bits,
-			   insn_opcodes *opcodes,
-			   cache_entry *cache_rules, int nr_prefetched_words)
+			   const insn_entry *instruction,
+			   const opcode_bits *expanded_bits,
+			   const insn_opcodes *opcodes,
+			   cache_entry *cache_rules,
+			   int nr_prefetched_words)
 {
   /* build the semantic routine to execute the instruction */
   print_semantic_function_header (file,
@@ -367,10 +378,11 @@ print_c_semantic_function (lf *file,
 
 void
 print_semantic_definition (lf *file,
-			   insn_entry * insn,
-			   opcode_bits *expanded_bits,
-			   insn_opcodes *opcodes,
-			   cache_entry *cache_rules, int nr_prefetched_words)
+			   const insn_entry *insn,
+			   const opcode_bits *expanded_bits,
+			   const insn_opcodes *opcodes,
+			   cache_entry *cache_rules,
+			   int nr_prefetched_words)
 {
   print_c_semantic_function (file,
 			     insn,

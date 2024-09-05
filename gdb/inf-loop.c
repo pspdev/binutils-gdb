@@ -1,5 +1,5 @@
 /* Handling of inferior events for the event loop for GDB, the GNU debugger.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2024 Free Software Foundation, Inc.
    Written by Elena Zannoni <ezannoni@cygnus.com> of Cygnus Solutions.
 
    This file is part of GDB.
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "exceptions.h"
 #include "inferior.h"
 #include "infrun.h"
 #include "gdbsupport/event-loop.h"
@@ -28,6 +28,7 @@
 #include "gdbthread.h"
 #include "interps.h"
 #include "top.h"
+#include "ui.h"
 #include "observable.h"
 
 /* General function to handle events in the inferior.  */
@@ -48,7 +49,7 @@ inferior_event_handler (enum inferior_event_type event_type)
 	     so that when the inferior is not running we don't get
 	     distracted by spurious inferior output.  */
 	  if (target_has_execution () && target_can_async_p ())
-	    target_async (0);
+	    target_async (false);
 	}
 
       /* Do all continuations associated with the whole inferior (not
@@ -69,7 +70,7 @@ inferior_event_handler (enum inferior_event_type event_type)
 	    {
 	      bpstat_do_actions ();
 	    }
-	  catch (const gdb_exception &e)
+	  catch (const gdb_exception_error &e)
 	    {
 	      /* If the user was running a foreground execution
 		 command, then propagate the error so that the prompt
@@ -85,7 +86,7 @@ inferior_event_handler (enum inferior_event_type event_type)
       break;
 
     default:
-      printf_unfiltered (_("Event type not recognized.\n"));
+      gdb_printf (gdb_stderr, _("Event type not recognized.\n"));
       break;
     }
 }

@@ -1,4 +1,4 @@
-/* Copyright (C) 2015-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2015-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -51,13 +51,11 @@
     some_flags f = 1; // error
 */
 
-#ifdef __cplusplus
-
 /* Use this to mark an enum as flags enum.  It defines FLAGS_TYPE as
    enum_flags wrapper class for ENUM, and enables the global operator
    overloads for ENUM.  */
 #define DEF_ENUM_FLAGS_TYPE(enum_type, flags_type)	\
-  typedef enum_flags<enum_type> flags_type;		\
+  using flags_type = enum_flags<enum_type>;		\
   void is_enum_flags_enum_type (enum_type *)
 
 /* To enable the global enum_flags operators for enum, declare an
@@ -78,22 +76,25 @@
 /* Note that std::underlying_type<enum_type> is not what we want here,
    since that returns unsigned int even when the enum decays to signed
    int.  */
-template<int size, bool sign> class integer_for_size { typedef void type; };
-template<> struct integer_for_size<1, 0> { typedef uint8_t type; };
-template<> struct integer_for_size<2, 0> { typedef uint16_t type; };
-template<> struct integer_for_size<4, 0> { typedef uint32_t type; };
-template<> struct integer_for_size<8, 0> { typedef uint64_t type; };
-template<> struct integer_for_size<1, 1> { typedef int8_t type; };
-template<> struct integer_for_size<2, 1> { typedef int16_t type; };
-template<> struct integer_for_size<4, 1> { typedef int32_t type; };
-template<> struct integer_for_size<8, 1> { typedef int64_t type; };
+template<int size, bool sign> class integer_for_size { using type = void; };
+template<> struct integer_for_size<1, 0> { using type = uint8_t; };
+template<> struct integer_for_size<2, 0> { using type = uint16_t; };
+template<> struct integer_for_size<4, 0> { using type = uint32_t; };
+template<> struct integer_for_size<8, 0> { using type = uint64_t; };
+template<> struct integer_for_size<1, 1> { using type = int8_t; };
+template<> struct integer_for_size<2, 1> { using type = int16_t; };
+template<> struct integer_for_size<4, 1> { using type = int32_t; };
+template<> struct integer_for_size<8, 1> { using type = int64_t; };
 
 template<typename T>
 struct enum_underlying_type
 {
-  typedef typename
-    integer_for_size<sizeof (T), static_cast<bool>(T (-1) < T (0))>::type
-    type;
+  DIAGNOSTIC_PUSH
+  DIAGNOSTIC_IGNORE_ENUM_CONSTEXPR_CONVERSION
+  using type
+    = typename integer_for_size<sizeof (T),
+				static_cast<bool>(T (-1) < T (0))>::type;
+  DIAGNOSTIC_POP
 };
 
 namespace enum_flags_detail
@@ -127,8 +128,19 @@ template <typename E>
 class enum_flags
 {
 public:
-  typedef E enum_type;
-  typedef typename enum_underlying_type<enum_type>::type underlying_type;
+  using enum_type = E;
+  using underlying_type = typename enum_underlying_type<enum_type>::type;
+
+  /* For to_string.  Maps one enumerator of E to a string.  */
+  struct string_mapping
+  {
+    E flag;
+    const char *str;
+  };
+
+  /* Convenience for to_string implementations, to build a
+     string_mapping array.  */
+#define MAP_ENUM_FLAG(ENUM_FLAG) { ENUM_FLAG, #ENUM_FLAG }
 
 public:
   /* Allow default construction.  */
@@ -182,6 +194,18 @@ public:
 
   /* Binary operations involving some unrelated type (which would be a
      bug) are implemented as non-members, and deleted.  */
+
+  /* Convert this object to a std::string, using MAPPING as
+     enumerator-to-string mapping array.  This is not meant to be
+     called directly.  Instead, enum_flags specializations should have
+     their own to_string function wrapping this one, thus hiding the
+     mapping array from callers.
+
+     Note: this is defined outside the template class so it can use
+     the global operators for enum_type, which are only defined after
+     the template class.  */
+  template<size_t N>
+  std::string to_string (const string_mapping (&mapping)[N]) const;
 
 private:
   /* Stored as enum_type because GDB knows to print the bit flags
@@ -312,7 +336,7 @@ ENUM_FLAGS_GEN_COMPOUND_ASSIGN (operator^=, ^)
    make.  It's important to disable comparison with unrelated types to
    prevent accidentally comparing with unrelated enum values, which
    are convertible to integer, and thus coupled with enum_flags
-   convertion to underlying type too, would trigger the built-in 'bool
+   conversion to underlying type too, would trigger the built-in 'bool
    operator==(unsigned, int)' operator.  */
 
 #define ENUM_FLAGS_GEN_COMP(OPERATOR_OP, OP)				\
@@ -415,13 +439,47 @@ template <typename enum_type, typename any_type,
 	  typename = is_enum_flags_enum_type_t<enum_type>>
 void operator>> (const enum_flags<enum_type> &, const any_type &) = delete;
 
-#else /* __cplusplus */
+template<typename E>
+template<size_t N>
+std::string
+enum_flags<E>::to_string (const string_mapping (&mapping)[N]) const
+{
+  enum_type flags = raw ();
+  std::string res = hex_string (flags);
+  res += " [";
 
-/* In C, the flags type is just a typedef for the enum type.  */
+  bool need_space = false;
+  for (const auto &entry : mapping)
+    {
+      if ((flags & entry.flag) != 0)
+	{
+	  /* Work with an unsigned version of the underlying type,
+	     because if enum_type's underlying type is signed, op~
+	     won't be defined for it, and, bitwise operations on
+	     signed types are implementation defined.  */
+	  using uns = typename std::make_unsigned<underlying_type>::type;
+	  flags &= (enum_type) ~(uns) entry.flag;
 
-#define DEF_ENUM_FLAGS_TYPE(enum_type, flags_type) \
-  typedef enum_type flags_type
+	  if (need_space)
+	    res += " ";
+	  res += entry.str;
 
-#endif /* __cplusplus */
+	  need_space = true;
+	}
+    }
+
+  /* If there were flags not included in the mapping, print them as
+     a hex number.  */
+  if (flags != 0)
+    {
+      if (need_space)
+	res += " ";
+      res += hex_string (flags);
+    }
+
+  res += "]";
+
+  return res;
+}
 
 #endif /* COMMON_ENUM_FLAGS_H */

@@ -1,6 +1,6 @@
 /* Objective-C language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Apple Computer, Inc.
    Written by Michael Snyder.
@@ -20,7 +20,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "event-top.h"
+#include "exceptions.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "expression.h"
@@ -35,9 +36,9 @@
 #include "objfiles.h"
 #include "target.h"
 #include "gdbcore.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "frame.h"
-#include "gdb_regex.h"
+#include "gdbsupport/gdb_regex.h"
 #include "regcache.h"
 #include "block.h"
 #include "infcall.h"
@@ -76,7 +77,7 @@ struct objc_method {
   CORE_ADDR imp;
 };
 
-static const struct objfile_key<unsigned int> objc_objfile_data;
+static const registry<objfile>::key<unsigned int> objc_objfile_data;
 
 /* Lookup a structure type named "struct NAME", visible in lexical
    block BLOCK.  If NOERR is nonzero, return zero if NAME is not
@@ -87,7 +88,7 @@ lookup_struct_typedef (const char *name, const struct block *block, int noerr)
 {
   struct symbol *sym;
 
-  sym = lookup_symbol (name, block, STRUCT_DOMAIN, 0).symbol;
+  sym = lookup_symbol (name, block, SEARCH_STRUCT_DOMAIN, 0).symbol;
 
   if (sym == NULL)
     {
@@ -96,7 +97,7 @@ lookup_struct_typedef (const char *name, const struct block *block, int noerr)
       else 
 	error (_("No struct type named %s."), name);
     }
-  if (SYMBOL_TYPE (sym)->code () != TYPE_CODE_STRUCT)
+  if (sym->type ()->code () != TYPE_CODE_STRUCT)
     {
       if (noerr)
 	return 0;
@@ -119,9 +120,11 @@ lookup_objc_class (struct gdbarch *gdbarch, const char *classname)
       return 0;
     }
 
-  if (lookup_minimal_symbol("objc_lookUpClass", 0, 0).minsym)
+  if (lookup_minimal_symbol (current_program_space,
+			     "objc_lookUpClass").minsym != nullptr)
     function = find_function_in_inferior("objc_lookUpClass", NULL);
-  else if (lookup_minimal_symbol ("objc_lookup_class", 0, 0).minsym)
+  else if (lookup_minimal_symbol (current_program_space,
+				  "objc_lookup_class").minsym != nullptr)
     function = find_function_in_inferior("objc_lookup_class", NULL);
   else
     {
@@ -148,9 +151,11 @@ lookup_child_selector (struct gdbarch *gdbarch, const char *selname)
       return 0;
     }
 
-  if (lookup_minimal_symbol("sel_getUid", 0, 0).minsym)
+  if (lookup_minimal_symbol (current_program_space, "sel_getUid").minsym
+      != nullptr)
     function = find_function_in_inferior("sel_getUid", NULL);
-  else if (lookup_minimal_symbol ("sel_get_any_uid", 0, 0).minsym)
+  else if (lookup_minimal_symbol (current_program_space,
+				  "sel_get_any_uid").minsym != nullptr)
     function = find_function_in_inferior("sel_get_any_uid", NULL);
   else
     {
@@ -179,17 +184,21 @@ value_nsstring (struct gdbarch *gdbarch, const char *ptr, int len)
   stringValue[2] = value_string(ptr, len, char_type);
   stringValue[2] = value_coerce_array(stringValue[2]);
   /* _NSNewStringFromCString replaces "istr" after Lantern2A.  */
-  if (lookup_minimal_symbol("_NSNewStringFromCString", 0, 0).minsym)
+  if (lookup_minimal_symbol (current_program_space,
+			     "_NSNewStringFromCString").minsym != nullptr)
     {
       function = find_function_in_inferior("_NSNewStringFromCString", NULL);
       nsstringValue = call_function_by_hand(function, NULL, stringValue[2]);
     }
-  else if (lookup_minimal_symbol("istr", 0, 0).minsym)
+  else if (lookup_minimal_symbol (current_program_space,
+				  "istr").minsym != nullptr)
     {
       function = find_function_in_inferior("istr", NULL);
       nsstringValue = call_function_by_hand(function, NULL, stringValue[2]);
     }
-  else if (lookup_minimal_symbol("+[NSString stringWithCString:]", 0, 0).minsym)
+  else if (lookup_minimal_symbol (current_program_space,
+				  "+[NSString stringWithCString:]").minsym
+	   != nullptr)
     {
       function
 	= find_function_in_inferior("+[NSString stringWithCString:]", NULL);
@@ -210,9 +219,9 @@ value_nsstring (struct gdbarch *gdbarch, const char *ptr, int len)
   if (sym == NULL)
     type = builtin_type (gdbarch)->builtin_data_ptr;
   else
-    type = lookup_pointer_type(SYMBOL_TYPE (sym));
+    type = lookup_pointer_type(sym->type ());
 
-  deprecated_set_value_type (nsstringValue, type);
+  nsstringValue->deprecated_set_type (type);
   return nsstringValue;
 }
 
@@ -251,8 +260,9 @@ public:
   }
 
   /* See language.h.  */
-  bool sniff_from_mangled_name (const char *mangled,
-				char **demangled) const override
+  bool sniff_from_mangled_name
+       (const char *mangled, gdb::unique_xmalloc_ptr<char> *demangled)
+       const override
   {
     *demangled = demangle_symbol (mangled, 0);
     return *demangled != NULL;
@@ -260,7 +270,15 @@ public:
 
   /* See language.h.  */
 
-  char *demangle_symbol (const char *mangled, int options) const override;
+  gdb::unique_xmalloc_ptr<char> demangle_symbol (const char *mangled,
+						 int options) const override;
+
+  /* See language.h.  */
+
+  bool can_print_type_offsets () const override
+  {
+    return true;
+  }
 
   /* See language.h.  */
 
@@ -268,12 +286,12 @@ public:
 		   struct ui_file *stream, int show, int level,
 		   const struct type_print_options *flags) const override
   {
-    c_print_type (type, varstring, stream, show, level, flags);
+    c_print_type (type, varstring, stream, show, level, la_language, flags);
   }
 
   /* See language.h.  */
 
-  CORE_ADDR skip_trampoline (struct frame_info *frame,
+  CORE_ADDR skip_trampoline (const frame_info_ptr &frame,
 			     CORE_ADDR stop_pc) const override
   {
     struct gdbarch *gdbarch = get_frame_arch (frame);
@@ -318,7 +336,7 @@ public:
 
 /* See declaration of objc_language::demangle_symbol above.  */
 
-char *
+gdb::unique_xmalloc_ptr<char>
 objc_language::demangle_symbol (const char *mangled, int options) const
 {
   char *demangled, *cp;
@@ -376,7 +394,7 @@ objc_language::demangle_symbol (const char *mangled, int options) const
 
       *cp++ = ']';		/* closing right brace */
       *cp++ = 0;		/* string terminator */
-      return demangled;
+      return gdb::unique_xmalloc_ptr<char> (demangled);
     }
   else
     return nullptr;	/* Not an objc mangled name.  */
@@ -619,8 +637,8 @@ info_selectors_command (const char *regexp, int from_tty)
     }
   if (matches)
     {
-      printf_filtered (_("Selectors matching \"%s\":\n\n"), 
-		       regexp ? regexp : "*");
+      gdb_printf (_("Selectors matching \"%s\":\n\n"), 
+		  regexp ? regexp : "*");
 
       sym_arr = XALLOCAVEC (struct symbol *, matches);
       matches = 0;
@@ -664,13 +682,13 @@ info_selectors_command (const char *regexp, int from_tty)
 	    *p++ = *name++;
 	  *p++ = '\0';
 	  /* Print in columns.  */
-	  puts_filtered_tabular(asel, maxlen + 1, 0);
+	  puts_tabular(asel, maxlen + 1, 0);
 	}
       begin_line();
     }
   else
-    printf_filtered (_("No selectors matching \"%s\"\n"),
-		     regexp ? regexp : "*");
+    gdb_printf (_("No selectors matching \"%s\"\n"),
+		regexp ? regexp : "*");
 }
 
 /*
@@ -761,8 +779,8 @@ info_classes_command (const char *regexp, int from_tty)
     }
   if (matches)
     {
-      printf_filtered (_("Classes matching \"%s\":\n\n"), 
-		       regexp ? regexp : "*");
+      gdb_printf (_("Classes matching \"%s\":\n\n"), 
+		  regexp ? regexp : "*");
       sym_arr = XALLOCAVEC (struct symbol *, matches);
       matches = 0;
       for (objfile *objfile : current_program_space->objfiles ())
@@ -798,12 +816,12 @@ info_classes_command (const char *regexp, int from_tty)
 	    *p++ = *name++;
 	  *p++ = '\0';
 	  /* Print in columns.  */
-	  puts_filtered_tabular(aclass, maxlen + 1, 0);
+	  puts_tabular(aclass, maxlen + 1, 0);
 	}
       begin_line();
     }
   else
-    printf_filtered (_("No classes matching \"%s\"\n"), regexp ? regexp : "*");
+    gdb_printf (_("No classes matching \"%s\"\n"), regexp ? regexp : "*");
 }
 
 static char * 
@@ -1120,15 +1138,15 @@ find_imps (const char *method, std::vector<const char *> *symbol_names)
      add the selector itself as a symbol, if it exists.  */
   if (selector_case && !symbol_names->empty ())
     {
-      struct symbol *sym = lookup_symbol (selector, NULL, VAR_DOMAIN,
+      struct symbol *sym = lookup_symbol (selector, NULL, SEARCH_VFT,
 					  0).symbol;
 
       if (sym != NULL) 
 	symbol_names->push_back (sym->natural_name ());
       else
 	{
-	  struct bound_minimal_symbol msym
-	    = lookup_minimal_symbol (selector, 0, 0);
+	  bound_minimal_symbol msym
+	    = lookup_minimal_symbol (current_program_space, selector);
 
 	  if (msym.minsym != NULL) 
 	    symbol_names->push_back (msym.minsym->natural_name ());
@@ -1155,9 +1173,7 @@ print_object_command (const char *args, int from_tty)
   {
     expression_up expr = parse_expression (args);
 
-    object
-      = evaluate_expression (expr.get (),
-			     builtin_type (expr->gdbarch)->builtin_data_ptr);
+    object = expr->evaluate (builtin_type (expr->gdbarch)->builtin_data_ptr);
   }
 
   /* Validate the address for sanity.  */
@@ -1179,12 +1195,12 @@ print_object_command (const char *args, int from_tty)
     do
       { /* Read and print characters up to EOS.  */
 	QUIT;
-	printf_filtered ("%c", c);
+	gdb_printf ("%c", c);
 	read_memory (string_addr + i++, &c, 1);
       } while (c != 0);
   else
-    printf_filtered(_("<object returns empty description>"));
-  printf_filtered ("\n");
+    gdb_printf(_("<object returns empty description>"));
+  gdb_printf ("\n");
 }
 
 /* The data structure 'methcalls' is used to detect method calls (thru
@@ -1232,13 +1248,13 @@ find_objc_msgsend (void)
 
   for (i = 0; i < nmethcalls; i++)
     {
-      struct bound_minimal_symbol func;
-
       /* Try both with and without underscore.  */
-      func = lookup_bound_minimal_symbol (methcalls[i].name);
+      bound_minimal_symbol func
+	= lookup_minimal_symbol (current_program_space, methcalls[i].name);
       if ((func.minsym == NULL) && (methcalls[i].name[0] == '_'))
 	{
-	  func = lookup_bound_minimal_symbol (methcalls[i].name + 1);
+	  func = lookup_minimal_symbol (current_program_space,
+					methcalls[i].name + 1);
 	}
       if (func.minsym == NULL)
 	{ 
@@ -1247,7 +1263,7 @@ find_objc_msgsend (void)
 	  continue; 
 	}
 
-      methcalls[i].begin = BMSYMBOL_VALUE_ADDRESS (func);
+      methcalls[i].begin = func.value_address ();
       methcalls[i].end = minimal_symbol_upper_bound (func);
     }
 }
@@ -1277,7 +1293,7 @@ find_objc_msgcall_submethod (int (*f) (CORE_ADDR, CORE_ADDR *),
       if (f (pc, new_pc) == 0)
 	return 1;
     }
-  catch (const gdb_exception &ex)
+  catch (const gdb_exception_error &ex)
     {
       exception_fprintf (gdb_stderr, ex,
 			 "Unable to determine target of "
@@ -1456,7 +1472,7 @@ find_implementation (struct gdbarch *gdbarch,
 static int
 resolve_msgsend (CORE_ADDR pc, CORE_ADDR *new_pc)
 {
-  struct frame_info *frame = get_current_frame ();
+  frame_info_ptr frame = get_current_frame ();
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct type *ptr_type = builtin_type (gdbarch)->builtin_func_ptr;
 
@@ -1478,7 +1494,7 @@ resolve_msgsend (CORE_ADDR pc, CORE_ADDR *new_pc)
 static int
 resolve_msgsend_stret (CORE_ADDR pc, CORE_ADDR *new_pc)
 {
-  struct frame_info *frame = get_current_frame ();
+  frame_info_ptr frame = get_current_frame ();
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct type *ptr_type = builtin_type (gdbarch)->builtin_func_ptr;
 
@@ -1500,7 +1516,7 @@ resolve_msgsend_stret (CORE_ADDR pc, CORE_ADDR *new_pc)
 static int
 resolve_msgsend_super (CORE_ADDR pc, CORE_ADDR *new_pc)
 {
-  struct frame_info *frame = get_current_frame ();
+  frame_info_ptr frame = get_current_frame ();
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct type *ptr_type = builtin_type (gdbarch)->builtin_func_ptr;
 
@@ -1528,7 +1544,7 @@ resolve_msgsend_super (CORE_ADDR pc, CORE_ADDR *new_pc)
 static int
 resolve_msgsend_super_stret (CORE_ADDR pc, CORE_ADDR *new_pc)
 {
-  struct frame_info *frame = get_current_frame ();
+  frame_info_ptr frame = get_current_frame ();
   struct gdbarch *gdbarch = get_frame_arch (frame);
   struct type *ptr_type = builtin_type (gdbarch)->builtin_func_ptr;
 

@@ -1,5 +1,5 @@
 /* ar.c - Archive modify and extract.
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -26,7 +26,6 @@
 #include "sysdep.h"
 #include "bfd.h"
 #include "libiberty.h"
-#include "progress.h"
 #include "getopt.h"
 #include "aout/ar.h"
 #include "bucomm.h"
@@ -172,6 +171,7 @@ static struct option long_options[] =
   {"version", no_argument, &show_version, 1},
   {"output", required_argument, NULL, OPTION_OUTPUT},
   {"record-libdeps", required_argument, NULL, 'l'},
+  {"thin", no_argument, NULL, 'T'},
   {NULL, no_argument, NULL, 0}
 };
 
@@ -197,10 +197,7 @@ map_over_members (bfd *arch, void (*function)(bfd *), char **files, int count)
   if (count == 0)
     {
       for (head = arch->archive_next; head; head = head->archive_next)
-	{
-	  PROGRESS (1);
-	  function (head);
-	}
+	function (head);
       return;
     }
 
@@ -222,7 +219,6 @@ map_over_members (bfd *arch, void (*function)(bfd *), char **files, int count)
 	{
 	  const char * filename;
 
-	  PROGRESS (1);
 	  /* PR binutils/15796: Once an archive element has been matched
 	     do not match it again.  If the user provides multiple same-named
 	     parameters on the command line their intent is to match multiple
@@ -337,13 +333,14 @@ usage (int help)
   fprintf (s, _("  [s]          - create an archive index (cf. ranlib)\n"));
   fprintf (s, _("  [l <text> ]  - specify the dependencies of this library\n"));
   fprintf (s, _("  [S]          - do not build a symbol table\n"));
-  fprintf (s, _("  [T]          - make a thin archive\n"));
+  fprintf (s, _("  [T]          - deprecated, use --thin instead\n"));
   fprintf (s, _("  [v]          - be verbose\n"));
   fprintf (s, _("  [V]          - display the version number\n"));
   fprintf (s, _("  @<file>      - read options from <file>\n"));
   fprintf (s, _("  --target=BFDNAME - specify the target object format as BFDNAME\n"));
   fprintf (s, _("  --output=DIRNAME - specify the output directory for extraction operations\n"));
   fprintf (s, _("  --record-libdeps=<text> - specify the dependencies of this library\n"));
+  fprintf (s, _("  --thin       - make a thin archive\n"));
 #if BFD_SUPPORTS_PLUGINS
   fprintf (s, _(" optional:\n"));
   fprintf (s, _("  --plugin <p> - load the specified plugin\n"));
@@ -429,15 +426,12 @@ normalize (const char *file, bfd *abfd)
 
 static const char *output_filename = NULL;
 static FILE *output_file = NULL;
-static bfd *output_bfd = NULL;
 
 static void
 remove_output (void)
 {
   if (output_filename != NULL)
     {
-      if (output_bfd != NULL)
-	bfd_cache_close (output_bfd);
       if (output_file != NULL)
 	fclose (output_file);
       unlink_if_ordinary (output_filename);
@@ -750,8 +744,6 @@ main (int argc, char **argv)
 	is_ranlib = 0;
     }
 
-  START_PROGRESS (program_name, 0);
-
   if (bfd_init () != BFD_INIT_MAGIC)
     fatal (_("fatal error: libbfd ABI mismatch"));
   set_default_bfd_target ();
@@ -815,7 +807,7 @@ main (int argc, char **argv)
 	fatal (_("`u' is only meaningful with the `r' option."));
 
       if (newer_only && deterministic > 0)
-        fatal (_("`u' is not meaningful with the `D' option."));
+        non_fatal (_("`u' is not meaningful with the `D' option - replacement will always happen."));
 
       if (newer_only && deterministic < 0 && DEFAULT_AR_DETERMINISTIC)
         non_fatal (_("\
@@ -863,7 +855,7 @@ main (int argc, char **argv)
 
 	  /* Create a bfd to contain the dependencies.
 	     It inherits its type from arch, but we must set the type to
-	     "binary" otherwise bfd_bwrite() will fail.  After writing, we
+	     "binary" otherwise bfd_write() will fail.  After writing, we
 	     must set the type back to default otherwise adding it to the
 	     archive will fail.  */
 	  libdeps_bfd = bfd_create (LIBDEPS, arch);
@@ -879,7 +871,7 @@ main (int argc, char **argv)
 	  if (! bfd_make_writable (libdeps_bfd))
 	    fatal (_("Cannot make libdeps object writable."));
 
-	  if (bfd_bwrite (libdeps, reclen, libdeps_bfd) != reclen)
+	  if (bfd_write (libdeps, reclen, libdeps_bfd) != reclen)
 	    fatal (_("Cannot write libdeps record."));
 
 	  if (! bfd_make_readable (libdeps_bfd))
@@ -892,14 +884,16 @@ main (int argc, char **argv)
 	     being operated on.  We shouldn't use 1st slot, but we want
 	     to avoid having to search all the way to the end of an
 	     archive with a large number of members at link time.  */
-	  new_files = xmalloc ((file_count + 2) * sizeof (char *));
-	  new_files[0] = files[0];
-	  new_files[1] = LIBDEPS;
-	  for (i = 1; i < file_count; i++)
-	    new_files[i+1] = files[i];
-	  file_count = ++i;
+	  new_files = xmalloc ((file_count + 2) * sizeof (*new_files));
+	  if (file_count)
+	    {
+	      new_files[0] = files[0];
+	      memcpy (new_files + 1, files, file_count * sizeof (*files));
+	    }
+	  new_files[file_count != 0] = LIBDEPS;
+	  file_count++;
+	  new_files[file_count] = NULL;
 	  files = new_files;
-	  files[i] = NULL;
 	}
 
       switch (operation)
@@ -950,8 +944,6 @@ main (int argc, char **argv)
 	  fatal (_("internal error -- this option not implemented"));
 	}
     }
-
-  END_PROGRESS (program_name);
 
   xexit (0);
   return 0;
@@ -1033,10 +1025,7 @@ open_inarch (const char *archive_filename, const char *file)
     {
       bfd_nonfatal (archive_filename);
       if (bfd_get_error () == bfd_error_file_ambiguously_recognized)
-	{
-	  list_matching_formats (matching);
-	  free (matching);
-	}
+	list_matching_formats (matching);
       xexit (1);
     }
 
@@ -1065,7 +1054,6 @@ open_inarch (const char *archive_filename, const char *file)
        next_one;
        next_one = bfd_openr_next_archived_file (arch, next_one))
     {
-      PROGRESS (1);
       *last_one = next_one;
       last_one = &next_one->archive_next;
     }
@@ -1090,7 +1078,8 @@ print_contents (bfd *abfd)
   if (verbose)
     printf ("\n<%s>\n\n", bfd_get_filename (abfd));
 
-  bfd_seek (abfd, (file_ptr) 0, SEEK_SET);
+  if (bfd_seek (abfd, 0, SEEK_SET) != 0)
+    bfd_fatal (bfd_get_filename (abfd));
 
   size = buf.st_size;
   while (ncopied < size)
@@ -1101,7 +1090,7 @@ print_contents (bfd *abfd)
       if (tocopy > BUFSIZE)
 	tocopy = BUFSIZE;
 
-      nread = bfd_bread (cbuf, tocopy, abfd);
+      nread = bfd_read (cbuf, tocopy, abfd);
       if (nread != tocopy)
 	/* xgettext:c-format */
 	fatal (_("%s is not a valid archive"),
@@ -1180,12 +1169,16 @@ extract_file (bfd *abfd)
   bfd_size_type size;
   struct stat buf;
 
+  if (preserve_dates)
+    memset (&buf, 0, sizeof (buf));
+
   if (bfd_stat_arch_elt (abfd, &buf) != 0)
     /* xgettext:c-format */
     fatal (_("internal stat error on %s"), bfd_get_filename (abfd));
   size = buf.st_size;
 
-  bfd_seek (abfd, (file_ptr) 0, SEEK_SET);
+  if (bfd_seek (abfd, 0, SEEK_SET) != 0)
+    bfd_fatal (bfd_get_filename (abfd));
 
   output_file = NULL;
   if (size == 0)
@@ -1205,7 +1198,7 @@ extract_file (bfd *abfd)
 	  if (tocopy > BUFSIZE)
 	    tocopy = BUFSIZE;
 
-	  nread = bfd_bread (cbuf, tocopy, abfd);
+	  nread = bfd_read (cbuf, tocopy, abfd);
 	  if (nread != tocopy)
 	    /* xgettext:c-format */
 	    fatal (_("%s is not a valid archive"),
@@ -1268,8 +1261,6 @@ write_archive (bfd *iarch)
       bfd_fatal (old_name);
     }
 
-  output_bfd = obfd;
-
   bfd_set_format (obfd, bfd_archive);
 
   /* Request writing the archive symbol table unless we've
@@ -1299,7 +1290,6 @@ write_archive (bfd *iarch)
   if (!bfd_close (obfd))
     bfd_fatal (old_name);
 
-  output_bfd = NULL;
   output_filename = NULL;
 
   /* We don't care if this fails; we might be creating the archive.  */
@@ -1492,6 +1482,7 @@ replace_members (bfd *arch, char **files_to_move, bool quick)
 		  && current->arelt_data != NULL)
 		{
 		  bool replaced;
+
 		  if (newer_only)
 		    {
 		      struct stat fsbuf, asbuf;
@@ -1502,12 +1493,33 @@ replace_members (bfd *arch, char **files_to_move, bool quick)
 			    bfd_fatal (*files_to_move);
 			  goto next_file;
 			}
+
 		      if (bfd_stat_arch_elt (current, &asbuf) != 0)
 			/* xgettext:c-format */
 			fatal (_("internal stat error on %s"),
 			       bfd_get_filename (current));
 
 		      if (fsbuf.st_mtime <= asbuf.st_mtime)
+			/* A note about deterministic timestamps:  In an
+			   archive created in a determistic manner the
+			   individual elements will either have a timestamp
+			   of 0 or SOURCE_DATE_EPOCH, depending upon the
+			   method used.  This will be the value retrieved
+			   by bfd_stat_arch_elt().
+
+			   The timestamp in fsbuf.st_mtime however will
+			   definitely be greater than 0, and it is unlikely
+			   to be less than SOURCE_DATE_EPOCH.  (FIXME:
+			   should we test for this case case and issue an
+			   error message ?)
+
+			   So in either case fsbuf.st_mtime > asbuf.st_time
+			   and hence the incoming file will replace the
+			   current file.  Which is what should be expected to
+			   happen.  Deterministic archives have no real sense
+			   of the time/date when their elements were created,
+			   and so any updates to the archive should always
+			   result in replaced files.  */
 			goto next_file;
 		    }
 
@@ -1608,10 +1620,7 @@ ranlib_touch (const char *archname)
     {
       bfd_nonfatal (archname);
       if (bfd_get_error () == bfd_error_file_ambiguously_recognized)
-	{
-	  list_matching_formats (matching);
-	  free (matching);
-	}
+	list_matching_formats (matching);
       xexit (1);
     }
 

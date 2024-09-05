@@ -1,5 +1,5 @@
 /* M16C/M32C specific support for 32-bit ELF.
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -50,7 +50,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
   /* This reloc does nothing.  */
   HOWTO (R_M32C_NONE,		/* type */
 	 0,			/* rightshift */
-	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -67,7 +67,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
      about overflow.  */
   HOWTO (R_M32C_16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -81,7 +81,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_24,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 24,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -95,7 +95,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -109,7 +109,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_8_PCREL,	/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -123,7 +123,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_16_PCREL,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -137,7 +137,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -151,7 +151,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_LO16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -165,7 +165,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_HI8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -179,7 +179,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_HI16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -193,7 +193,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_RL_JUMP,	/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -207,7 +207,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_RL_1ADDR,	/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -221,7 +221,7 @@ static reloc_howto_type m32c_elf_howto_table [] =
 
   HOWTO (R_M32C_RL_2ADDR,	/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -773,8 +773,8 @@ m32c_elf_finish_dynamic_sections (bfd *abfd ATTRIBUTE_UNUSED,
 }
 
 static bool
-m32c_elf_always_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
-			       struct bfd_link_info *info)
+m32c_elf_early_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
+			      struct bfd_link_info *info)
 {
   bfd *dynobj;
   asection *splt;
@@ -1459,8 +1459,9 @@ m32c_elf_relax_section (bfd *abfd,
      this section does not have relocs, or if this is not a
      code section.  */
   if (bfd_link_relocatable (link_info)
-      || (sec->flags & SEC_RELOC) == 0
       || sec->reloc_count == 0
+      || (sec->flags & SEC_RELOC) == 0
+      || (sec->flags & SEC_HAS_CONTENTS) == 0
       || (sec->flags & SEC_CODE) == 0)
     return true;
 
@@ -2131,8 +2132,8 @@ _bfd_m32c_elf_eh_frame_address_size (bfd *abfd,
 #define elf_backend_check_relocs		m32c_elf_check_relocs
 #define elf_backend_object_p			m32c_elf_object_p
 #define elf_symbol_leading_char			('_')
-#define elf_backend_always_size_sections \
-  m32c_elf_always_size_sections
+#define elf_backend_early_size_sections \
+  m32c_elf_early_size_sections
 #define elf_backend_finish_dynamic_sections \
   m32c_elf_finish_dynamic_sections
 

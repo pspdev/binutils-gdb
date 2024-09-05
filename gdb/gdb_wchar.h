@@ -1,5 +1,5 @@
 /* Wide characters for gdb
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -66,7 +66,7 @@ typedef wint_t gdb_wint_t;
 
 #define gdb_wcslen wcslen
 #define gdb_iswprint iswprint
-#define gdb_iswdigit iswdigit
+#define gdb_iswxdigit iswxdigit
 #define gdb_btowc btowc
 #define gdb_WEOF WEOF
 
@@ -76,8 +76,19 @@ typedef wint_t gdb_wint_t;
    We exploit this fact in the hope that there are hosts that define
    this but which do not support "wchar_t" as an encoding argument to
    iconv_open.  We put the endianness into the encoding name to avoid
-   hosts that emit a BOM when the unadorned name is used.  */
-#if defined (__STDC_ISO_10646__)
+   hosts that emit a BOM when the unadorned name is used.
+
+   Also, on version 14 macOS 'Sonoma', the implementation of iconv was
+   changed in such a way that breaks the way that gdb was using it.
+   Specifically, using wchar_t as an intermediate encoding silently
+   breaks when attempting to do character-by-character encoding.
+   By using the intermediate_encoding function to choose a suitable
+   encoding to put in the wchar_t, the iconv implementation behaves as
+   we expect it to. Strictly speaking, this seems to be a bug in
+   Sonoma specifically, but it is desirable for binaries built for
+   older versions of macOS to still work on newer ones such as Sonoma,
+   so there is no version check here for this workaround.  */
+#if defined (__STDC_ISO_10646__) || defined (__APPLE__)
 #define USE_INTERMEDIATE_ENCODING_FUNCTION
 #define INTERMEDIATE_ENCODING intermediate_encoding ()
 const char *intermediate_encoding (void);
@@ -103,7 +114,7 @@ typedef int gdb_wint_t;
 
 #define gdb_wcslen strlen
 #define gdb_iswprint isprint
-#define gdb_iswdigit isdigit
+#define gdb_iswxdigit isxdigit
 #define gdb_btowc /* empty */
 #define gdb_WEOF EOF
 

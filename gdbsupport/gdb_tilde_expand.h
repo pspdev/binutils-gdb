@@ -1,6 +1,6 @@
 /* Perform tilde expansion on paths for GDB and gdbserver.
 
-   Copyright (C) 2017-2021 Free Software Foundation, Inc.
+   Copyright (C) 2017-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,11 +20,21 @@
 #ifndef COMMON_GDB_TILDE_EXPAND_H
 #define COMMON_GDB_TILDE_EXPAND_H
 
-/* Perform tilde expansion on DIR, and return the full path.  */
-extern std::string gdb_tilde_expand (const char *dir);
+/* Perform tilde expansion on PATH, and return the full path.  */
+extern std::string gdb_tilde_expand (const char *path);
 
-/* Same as GDB_TILDE_EXPAND, but return the full path as a
-   gdb::unique_xmalloc_ptr<char>.  */
-extern gdb::unique_xmalloc_ptr<char> gdb_tilde_expand_up (const char *dir);
+/* Overload of gdb_tilde_expand that takes std::string.  */
+static inline std::string
+gdb_tilde_expand (const std::string &path)
+{
+  return gdb_tilde_expand (path.c_str ());
+}
+
+/* Overload of gdb_tilde_expand that takes gdb::unique_xmalloc_ptr<char>.  */
+static inline std::string
+gdb_tilde_expand (const gdb::unique_xmalloc_ptr<char> &path)
+{
+  return gdb_tilde_expand (path.get ());
+}
 
 #endif /* COMMON_GDB_TILDE_EXPAND_H */

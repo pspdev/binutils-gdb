@@ -1,6 +1,6 @@
 /* Linux-specific functions to retrieve OS data.
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "gdbsupport/common-defs.h"
 #include "linux-osdata.h"
 
 #include <sys/types.h>
@@ -33,11 +32,11 @@
 #include <arpa/inet.h>
 
 #include "gdbsupport/xml-utils.h"
-#include "gdbsupport/buffer.h"
 #include <dirent.h>
 #include <sys/stat.h>
 #include "gdbsupport/filestuff.h"
 #include <algorithm>
+#include "linux-procfs.h"
 
 #define NAMELEN(dirent) strlen ((dirent)->d_name)
 
@@ -54,56 +53,17 @@ typedef long long TIME_T;
 
 #define MAX_PID_T_STRLEN  (sizeof ("-9223372036854775808") - 1)
 
-/* Returns the CPU core that thread PTID is currently running on.  */
-
-/* Compute and return the processor core of a given thread.  */
+/* See linux-osdata.h.  */
 
 int
 linux_common_core_of_thread (ptid_t ptid)
 {
-  char filename[sizeof ("/proc//task//stat") + 2 * MAX_PID_T_STRLEN];
-  char *content = NULL;
-  char *p;
-  char *ts = 0;
-  int content_read = 0;
-  int i;
+  std::optional<std::string> field
+    = linux_proc_get_stat_field (ptid, LINUX_PROC_STAT_PROCESSOR);
   int core;
 
-  sprintf (filename, "/proc/%lld/task/%lld/stat",
-	   (PID_T) ptid.pid (), (PID_T) ptid.lwp ());
-  gdb_file_up f = gdb_fopen_cloexec (filename, "r");
-  if (!f)
+  if (!field.has_value () || sscanf (field->c_str (), "%d", &core) == 0)
     return -1;
-
-  for (;;)
-    {
-      int n;
-      content = (char *) xrealloc (content, content_read + 1024);
-      n = fread (content + content_read, 1, 1024, f.get ());
-      content_read += n;
-      if (n < 1024)
-	{
-	  content[content_read] = '\0';
-	  break;
-	}
-    }
-
-  /* ps command also relies on no trailing fields ever contain ')'.  */
-  p = strrchr (content, ')');
-  if (p != NULL)
-    p++;
-
-  /* If the first field after program name has index 0, then core number is
-     the field with index 36.  There's no constant for that anywhere.  */
-  if (p != NULL)
-    p = strtok_r (p, " ", &ts);
-  for (i = 0; p != NULL && i != 36; ++i)
-    p = strtok_r (NULL, " ", &ts);
-
-  if (p == NULL || sscanf (p, "%d", &core) == 0)
-    core = -1;
-
-  xfree (content);
 
   return core;
 }
@@ -144,55 +104,40 @@ command_from_pid (char *command, int maxlen, PID_T pid)
   command[maxlen - 1] = '\0'; /* Ensure string is null-terminated.  */
 }
 
-/* Returns the command-line of the process with the given PID. The
-   returned string needs to be freed using xfree after use.  */
+/* Returns the command-line of the process with the given PID.  */
 
-static char *
+static std::string
 commandline_from_pid (PID_T pid)
 {
   std::string pathname = string_printf ("/proc/%lld/cmdline", pid);
-  char *commandline = NULL;
+  std::string commandline;
   gdb_file_up f = gdb_fopen_cloexec (pathname, "r");
 
   if (f)
     {
-      size_t len = 0;
-
       while (!feof (f.get ()))
 	{
 	  char buf[1024];
 	  size_t read_bytes = fread (buf, 1, sizeof (buf), f.get ());
 
 	  if (read_bytes)
-	    {
-	      commandline = (char *) xrealloc (commandline, len + read_bytes + 1);
-	      memcpy (commandline + len, buf, read_bytes);
-	      len += read_bytes;
-	    }
+	    commandline.append (buf, read_bytes);
 	}
 
-      if (commandline)
+      if (!commandline.empty ())
 	{
-	  size_t i;
-
 	  /* Replace null characters with spaces.  */
-	  for (i = 0; i < len; ++i)
-	    if (commandline[i] == '\0')
-	      commandline[i] = ' ';
-
-	  commandline[len] = '\0';
+	  for (char &c : commandline)
+	    if (c == '\0')
+	      c = ' ';
 	}
       else
 	{
 	  /* Return the command in square brackets if the command-line
 	     is empty.  */
-	  commandline = (char *) xmalloc (32);
-	  commandline[0] = '[';
-	  command_from_pid (commandline + 1, 31, pid);
-
-	  len = strlen (commandline);
-	  if (len < 31)
-	    strcat (commandline, "]");
+	  char cmd[32];
+	  command_from_pid (cmd, 31, pid);
+	  commandline = std::string ("[") + cmd + "]";
 	}
     }
 
@@ -266,7 +211,7 @@ get_cores_used_by_process (PID_T pid, int *cores, const int num_cores)
 
 	  sscanf (dp->d_name, "%lld", &tid);
 	  core = linux_common_core_of_thread (ptid_t ((pid_t) pid,
-						      (pid_t) tid, 0));
+						      (pid_t) tid));
 
 	  if (core >= 0 && core < num_cores)
 	    {
@@ -281,17 +226,78 @@ get_cores_used_by_process (PID_T pid, int *cores, const int num_cores)
   return task_count;
 }
 
-static void
-linux_xfer_osdata_processes (struct buffer *buffer)
+/* get_core_array_size helper that uses /sys/devices/system/cpu/possible.  */
+
+static std::optional<size_t>
+get_core_array_size_using_sys_possible ()
+{
+  std::optional<std::string> possible
+    = read_text_file_to_string ("/sys/devices/system/cpu/possible");
+
+  if (!possible.has_value ())
+    return {};
+
+  /* The format is documented here:
+
+       https://www.kernel.org/doc/Documentation/admin-guide/cputopology.rst
+
+     For the purpose of this function, we assume the file can contain a complex
+     set of ranges, like `2,4-31,32-63`.  Read all number, disregarding commands
+     and dashes, in order to find the largest possible core number.  The size
+     of the array to allocate is that plus one.  */
+
+  unsigned long max_id = 0;
+  for (std::string::size_type start = 0; start < possible->size ();)
+    {
+      const char *start_p = &(*possible)[start];
+      char *end_p;
+
+      /* Parse one number.  */
+      errno = 0;
+      unsigned long id = strtoul (start_p, &end_p, 10);
+      if (errno != 0)
+	return {};
+
+      max_id = std::max (max_id, id);
+
+      start += end_p - start_p;
+      gdb_assert (start <= possible->size ());
+
+      /* Skip comma, dash, or new line (if we are at the end).  */
+      ++start;
+    }
+
+  return max_id + 1;
+}
+
+/* Return the array size to allocate in order to be able to index it using
+   CPU core numbers.  This may be more than the actual number of cores if
+   the core numbers are not contiguous.  */
+
+static size_t
+get_core_array_size ()
+{
+  /* Using /sys/.../possible is preferred, because it handles the case where
+     we are in a container that has access to a subset of the host's cores.
+     It will return a size that considers all the CPU cores available to the
+     host.  If that fails for some reason, fall back to sysconf.  */
+  std::optional<size_t> count = get_core_array_size_using_sys_possible ();
+  if (count.has_value ())
+    return *count;
+
+  return sysconf (_SC_NPROCESSORS_ONLN);
+}
+
+static std::string
+linux_xfer_osdata_processes ()
 {
   DIR *dirp;
-
-  buffer_grow_str (buffer, "<osdata type=\"processes\">\n");
+  std::string buffer = "<osdata type=\"processes\">\n";
 
   dirp = opendir ("/proc");
   if (dirp)
     {
-      const int num_cores = sysconf (_SC_NPROCESSORS_ONLN);
+      const int core_array_size = get_core_array_size ();
       struct dirent *dp;
 
       while ((dp = readdir (dirp)) != NULL)
@@ -299,10 +305,9 @@ linux_xfer_osdata_processes (struct buffer *buffer)
 	  PID_T pid;
 	  uid_t owner;
 	  char user[UT_NAMESIZE];
-	  char *command_line;
 	  int *cores;
 	  int task_count;
-	  char *cores_str;
+	  std::string cores_str;
 	  int i;
 
 	  if (!isdigit (dp->d_name[0])
@@ -310,7 +315,7 @@ linux_xfer_osdata_processes (struct buffer *buffer)
 	    continue;
 
 	  sscanf (dp->d_name, "%lld", &pid);
-	  command_line = commandline_from_pid (pid);
+	  std::string command_line = commandline_from_pid (pid);
 
 	  if (get_process_owner (&owner, pid) == 0)
 	    user_from_uid (user, sizeof (user), owner);
@@ -318,26 +323,22 @@ linux_xfer_osdata_processes (struct buffer *buffer)
 	    strcpy (user, "?");
 
 	  /* Find CPU cores used by the process.  */
-	  cores = XCNEWVEC (int, num_cores);
-	  task_count = get_cores_used_by_process (pid, cores, num_cores);
-	  cores_str = (char *) xcalloc (task_count, sizeof ("4294967295") + 1);
+	  cores = XCNEWVEC (int, core_array_size);
+	  task_count = get_cores_used_by_process (pid, cores, core_array_size);
 
-	  for (i = 0; i < num_cores && task_count > 0; ++i)
+	  for (i = 0; i < core_array_size && task_count > 0; ++i)
 	    if (cores[i])
 	      {
-		char core_str[sizeof ("4294967295")];
-
-		sprintf (core_str, "%d", i);
-		strcat (cores_str, core_str);
+		string_appendf (cores_str, "%d", i);
 
 		task_count -= cores[i];
 		if (task_count > 0)
-		  strcat (cores_str, ",");
+		  cores_str += ",";
 	      }
 
 	  xfree (cores);
 
-	  buffer_xml_printf
+	  string_xml_appendf
 	    (buffer,
 	     "<item>"
 	     "<column name=\"pid\">%lld</column>"
@@ -347,17 +348,16 @@ linux_xfer_osdata_processes (struct buffer *buffer)
 	     "</item>",
 	     pid,
 	     user,
-	     command_line ? command_line : "",
-	     cores_str);
-
-	  xfree (command_line);
-	  xfree (cores_str);
+	     command_line.c_str (),
+	     cores_str.c_str());
 	}
 
       closedir (dirp);
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* A simple PID/PGID pair.  */
@@ -399,12 +399,11 @@ struct pid_pgid_entry
 
 /* Collect all process groups from /proc in BUFFER.  */
 
-static void
-linux_xfer_osdata_processgroups (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_processgroups ()
 {
   DIR *dirp;
-
-  buffer_grow_str (buffer, "<osdata type=\"process groups\">\n");
+  std::string buffer = "<osdata type=\"process groups\">\n";
 
   dirp = opendir ("/proc");
   if (dirp)
@@ -441,12 +440,11 @@ linux_xfer_osdata_processgroups (struct buffer *buffer)
 	  PID_T pid = entry.pid;
 	  PID_T pgid = entry.pgid;
 	  char leader_command[32];
-	  char *command_line;
 
 	  command_from_pid (leader_command, sizeof (leader_command), pgid);
-	  command_line = commandline_from_pid (pid);
+	  std::string command_line = commandline_from_pid (pid);
 
-	  buffer_xml_printf
+	  string_xml_appendf
 	    (buffer,
 	     "<item>"
 	     "<column name=\"pgid\">%lld</column>"
@@ -457,24 +455,23 @@ linux_xfer_osdata_processgroups (struct buffer *buffer)
 	     pgid,
 	     leader_command,
 	     pid,
-	     command_line ? command_line : "");
-
-	  xfree (command_line);
+	     command_line.c_str ());
 	}
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* Collect all the threads in /proc by iterating through processes and
-   then tasks within each process in BUFFER.  */
+   then tasks within each process.  */
 
-static void
-linux_xfer_osdata_threads (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_threads ()
 {
   DIR *dirp;
-
-  buffer_grow_str (buffer, "<osdata type=\"threads\">\n");
+  std::string buffer = "<osdata type=\"threads\">\n";
 
   dirp = opendir ("/proc");
   if (dirp)
@@ -521,9 +518,9 @@ linux_xfer_osdata_threads (struct buffer *buffer)
 			continue;
 
 		      tid = atoi (dp2->d_name);
-		      core = linux_common_core_of_thread (ptid_t (pid, tid, 0));
+		      core = linux_common_core_of_thread (ptid_t (pid, tid));
 
-		      buffer_xml_printf
+		      string_xml_appendf
 			(buffer,
 			 "<item>"
 			 "<column name=\"pid\">%lld</column>"
@@ -545,17 +542,18 @@ linux_xfer_osdata_threads (struct buffer *buffer)
       closedir (dirp);
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* Collect data about the cpus/cores on the system in BUFFER.  */
 
-static void
-linux_xfer_osdata_cpus (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_cpus ()
 {
   int first_item = 1;
-
-  buffer_grow_str (buffer, "<osdata type=\"cpus\">\n");
+  std::string buffer = "<osdata type=\"cpus\">\n";
 
   gdb_file_up fp = gdb_fopen_cloexec ("/proc/cpuinfo", "r");
   if (fp != NULL)
@@ -592,37 +590,38 @@ linux_xfer_osdata_cpus (struct buffer *buffer)
 	      if (strcmp (key, "processor") == 0)
 		{
 		  if (first_item)
-		    buffer_grow_str (buffer, "<item>");
+		    buffer += "<item>";
 		  else
-		    buffer_grow_str (buffer, "</item><item>");
+		    buffer += "</item><item>";
 
 		  first_item = 0;
 		}
 
-	      buffer_xml_printf (buffer,
-				 "<column name=\"%s\">%s</column>",
-				 key,
-				 value);
+	      string_xml_appendf (buffer,
+				  "<column name=\"%s\">%s</column>",
+				  key,
+				  value);
 	    }
 	}
       while (!feof (fp.get ()));
 
       if (first_item == 0)
-	buffer_grow_str (buffer, "</item>");
+	buffer += "</item>";
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* Collect all the open file descriptors found in /proc and put the details
    found about them into BUFFER.  */
 
-static void
-linux_xfer_osdata_fds (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_fds ()
 {
   DIR *dirp;
-
-  buffer_grow_str (buffer, "<osdata type=\"files\">\n");
+  std::string buffer = "<osdata type=\"files\">\n";
 
   dirp = opendir ("/proc");
   if (dirp)
@@ -674,7 +673,7 @@ linux_xfer_osdata_fds (struct buffer *buffer)
 		      if (rslt >= 0)
 			buf[rslt] = '\0';
 
-		      buffer_xml_printf
+		      string_xml_appendf
 			(buffer,
 			 "<item>"
 			 "<column name=\"pid\">%s</column>"
@@ -696,7 +695,9 @@ linux_xfer_osdata_fds (struct buffer *buffer)
       closedir (dirp);
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* Returns the socket state STATE in textual form.  */
@@ -761,7 +762,7 @@ union socket_addr
    otherwise only UDP sockets are processed.  */
 
 static void
-print_sockets (unsigned short family, int tcp, struct buffer *buffer)
+print_sockets (unsigned short family, int tcp, std::string &buffer)
 {
   const char *proc_file;
 
@@ -862,26 +863,26 @@ print_sockets (unsigned short family, int tcp, struct buffer *buffer)
 
 		  user_from_uid (user, sizeof (user), uid);
 
-		  buffer_xml_printf (
-		      buffer,
-		      "<item>"
-		      "<column name=\"local address\">%s</column>"
-		      "<column name=\"local port\">%s</column>"
-		      "<column name=\"remote address\">%s</column>"
-		      "<column name=\"remote port\">%s</column>"
-		      "<column name=\"state\">%s</column>"
-		      "<column name=\"user\">%s</column>"
-		      "<column name=\"family\">%s</column>"
-		      "<column name=\"protocol\">%s</column>"
-		      "</item>",
-		      local_address,
-		      local_service,
-		      remote_address,
-		      remote_service,
-		      format_socket_state (state),
-		      user,
-		      (family == AF_INET) ? "INET" : "INET6",
-		      tcp ? "STREAM" : "DGRAM");
+		  string_xml_appendf
+		    (buffer,
+		     "<item>"
+		     "<column name=\"local address\">%s</column>"
+		     "<column name=\"local port\">%s</column>"
+		     "<column name=\"remote address\">%s</column>"
+		     "<column name=\"remote port\">%s</column>"
+		     "<column name=\"state\">%s</column>"
+		     "<column name=\"user\">%s</column>"
+		     "<column name=\"family\">%s</column>"
+		     "<column name=\"protocol\">%s</column>"
+		     "</item>",
+		     local_address,
+		     local_service,
+		     remote_address,
+		     remote_service,
+		     format_socket_state (state),
+		     user,
+		     (family == AF_INET) ? "INET" : "INET6",
+		     tcp ? "STREAM" : "DGRAM");
 		}
 	    }
 	}
@@ -891,17 +892,19 @@ print_sockets (unsigned short family, int tcp, struct buffer *buffer)
 
 /* Collect data about internet sockets and write it into BUFFER.  */
 
-static void
-linux_xfer_osdata_isockets (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_isockets ()
 {
-  buffer_grow_str (buffer, "<osdata type=\"I sockets\">\n");
+  std::string buffer = "<osdata type=\"I sockets\">\n";
 
   print_sockets (AF_INET, 1, buffer);
   print_sockets (AF_INET, 0, buffer);
   print_sockets (AF_INET6, 1, buffer);
   print_sockets (AF_INET6, 0, buffer);
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* Converts the time SECONDS into textual form and copies it into a
@@ -946,10 +949,10 @@ group_from_gid (char *group, int maxlen, gid_t gid)
 /* Collect data about shared memory recorded in /proc and write it
    into BUFFER.  */
 
-static void
-linux_xfer_osdata_shm (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_shm ()
 {
-  buffer_grow_str (buffer, "<osdata type=\"shared memory\">\n");
+  std::string buffer = "<osdata type=\"shared memory\">\n";
 
   gdb_file_up fp = gdb_fopen_cloexec ("/proc/sysvipc/shm", "r");
   if (fp)
@@ -996,7 +999,7 @@ linux_xfer_osdata_shm (struct buffer *buffer)
 		  time_from_time_t (dtime_str, sizeof (dtime_str), dtime);
 		  time_from_time_t (ctime_str, sizeof (ctime_str), ctime);
 
-		  buffer_xml_printf
+		  string_xml_appendf
 		    (buffer,
 		     "<item>"
 		     "<column name=\"key\">%d</column>"
@@ -1034,16 +1037,18 @@ linux_xfer_osdata_shm (struct buffer *buffer)
       while (!feof (fp.get ()));
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* Collect data about semaphores recorded in /proc and write it
    into BUFFER.  */
 
-static void
-linux_xfer_osdata_sem (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_sem ()
 {
-  buffer_grow_str (buffer, "<osdata type=\"semaphores\">\n");
+  std::string buffer = "<osdata type=\"semaphores\">\n";
 
   gdb_file_up fp = gdb_fopen_cloexec ("/proc/sysvipc/sem", "r");
   if (fp)
@@ -1082,7 +1087,7 @@ linux_xfer_osdata_sem (struct buffer *buffer)
 		  time_from_time_t (otime_str, sizeof (otime_str), otime);
 		  time_from_time_t (ctime_str, sizeof (ctime_str), ctime);
 
-		  buffer_xml_printf
+		  string_xml_appendf
 		    (buffer,
 		     "<item>"
 		     "<column name=\"key\">%d</column>"
@@ -1112,16 +1117,18 @@ linux_xfer_osdata_sem (struct buffer *buffer)
       while (!feof (fp.get ()));
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* Collect data about message queues recorded in /proc and write it
    into BUFFER.  */
 
-static void
-linux_xfer_osdata_msg (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_msg ()
 {
-  buffer_grow_str (buffer, "<osdata type=\"message queues\">\n");
+  std::string buffer = "<osdata type=\"message queues\">\n";
 
   gdb_file_up fp = gdb_fopen_cloexec ("/proc/sysvipc/msg", "r");
   if (fp)
@@ -1166,7 +1173,7 @@ linux_xfer_osdata_msg (struct buffer *buffer)
 		  time_from_time_t (rtime_str, sizeof (rtime_str), rtime);
 		  time_from_time_t (ctime_str, sizeof (ctime_str), ctime);
 
-		  buffer_xml_printf
+		  string_xml_appendf
 		    (buffer,
 		     "<item>"
 		     "<column name=\"key\">%d</column>"
@@ -1204,16 +1211,18 @@ linux_xfer_osdata_msg (struct buffer *buffer)
       while (!feof (fp.get ()));
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 /* Collect data about loaded kernel modules and write it into
    BUFFER.  */
 
-static void
-linux_xfer_osdata_modules (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_modules ()
 {
-  buffer_grow_str (buffer, "<osdata type=\"modules\">\n");
+  std::string buffer = "<osdata type=\"modules\">\n";
 
   gdb_file_up fp = gdb_fopen_cloexec ("/proc/modules", "r");
   if (fp)
@@ -1259,84 +1268,87 @@ linux_xfer_osdata_modules (struct buffer *buffer)
 	      if (sscanf (tmp, "%llx", &address) != 1)
 		continue;
 
-	      buffer_xml_printf (buffer,
-				 "<item>"
-				 "<column name=\"name\">%s</column>"
-				 "<column name=\"size\">%u</column>"
-				 "<column name=\"num uses\">%d</column>"
-				 "<column name=\"dependencies\">%s</column>"
-				 "<column name=\"status\">%s</column>"
-				 "<column name=\"address\">%llx</column>"
-				 "</item>",
-				 name,
-				 size,
-				 uses,
-				 dependencies,
-				 status,
-				 address);
+	      string_xml_appendf (buffer,
+				  "<item>"
+				  "<column name=\"name\">%s</column>"
+				  "<column name=\"size\">%u</column>"
+				  "<column name=\"num uses\">%d</column>"
+				  "<column name=\"dependencies\">%s</column>"
+				  "<column name=\"status\">%s</column>"
+				  "<column name=\"address\">%llx</column>"
+				  "</item>",
+				  name,
+				  size,
+				  uses,
+				  dependencies,
+				  status,
+				  address);
 	    }
 	}
       while (!feof (fp.get ()));
     }
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
-static void linux_xfer_osdata_info_os_types (struct buffer *buffer);
+static std::string linux_xfer_osdata_info_os_types ();
 
 static struct osdata_type {
   const char *type;
   const char *title;
   const char *description;
-  void (*take_snapshot) (struct buffer *buffer);
-  LONGEST len_avail;
-  struct buffer buffer;
+  std::string (*take_snapshot) ();
+  std::string buffer;
 } osdata_table[] = {
   { "types", "Types", "Listing of info os types you can list",
-    linux_xfer_osdata_info_os_types, -1 },
+    linux_xfer_osdata_info_os_types },
   { "cpus", "CPUs", "Listing of all cpus/cores on the system",
-    linux_xfer_osdata_cpus, -1 },
+    linux_xfer_osdata_cpus },
   { "files", "File descriptors", "Listing of all file descriptors",
-    linux_xfer_osdata_fds, -1 },
+    linux_xfer_osdata_fds },
   { "modules", "Kernel modules", "Listing of all loaded kernel modules",
-    linux_xfer_osdata_modules, -1 },
+    linux_xfer_osdata_modules },
   { "msg", "Message queues", "Listing of all message queues",
-    linux_xfer_osdata_msg, -1 },
+    linux_xfer_osdata_msg },
   { "processes", "Processes", "Listing of all processes",
-    linux_xfer_osdata_processes, -1 },
+    linux_xfer_osdata_processes },
   { "procgroups", "Process groups", "Listing of all process groups",
-    linux_xfer_osdata_processgroups, -1 },
+    linux_xfer_osdata_processgroups },
   { "semaphores", "Semaphores", "Listing of all semaphores",
-    linux_xfer_osdata_sem, -1 },
+    linux_xfer_osdata_sem },
   { "shm", "Shared-memory regions", "Listing of all shared-memory regions",
-    linux_xfer_osdata_shm, -1 },
+    linux_xfer_osdata_shm },
   { "sockets", "Sockets", "Listing of all internet-domain sockets",
-    linux_xfer_osdata_isockets, -1 },
+    linux_xfer_osdata_isockets },
   { "threads", "Threads", "Listing of all threads",
-  linux_xfer_osdata_threads, -1 },
+    linux_xfer_osdata_threads },
   { NULL, NULL, NULL }
 };
 
 /* Collect data about all types info os can show in BUFFER.  */
 
-static void
-linux_xfer_osdata_info_os_types (struct buffer *buffer)
+static std::string
+linux_xfer_osdata_info_os_types ()
 {
-  buffer_grow_str (buffer, "<osdata type=\"types\">\n");
+  std::string buffer = "<osdata type=\"types\">\n";
 
   /* Start the below loop at 1, as we do not want to list ourselves.  */
   for (int i = 1; osdata_table[i].type; ++i)
-    buffer_xml_printf (buffer,
-		       "<item>"
-		       "<column name=\"Type\">%s</column>"
-		       "<column name=\"Description\">%s</column>"
-		       "<column name=\"Title\">%s</column>"
-		       "</item>",
-		       osdata_table[i].type,
-		       osdata_table[i].description,
-		       osdata_table[i].title);
+    string_xml_appendf (buffer,
+			"<item>"
+			"<column name=\"Type\">%s</column>"
+			"<column name=\"Description\">%s</column>"
+			"<column name=\"Title\">%s</column>"
+			"</item>",
+			osdata_table[i].type,
+			osdata_table[i].description,
+			osdata_table[i].title);
 
-  buffer_grow_str0 (buffer, "</osdata>\n");
+  buffer += "</osdata>\n";
+
+  return buffer;
 }
 
 
@@ -1350,24 +1362,17 @@ common_getter (struct osdata_type *osd,
   gdb_assert (readbuf);
 
   if (offset == 0)
-    {
-      if (osd->len_avail != -1 && osd->len_avail != 0)
-	buffer_free (&osd->buffer);
-      osd->len_avail = 0;
-      buffer_init (&osd->buffer);
-      (osd->take_snapshot) (&osd->buffer);
-      osd->len_avail = strlen (osd->buffer.buffer);
-    }
-  if (offset >= osd->len_avail)
+    osd->buffer = osd->take_snapshot ();
+
+  if (offset >= osd->buffer.size ())
     {
       /* Done.  Get rid of the buffer.  */
-      buffer_free (&osd->buffer);
-      osd->len_avail = 0;
+      osd->buffer.clear ();
       return 0;
     }
-  if (len > osd->len_avail - offset)
-    len = osd->len_avail - offset;
-  memcpy (readbuf, osd->buffer.buffer + offset, len);
+
+  len = std::min (len, osd->buffer.size () - offset);
+  memcpy (readbuf, &osd->buffer[offset], len);
 
   return len;
 

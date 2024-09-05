@@ -1,5 +1,149 @@
 -*- text -*-
 
+Changes in 2.43:
+
+* Add support for LoongArch DT_RELR (compressed R_LARCH_RELATIVE).
+
+* Put .got .got.plt in the relro to make it read-only after relocation.
+
+* Add -z isa-level-report=[none|all|needed|used] to the x86 ELF linker
+  to report needed and used x86-64 ISA levels.
+
+* Add --rosegment option which changes the -z separate-code option so that
+  only one read-only segment is created (instead of two).  (The option name
+  is misleading, but it matches the name used by LLD and GOLD).
+
+* Add --section-ordering-file <FILE> option to add extra mapping of input
+  sections to output sections.
+
+* Add -plugin-save-temps to store plugin intermediate files permanently.
+
+Changes in 2.42:
+
+* Add -z mark-plt/-z nomark-plt options to x86-64 ELF linker to mark PLT
+  entries with DT_X86_64_PLT, DT_X86_64_PLTSZ and DT_X86_64_PLTENT dynamic
+  tags.  Also added --enable-mark-plt configure option to mark PLT entries
+  by default.
+
+* Support Intel APX relocations.
+
+* On RISC-V, add ld target option --[no-]check-uleb128.  Should rebuild the
+  objects by binutils 2.42 and up if enabling the option and get warnings,
+  since the non-zero addend of SUB_ULEB128 shouldn't be generated from .uleb128
+  directives.
+
+* Add support for the KVX instruction set.
+
+* A new linker script sorting directive has been added: REVERSE.  This reverses
+  the order of the sorting.  It may be combined with either SORT_BY_NAME or
+  SORT_BY_INIT_PRIORITY.
+
+* Added --warn-execstack-objects to warn about executable stacks only when an
+  input object file requests one.  Also added --error-execstack and
+  --error-rxw-segments options to convert warnings about executable stacks and
+  segments into errors.
+
+  Also added --enable-error-execstack=[yes|no] and
+  --enable-error-rwx-segments=[yes|no] configure options to set the default for
+  converting warnings into errors.
+
+* On LoongArch, various linker relaxation bugs are fixed; the most notable
+  of which is BZ 30944 (incorrect .balign semantics).
+
+* On LoongArch, the LoongArch ABI v2.30 (LoongArch ELF psABI v20231219) is
+  now implemented. This includes new relocation types, and changed
+  semantics for PC-relative relocations handling the higher half of 64-bit
+  offsets.
+
+* On LoongArch, link-time TLS optimization and TLS relaxation are now
+  supported.
+
+Changes in 2.41:
+
+* The linker now accepts a command line option of --remap-inputs
+  <PATTERN>=<FILE> to relace any input file that matches <PATTERN> with
+  <FILE>.  In addition the option --remap-inputs-file=<FILE> can be used to
+  specify a file containing any number of these remapping directives.
+
+* The linker command line option --print-map-locals can be used to include
+  local symbols in a linker map.  (ELF targets only).
+
+* For most ELF based targets, if the --enable-linker-version option is used
+  then the version of the linker will be inserted as a string into the .comment
+  section.
+
+* The linker script syntax has a new command for output sections: ASCIZ "string"
+  This will insert a zero-terminated string at the current location.
+
+* Add command-line option, -z nosectionheader, to omit ELF section
+  header.
+
+Changes in 2.40:
+
+* The linker has a new command line option to suppress the generation of any
+  warning or error messages.  This can be useful when there is a need to create
+  a known non-working binary.  The option is -w or --no-warnings.
+
+* ld now supports zstd compressed debug sections.  The new option
+  --compress-debug-sections=zstd compresses debug sections with zstd.
+
+* Add --enable-default-compressed-debug-sections-algorithm={zlib,zstd}
+  that selects the default compression algorithm
+  for --enable-compressed-debug-sections.
+
+* Remove support for -z bndplt (MPX prefix instructions).
+
+Changes in 2.39:
+
+* The ELF linker will now generate a warning message if the stack is made
+  executable.  By default this warning is not issued if the user has
+  specifically requested an executable stack via the "-z execstack"
+  command line option, but the warning can be forced via the new
+  "--warn-execstack" option.  Alternatively all warnings about creating
+  an executable stack can be suppressed via the "--no-warn-execstack"
+  option.
+
+  In addition the ELF linker will also warn if it creates a memory resident
+  segment with all three of the Read, Write and eXecute permissions set, or
+  if it creates a thread local data segment with the eXecute permission set.
+  These warnings can be disabled via --no-warn-rwx-segments option and
+  re-enabled via the --warn-rwx-segments option.
+
+  New configure options can also control these new features:
+  
+  --enable-warn-execstack=no
+     will disable the warnings about creating an executable stack.
+     
+  --enable-warn-execstack=yes
+     will make --warn-execstack enabled by default.
+     
+  --enable-warn-rwx-segments=no
+     will make --no-warn-rwx-segments enabled by default.
+     
+  --enable-default-execstack=no
+     will stop the creation of an executable stack simply because an input file
+     is missing a .note.GNU-stack section, even on architectures where this
+     behaviour is the default.
+
+* TYPE=<type> is now supported in an output section description to set the
+  section type value.
+
+* Remove (rudimentary) support for the x86-64 sub-architectures Intel L1OM and
+  Intel K1OM.
+
+* The ELF linker now supports a new --package-metadata option that allows
+  embedding a JSON payload in accordance to the Package Metadata specification.
+  If support for libjansson is enabled at build time, the linker will use it to
+  validate the input. This can be enabled with --enable-jansson.
+  For more details, see: https://systemd.io/ELF_PACKAGE_METADATA/
+
+Changes in 2.38:
+
+* Add -z pack-relative-relocs/-z no pack-relative-relocs to x86 ELF
+  linker to pack relative relocations in the DT_RELR section.
+
+* Add support for the LoongArch architecture.
+
 * Add -z indirect-extern-access/-z noindirect-extern-access to x86 ELF
   linker to control canonical function pointers and copy relocation.
 
@@ -880,7 +1024,7 @@ Changes in version 2.1:
   other utilities should work on Risc/Ultrix and Irix.
 
 
-Copyright (C) 2012-2021 Free Software Foundation, Inc.
+Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

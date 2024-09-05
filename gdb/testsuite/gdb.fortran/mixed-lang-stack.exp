@@ -1,4 +1,4 @@
-# Copyright 2020-2021 Free Software Foundation, Inc.
+# Copyright 2020-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,14 +23,14 @@
 # each case to ensure that trying to print objects or types from one
 # language, while GDB's language is set to another, doesn't crash GDB.
 
-if {[skip_fortran_tests]} { return -1 }
+require allow_fortran_tests
 
 standard_testfile mixed-lang-stack.c mixed-lang-stack.cpp mixed-lang-stack.f90
 
 if {[prepare_for_testing_full "failed to prepare" \
 	 [list ${binfile} {debug f90 additional_flags=-lstdc++} \
 	      $srcfile {debug} \
-	      $srcfile2 {debug c++} \
+	      $srcfile2 {debug c++ additional_flags=-std=c++11} \
 	      $srcfile3 {debug f90}]]} {
     return -1
 }
@@ -46,7 +46,6 @@ proc run_tests { lang } {
 	clean_restart ${binfile}
 
 	if ![runto_main] {
-	    untested "could not run to main"
 	    return -1
 	}
 
@@ -93,6 +92,18 @@ proc run_tests { lang } {
 	    }
 	}
 
+	# Check backtrace arguments in MI mode.
+	set mi_a "\{name=\"a\",value=\"1\"\}"
+	set mi_b "\{name=\"b\",value=\"2\"\}"
+	set mi_c "\{name=\"c\",value=\"3\"\}"
+	set mi_d "\{name=\"d\",value=\"\\(4,5\\)\"\}"
+	set mi_e "\{name=\"e\",value=\"$e_arg\"\}"
+	set mi_g "\{name=\"g\",value=\"\\( a = 1.5, b = 2.5 \\)\"\}"
+	# Hidden argument name changes depending on compiler.
+	set mi_hidden "\{name=\"\[^\r\n\]+\",value=\"6\"\}"
+	gdb_test "interpreter-exec mi '-stack-list-arguments --no-frame-filters --all-values 7 7'" \
+		 "\\^done,stack-args=\\\[frame=\{level=\"7\",args=\\\[$mi_a,$mi_b,$mi_c,$mi_d,$mi_e,$mi_g,$mi_hidden\\\]\}\\\]"
+
 	# Check the language for frame #0.
 	gdb_test "info frame" "source language fortran\..*" \
 	    "info frame in frame #0"
@@ -130,22 +141,29 @@ proc run_tests { lang } {
 	    set f_pattern "$hex \"abcdef\""
 	}
 
+	# When value-printing pointers in GDB, GDB will try and look for any
+	# associated symbol and print it after the pointer as "<SYMBOL>". For
+	# this test Intel and LLVM compilers move g to the .bss section, thus
+	# creating a symbol, while the GNU compiler stack keeps g purely on the
+	# stack.
+	set g_pattern "$hex\( <\[^\r\n\]+>\)?"
+
 	set args_pattern [multi_line \
 			      "a = 1" \
 			      "b = 2" \
 			      "c = 3" \
 			      "d = ${d_pattern}" \
 			      "f = ${f_pattern}" \
-			      "g = $hex" ]
+			      "g = ${g_pattern}" ]
 
 	gdb_test "info args" $args_pattern \
 	    "info args in frame #6"
 	if { $lang == "fortran" } {
-	    set g_pattern " = \\( a = 1\\.5, b = 2\\.5 \\)"
+	    set g_val_pattern " = \\( a = 1\\.5, b = 2\\.5 \\)"
 	} else {
-	    set g_pattern " = \\{a = 1\\.5, b = 2\\.5\\}"
+	    set g_val_pattern " = \\{a = 1\\.5, b = 2\\.5\\}"
 	}
-	gdb_test "print *g" "${g_pattern}" \
+	gdb_test "print *g" "${g_val_pattern}" \
 	    "print object pointed to by g"
 
 	gdb_test "up" "#7\\s+$hex in mixed_func_1b .*" \
@@ -156,21 +174,28 @@ proc run_tests { lang } {
 	if { $lang == "c" || $lang == "c++" } {
 	    set d_pattern "4 \\+ 5i"
 	    set e_pattern "\"abcdef\""
-	    set g_pattern "\{a = 1.5, b = 2.5\}"
+	    set g_val_pattern "\{a = 1.5, b = 2.5\}"
 	} else {
 	    set d_pattern "\\(4,5\\)"
 	    set e_pattern "'abcdef'"
-	    set g_pattern "\\( a = 1.5, b = 2.5 \\)"
+	    set g_val_pattern "\\( a = 1.5, b = 2.5 \\)"
 	}
 
+	# The last argument here in info args is compiler generated.  It
+	# contains length of the passed array e (we are in mixed_func_1b here).
+	# For gfortran and ifx the compilers conveniently named this '_e',
+	# ifort however prints .tmp.E.len_V$4a.  As is seems unreasonable to
+	# test for an artificially created name and as at the same time all
+	# 3 tested compilers emit this argument, we only check for its
+	# existence and its value (6).
 	set args_pattern [multi_line \
 			      "a = 1" \
 			      "b = 2" \
 			      "c = 3" \
 			      "d = ${d_pattern}" \
 			      "e = ${e_pattern}" \
-			      "g = ${g_pattern}" \
-			      "_e = 6" ]
+			      "g = ${g_val_pattern}" \
+			      ".* = 6" ]
 
 	gdb_test "info args" $args_pattern \
 	    "info args in frame #7"

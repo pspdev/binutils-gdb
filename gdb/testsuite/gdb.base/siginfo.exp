@@ -1,4 +1,4 @@
-# Copyright 2004-2021 Free Software Foundation, Inc.
+# Copyright 2004-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,10 +23,7 @@
 # alternative sa_sigaction signal handler, and second that GDB can
 # nexti/stepi out of such a handler.
 
-if [target_info exists gdb,nosignals] {
-    verbose "Skipping siginfo.exp because of nosignals."
-    continue
-}
+require {!target_info exists gdb,nosignals}
 
 
 standard_testfile
@@ -38,8 +35,7 @@ if {[prepare_for_testing "failed to prepare" $testfile $srcfile debug]} {
 gdb_test "display/i \$pc"
 
 # Advance to main
-if ![runto_main] then {
-    fail "can't run to main"
+if {![runto_main]} {
     return 0
 }
 

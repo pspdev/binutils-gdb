@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux on CRIS processors, for GDB.
 
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2024 Free Software Foundation, Inc.
 
    Contributed by Axis Communications AB.
    Written by Hendrik Ruijter, Stefan Andersson, Orjan Friberg,
@@ -21,7 +21,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "osabi.h"
 #include "linux-tdep.h"
 #include "solib-svr4.h"
@@ -33,7 +32,7 @@
 static void
 cris_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  cris_gdbarch_tdep *tdep = gdbarch_tdep<cris_gdbarch_tdep> (gdbarch);
 
   linux_init_abi (info, gdbarch, 0);
 
@@ -43,7 +42,7 @@ cris_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 					       svr4_fetch_objfile_link_map);
 
   set_solib_svr4_fetch_link_map_offsets (gdbarch,
-					 svr4_ilp32_fetch_link_map_offsets);
+					 linux_ilp32_fetch_link_map_offsets);
 
 }
 

@@ -1,6 +1,6 @@
 /* Go language support definitions for GDB, the GNU debugger.
 
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,6 +22,7 @@
 
 struct type_print_options;
 
+#include "language.h"
 #include "gdbtypes.h"
 #include "symtab.h"
 #include "value.h"
@@ -30,24 +31,24 @@ struct parser_state;
 
 struct builtin_go_type
 {
-  struct type *builtin_void;
-  struct type *builtin_char;
-  struct type *builtin_bool;
-  struct type *builtin_int;
-  struct type *builtin_uint;
-  struct type *builtin_uintptr;
-  struct type *builtin_int8;
-  struct type *builtin_int16;
-  struct type *builtin_int32;
-  struct type *builtin_int64;
-  struct type *builtin_uint8;
-  struct type *builtin_uint16;
-  struct type *builtin_uint32;
-  struct type *builtin_uint64;
-  struct type *builtin_float32;
-  struct type *builtin_float64;
-  struct type *builtin_complex64;
-  struct type *builtin_complex128;
+  struct type *builtin_void = nullptr;
+  struct type *builtin_char = nullptr;
+  struct type *builtin_bool = nullptr;
+  struct type *builtin_int = nullptr;
+  struct type *builtin_uint = nullptr;
+  struct type *builtin_uintptr = nullptr;
+  struct type *builtin_int8 = nullptr;
+  struct type *builtin_int16 = nullptr;
+  struct type *builtin_int32 = nullptr;
+  struct type *builtin_int64 = nullptr;
+  struct type *builtin_uint8 = nullptr;
+  struct type *builtin_uint16 = nullptr;
+  struct type *builtin_uint32 = nullptr;
+  struct type *builtin_uint64 = nullptr;
+  struct type *builtin_float32 = nullptr;
+  struct type *builtin_float64 = nullptr;
+  struct type *builtin_complex64 = nullptr;
+  struct type *builtin_complex128 = nullptr;
 };
 
 enum go_type
@@ -62,9 +63,14 @@ extern const char *go_main_name (void);
 
 extern enum go_type go_classify_struct_type (struct type *type);
 
-extern char *go_symbol_package_name (const struct symbol *sym);
+/* Given a symbol, return its package or nullptr if unknown.  */
+extern gdb::unique_xmalloc_ptr<char> go_symbol_package_name
+     (const struct symbol *sym);
 
-extern char *go_block_package_name (const struct block *block);
+/* Return the package that BLOCK is in, or nullptr if there isn't
+   one.  */
+extern gdb::unique_xmalloc_ptr<char> go_block_package_name
+     (const struct block *block);
 
 extern const struct builtin_go_type *builtin_go_type (struct gdbarch *);
 
@@ -94,8 +100,9 @@ public:
 
   /* See language.h.  */
 
-  bool sniff_from_mangled_name (const char *mangled,
-				char **demangled) const override
+  bool sniff_from_mangled_name
+       (const char *mangled, gdb::unique_xmalloc_ptr<char> *demangled)
+       const override
   {
     *demangled = demangle_symbol (mangled, 0);
     return *demangled != NULL;
@@ -103,7 +110,8 @@ public:
 
   /* See language.h.  */
 
-  char *demangle_symbol (const char *mangled, int options) const override;
+  gdb::unique_xmalloc_ptr<char> demangle_symbol (const char *mangled,
+						 int options) const override;
 
   /* See language.h.  */
 

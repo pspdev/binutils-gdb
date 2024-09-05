@@ -1,4 +1,4 @@
-# Copyright 2014-2021 Free Software Foundation, Inc.
+# Copyright 2014-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,10 +20,7 @@
 standard_testfile .s
 set objfile [standard_output_file ${testfile}.o]
 
-if {![istarget "powerpc*-*-*"]} then {
-    verbose "Skipping PowerPC instructions disassembly."
-    return
-}
+require {istarget "powerpc*-*-*"}
 
 if { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${objfile}" object {debug}] != "" } {
     untested "PowerPC instructions disassembly"
@@ -140,7 +137,7 @@ func_check "frsqrte f14,f15"
 func_check "frsqrte. f14,f15"
 func_check "frsqrtes f14,f15"
 func_check "frsqrtes. f14,f15"
-func_check "isel    r2,r3,r4,28"
+func_check "isel    r2,r3,r4,4*cr7+lt"
 func_check "yield"
 func_check "ori     r2,r2,0"
 func_check "nop"

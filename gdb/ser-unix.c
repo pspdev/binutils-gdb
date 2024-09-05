@@ -1,6 +1,6 @@
 /* Serial interface for local (hardwired) serial ports on Un*x like systems
 
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "serial.h"
 #include "ser-base.h"
 #include "ser-unix.h"
@@ -29,7 +28,7 @@
 #include "gdbsupport/gdb_sys_time.h"
 
 #include "gdbsupport/gdb_select.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "gdbsupport/filestuff.h"
 #include <termios.h>
 #include "gdbsupport/scoped_ignore_sigttou.h"
@@ -46,14 +45,13 @@ static void
 show_serial_hwflow (struct ui_file *file, int from_tty,
 		    struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Hardware flow control is %s.\n"), value);
+  gdb_printf (file, _("Hardware flow control is %s.\n"), value);
 }
 #endif
 
-static int hardwire_open (struct serial *scb, const char *name);
 static void hardwire_raw (struct serial *scb);
 static int rate_to_code (int rate);
-static int hardwire_setbaudrate (struct serial *scb, int rate);
+static void hardwire_setbaudrate (struct serial *scb, int rate);
 static int hardwire_setparity (struct serial *scb, int parity);
 static void hardwire_close (struct serial *scb);
 static int get_tty_state (struct serial *scb,
@@ -67,19 +65,17 @@ static void hardwire_print_tty_state (struct serial *, serial_ttystate,
 static int hardwire_drain_output (struct serial *);
 static int hardwire_flush_output (struct serial *);
 static int hardwire_flush_input (struct serial *);
-static int hardwire_send_break (struct serial *);
+static void hardwire_send_break (struct serial *);
 static int hardwire_setstopbits (struct serial *, int);
 
 /* Open up a real live device for serial I/O.  */
 
-static int
+static void
 hardwire_open (struct serial *scb, const char *name)
 {
-  scb->fd = gdb_open_cloexec (name, O_RDWR, 0);
+  scb->fd = gdb_open_cloexec (name, O_RDWR, 0).release ();
   if (scb->fd < 0)
-    return -1;
-
-  return 0;
+    perror_with_name ("could not open device");
 }
 
 static int
@@ -142,21 +138,21 @@ hardwire_print_tty_state (struct serial *scb,
   struct hardwire_ttystate *state = (struct hardwire_ttystate *) ttystate;
   int i;
 
-  fprintf_filtered (stream, "c_iflag = 0x%x, c_oflag = 0x%x,\n",
-		    (int) state->termios.c_iflag,
-		    (int) state->termios.c_oflag);
-  fprintf_filtered (stream, "c_cflag = 0x%x, c_lflag = 0x%x\n",
-		    (int) state->termios.c_cflag,
-		    (int) state->termios.c_lflag);
+  gdb_printf (stream, "c_iflag = 0x%x, c_oflag = 0x%x,\n",
+	      (int) state->termios.c_iflag,
+	      (int) state->termios.c_oflag);
+  gdb_printf (stream, "c_cflag = 0x%x, c_lflag = 0x%x\n",
+	      (int) state->termios.c_cflag,
+	      (int) state->termios.c_lflag);
 #if 0
   /* This not in POSIX, and is not really documented by those systems
      which have it (at least not Sun).  */
-  fprintf_filtered (stream, "c_line = 0x%x.\n", state->termios.c_line);
+  gdb_printf (stream, "c_line = 0x%x.\n", state->termios.c_line);
 #endif
-  fprintf_filtered (stream, "c_cc: ");
+  gdb_printf (stream, "c_cc: ");
   for (i = 0; i < NCCS; i += 1)
-    fprintf_filtered (stream, "0x%x ", state->termios.c_cc[i]);
-  fprintf_filtered (stream, "\n");
+    gdb_printf (stream, "0x%x ", state->termios.c_cc[i]);
+  gdb_printf (stream, "\n");
 }
 
 /* Wait for the output to drain away, as opposed to flushing
@@ -185,10 +181,11 @@ hardwire_flush_input (struct serial *scb)
   return tcflush (scb->fd, TCIFLUSH);
 }
 
-static int
+static void
 hardwire_send_break (struct serial *scb)
 {
-  return tcsendbreak (scb->fd, 0);
+  if (tcsendbreak (scb->fd, 0) == -1)
+    perror_with_name ("sending break");
 }
 
 static void
@@ -197,8 +194,8 @@ hardwire_raw (struct serial *scb)
   struct hardwire_ttystate state;
 
   if (get_tty_state (scb, &state))
-    fprintf_unfiltered (gdb_stderr, "get_tty_state failed: %s\n",
-			safe_strerror (errno));
+    gdb_printf (gdb_stderr, "get_tty_state failed: %s\n",
+		safe_strerror (errno));
 
   state.termios.c_iflag = 0;
   state.termios.c_oflag = 0;
@@ -222,8 +219,8 @@ hardwire_raw (struct serial *scb)
   state.termios.c_cc[VTIME] = 0;
 
   if (set_tty_state (scb, &state))
-    fprintf_unfiltered (gdb_stderr, "set_tty_state failed: %s\n",
-			safe_strerror (errno));
+    gdb_printf (gdb_stderr, "set_tty_state failed: %s\n",
+		safe_strerror (errno));
 }
 
 #ifndef B19200
@@ -328,6 +325,72 @@ baudtab[] =
   }
   ,
 #endif
+#ifdef B500000
+  {
+    500000, B500000
+  }
+  ,
+#endif
+#ifdef B576000
+  {
+    576000, B576000
+  }
+  ,
+#endif
+#ifdef B921600
+  {
+    921600, B921600
+  }
+  ,
+#endif
+#ifdef B1000000
+  {
+    1000000, B1000000
+  }
+  ,
+#endif
+#ifdef B1152000
+  {
+    1152000, B1152000
+  }
+  ,
+#endif
+#ifdef B1500000
+  {
+    1500000, B1500000
+  }
+  ,
+#endif
+#ifdef B2000000
+  {
+    2000000, B2000000
+  }
+  ,
+#endif
+#ifdef B2500000
+  {
+    2500000, B2500000
+  }
+  ,
+#endif
+#ifdef B3000000
+  {
+    3000000, B3000000
+  }
+  ,
+#endif
+#ifdef B3500000
+  {
+    3500000, B3500000
+  }
+  ,
+#endif
+#ifdef B4000000
+  {
+    4000000, B4000000
+  }
+  ,
+#endif
   {
     -1, -1
   }
@@ -351,47 +414,38 @@ rate_to_code (int rate)
 	    {
 	      if (i)
 		{
-		  warning (_("Invalid baud rate %d.  "
-			     "Closest values are %d and %d."),
-			   rate, baudtab[i - 1].rate, baudtab[i].rate);
+		  error (_("Invalid baud rate %d.  "
+			   "Closest values are %d and %d."),
+			 rate, baudtab[i - 1].rate, baudtab[i].rate);
 		}
 	      else
 		{
-		  warning (_("Invalid baud rate %d.  Minimum value is %d."),
-			   rate, baudtab[0].rate);
+		  error (_("Invalid baud rate %d.  Minimum value is %d."),
+			 rate, baudtab[0].rate);
 		}
-	      return -1;
 	    }
 	}
     }
  
   /* The requested speed was too large.  */
-  warning (_("Invalid baud rate %d.  Maximum value is %d."),
-	    rate, baudtab[i - 1].rate);
-  return -1;
+  error (_("Invalid baud rate %d.  Maximum value is %d."),
+	 rate, baudtab[i - 1].rate);
 }
 
-static int
+static void
 hardwire_setbaudrate (struct serial *scb, int rate)
 {
   struct hardwire_ttystate state;
   int baud_code = rate_to_code (rate);
   
-  if (baud_code < 0)
-    {
-      /* The baud rate was not valid.
-	 A warning has already been issued.  */
-      errno = EINVAL;
-      return -1;
-    }
-
   if (get_tty_state (scb, &state))
-    return -1;
+    perror_with_name ("could not get tty state");
 
   cfsetospeed (&state.termios, baud_code);
   cfsetispeed (&state.termios, baud_code);
 
-  return set_tty_state (scb, &state);
+  if (set_tty_state (scb, &state))
+    perror_with_name ("could not set tty state");
 }
 
 static int
@@ -447,8 +501,7 @@ hardwire_setparity (struct serial *scb, int parity)
       newparity = PARENB;
       break;
     default:
-      internal_warning (__FILE__, __LINE__,
-			"Incorrect parity value: %d", parity);
+      internal_warning ("Incorrect parity value: %d", parity);
       return -1;
     }
 
@@ -520,11 +573,17 @@ when debugging using remote targets."),
 int
 ser_unix_read_prim (struct serial *scb, size_t count)
 {
-  return read (scb->fd, scb->buf, count);
+  int result = read (scb->fd, scb->buf, count);
+  if (result == -1 && errno != EINTR)
+    perror_with_name ("error while reading");
+  return result;
 }
 
 int
 ser_unix_write_prim (struct serial *scb, const void *buf, size_t len)
 {
-  return write (scb->fd, buf, len);
+  int result = write (scb->fd, buf, len);
+  if (result == -1 && errno != EINTR)
+    perror_with_name ("error while writing");
+  return result;
 }

@@ -1,4 +1,4 @@
-# Copyright 2013-2021 Free Software Foundation, Inc.
+# Copyright 2013-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,10 +15,7 @@
 
 standard_testfile lspec.cc
 
-if {[skip_cplus_tests]} {
-    unsupported "skipping C++ tests"
-    return
-}
+require allow_cplus_tests
 
 set opts {debug c++}
 set objfile1 [standard_output_file ${testfile}one.o]
@@ -28,16 +25,19 @@ if { [file pathtype $objdir] == "relative" } {
     untested "objdir $objdir should be absolute"
     return
 }
-set saved_pwd [pwd]
-cd $srcdir/${subdir}/base/one
-set err1 [gdb_compile "thefile.cc" $objfile1 object $opts]
-cd $saved_pwd
-cd $srcdir/${subdir}/base/two
-set err2 [gdb_compile "thefile.cc" $objfile2 object $opts]
-cd $saved_pwd
-if { $err1 != "" || $err2 != "" } {
-    untested "compilation failed"
-    return -1
+
+with_cwd $srcdir/${subdir}/base/one {
+    if { [gdb_compile "thefile.cc" $objfile1 object $opts] != "" } {
+	untested "compilation failed"
+	return
+    }
+}
+
+with_cwd $srcdir/${subdir}/base/two {
+    if { [gdb_compile "thefile.cc" $objfile2 object $opts] != "" } {
+	untested "compilation failed"
+	return
+    }
 }
 
 if { [gdb_compile "$srcdir/${subdir}/$srcfile $objfile1 $objfile2" \
@@ -68,7 +68,7 @@ gdb_test_multiple $cmd $test {
 	pass $test
     }
 }
-gdb_test "2" "^2\r\nBreakpoint \[0-9\]+ at 0x\[0-9a-f\]+: file thefile\\.cc, line \[0-9a-f\]+\\."
+gdb_test "2" "^Breakpoint \[0-9\]+ at 0x\[0-9a-f\]+: file thefile\\.cc, line \[0-9a-f\]+\\."
 
 gdb_breakpoint "body_elsewhere"
 
@@ -88,7 +88,7 @@ gdb_test_multiple $cmd $test {
 	pass $test
     }
 }
-gdb_test "3" "^3\r\nBreakpoint \[0-9\]+ at 0x\[0-9a-f\]+: file thefile\\.cc, line \[0-9a-f\]+\\."
+gdb_test "3" "^Breakpoint \[0-9\]+ at 0x\[0-9a-f\]+: file thefile\\.cc, line \[0-9a-f\]+\\."
 
 gdb_breakpoint "body_elsewhere"
 

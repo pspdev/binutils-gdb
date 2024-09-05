@@ -1,4 +1,4 @@
-# Copyright 2019-2021 Free Software Foundation, Inc.
+# Copyright 2019-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/> .
 
 # Print a 2 dimensional assumed shape array.  We pass different slices
-# of the array to a subroutine and print the array as recieved within
+# of the array to a subroutine and print the array as received within
 # the subroutine.  This should exercise GDB's ability to handle
 # different strides for the different dimensions.
 
@@ -33,12 +33,15 @@
 # debug information) matches the size of the slice manually extracted
 # by GDB.
 
-if {[skip_fortran_tests]} { return -1 }
+require allow_fortran_tests
+
+# This test relies on output from the inferior.
+require {!target_info exists gdb,noinferiorio}
 
 standard_testfile ".f90"
 load_lib fortran.exp
 
-if {[prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
+if {[build_executable ${testfile}.exp ${testfile} ${srcfile} \
 	 {debug f90}]} {
     return -1
 }
@@ -56,9 +59,11 @@ proc run_test { repack } {
     clean_restart ${binfile}
 
     if ![fortran_runto_main] {
-	untested "could not run to main"
 	return -1
     }
+
+    # Avoid libc symbols, in particular the 'array' type.
+    gdb_test_no_output "nosharedlibrary"
 
     gdb_test_no_output "set fortran repack-array-slices $repack"
 
@@ -86,11 +91,19 @@ proc run_test { repack } {
 	    set found_final_breakpoint false
 	    set expected_result ""
 	    set func_name ""
+	    set found_prompt false
 	    gdb_test_multiple "continue" "continue" {
+		-i $::inferior_spawn_id
+
 		-re ".*GDB = (\[^\r\n\]+)\r\n" {
 		    set expected_result $expect_out(1,string)
-		    exp_continue
+		    if {!$found_prompt} {
+			exp_continue
+		    }
 		}
+
+		-i $::gdb_spawn_id
+
 		-re "! Display Element" {
 		    set func_name "show_elem"
 		    exp_continue
@@ -108,7 +121,14 @@ proc run_test { repack } {
 		    exp_continue
 		}
 		-re "$gdb_prompt $" {
-		    # We're done.
+		    set found_prompt true
+
+		    if {$found_final_breakpoint
+			|| ($expected_result != "" && $func_name != "")} {
+			# We're done.
+		    } else {
+			exp_continue
+		    }
 		}
 	    }
 

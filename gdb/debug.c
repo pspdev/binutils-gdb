@@ -1,6 +1,6 @@
 /* Debug printing functions.
 
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 
 #include "gdbsupport/common-debug.h"
 
@@ -30,5 +29,5 @@ int debug_print_depth = 0;
 void
 debug_vprintf (const char *fmt, va_list ap)
 {
-  vfprintf_unfiltered (gdb_stdlog, fmt, ap);
+  gdb_vprintf (gdb_stdlog, fmt, ap);
 }

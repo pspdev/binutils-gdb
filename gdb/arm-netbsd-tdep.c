@@ -1,6 +1,6 @@
 /* Target-dependent code for NetBSD/arm.
 
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "osabi.h"
 
 #include "arch/arm.h"
@@ -111,7 +110,7 @@ static void
 arm_netbsd_init_abi_common (struct gdbarch_info info,
 			    struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  arm_gdbarch_tdep *tdep = gdbarch_tdep<arm_gdbarch_tdep> (gdbarch);
 
   tdep->lowest_pc = 0x8000;
   switch (info.byte_order)
@@ -131,8 +130,7 @@ arm_netbsd_init_abi_common (struct gdbarch_info info,
       break;
 
     default:
-      internal_error (__FILE__, __LINE__,
-		      _("arm_gdbarch_init: bad byte order for float format"));
+      internal_error (_("arm_gdbarch_init: bad byte order for float format"));
     }
 
   tdep->jb_pc = ARM_NBSD_JB_PC;
@@ -148,7 +146,7 @@ static void
 arm_netbsd_elf_init_abi (struct gdbarch_info info,
 			 struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  arm_gdbarch_tdep *tdep = gdbarch_tdep<arm_gdbarch_tdep> (gdbarch);
 
   arm_netbsd_init_abi_common (info, gdbarch);
 

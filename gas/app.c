@@ -1,5 +1,5 @@
 /* This is the Assembler Pre-Processor
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -58,10 +58,6 @@ static const char * symver_state;
 
 static char last_char;
 
-static char lex[256];
-static const char symbol_chars[] =
-"$._ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
 #define LEX_IS_SYMBOL_COMPONENT		1
 #define LEX_IS_WHITESPACE		2
 #define LEX_IS_LINE_SEPARATOR		3
@@ -74,9 +70,6 @@ static const char symbol_chars[] =
 #define	LEX_IS_ONECHAR_QUOTE		11
 #ifdef TC_V850
 #define LEX_IS_DOUBLEDASH_1ST		12
-#endif
-#ifdef TC_M32R
-#define DOUBLEBAR_PARALLEL
 #endif
 #ifdef DOUBLEBAR_PARALLEL
 #define LEX_IS_DOUBLEBAR_1ST		13
@@ -91,25 +84,80 @@ static const char symbol_chars[] =
 #define IS_PARALLEL_SEPARATOR(c)	(lex[c] == LEX_IS_PARALLEL_SEPARATOR)
 #define IS_COMMENT(c)			(lex[c] == LEX_IS_COMMENT_START)
 #define IS_LINE_COMMENT(c)		(lex[c] == LEX_IS_LINE_COMMENT_START)
+#define IS_TWOCHAR_COMMENT_1ST(c)	(lex[c] == LEX_IS_TWOCHAR_COMMENT_1ST)
 #define	IS_NEWLINE(c)			(lex[c] == LEX_IS_NEWLINE)
 
-static int process_escape (int);
-
-/* FIXME-soon: The entire lexer/parser thingy should be
-   built statically at compile time rather than dynamically
-   each and every time the assembler is run.  xoxorich.  */
+static char lex[256] = {
+  [' ']  = LEX_IS_WHITESPACE,
+  ['\t'] = LEX_IS_WHITESPACE,
+#ifdef CR_EOL
+  ['\r'] = LEX_IS_LINE_SEPARATOR,
+#else
+  ['\r'] = LEX_IS_WHITESPACE,
+#endif
+  ['\n'] = LEX_IS_NEWLINE,
+  [':'] = LEX_IS_COLON,
+  ['$'] = LEX_IS_SYMBOL_COMPONENT,
+  ['.'] = LEX_IS_SYMBOL_COMPONENT,
+  ['_'] = LEX_IS_SYMBOL_COMPONENT,
+  ['A'] = LEX_IS_SYMBOL_COMPONENT, ['a'] = LEX_IS_SYMBOL_COMPONENT,
+  ['B'] = LEX_IS_SYMBOL_COMPONENT, ['b'] = LEX_IS_SYMBOL_COMPONENT,
+  ['C'] = LEX_IS_SYMBOL_COMPONENT, ['c'] = LEX_IS_SYMBOL_COMPONENT,
+  ['D'] = LEX_IS_SYMBOL_COMPONENT, ['d'] = LEX_IS_SYMBOL_COMPONENT,
+  ['E'] = LEX_IS_SYMBOL_COMPONENT, ['e'] = LEX_IS_SYMBOL_COMPONENT,
+  ['F'] = LEX_IS_SYMBOL_COMPONENT, ['f'] = LEX_IS_SYMBOL_COMPONENT,
+  ['G'] = LEX_IS_SYMBOL_COMPONENT, ['g'] = LEX_IS_SYMBOL_COMPONENT,
+  ['H'] = LEX_IS_SYMBOL_COMPONENT, ['h'] = LEX_IS_SYMBOL_COMPONENT,
+  ['I'] = LEX_IS_SYMBOL_COMPONENT, ['i'] = LEX_IS_SYMBOL_COMPONENT,
+  ['J'] = LEX_IS_SYMBOL_COMPONENT, ['j'] = LEX_IS_SYMBOL_COMPONENT,
+  ['K'] = LEX_IS_SYMBOL_COMPONENT, ['k'] = LEX_IS_SYMBOL_COMPONENT,
+  ['L'] = LEX_IS_SYMBOL_COMPONENT, ['l'] = LEX_IS_SYMBOL_COMPONENT,
+  ['M'] = LEX_IS_SYMBOL_COMPONENT, ['m'] = LEX_IS_SYMBOL_COMPONENT,
+  ['N'] = LEX_IS_SYMBOL_COMPONENT, ['n'] = LEX_IS_SYMBOL_COMPONENT,
+  ['O'] = LEX_IS_SYMBOL_COMPONENT, ['o'] = LEX_IS_SYMBOL_COMPONENT,
+  ['P'] = LEX_IS_SYMBOL_COMPONENT, ['p'] = LEX_IS_SYMBOL_COMPONENT,
+  ['Q'] = LEX_IS_SYMBOL_COMPONENT, ['q'] = LEX_IS_SYMBOL_COMPONENT,
+  ['R'] = LEX_IS_SYMBOL_COMPONENT, ['r'] = LEX_IS_SYMBOL_COMPONENT,
+  ['S'] = LEX_IS_SYMBOL_COMPONENT, ['s'] = LEX_IS_SYMBOL_COMPONENT,
+  ['T'] = LEX_IS_SYMBOL_COMPONENT, ['t'] = LEX_IS_SYMBOL_COMPONENT,
+  ['U'] = LEX_IS_SYMBOL_COMPONENT, ['u'] = LEX_IS_SYMBOL_COMPONENT,
+  ['V'] = LEX_IS_SYMBOL_COMPONENT, ['v'] = LEX_IS_SYMBOL_COMPONENT,
+  ['W'] = LEX_IS_SYMBOL_COMPONENT, ['w'] = LEX_IS_SYMBOL_COMPONENT,
+  ['X'] = LEX_IS_SYMBOL_COMPONENT, ['x'] = LEX_IS_SYMBOL_COMPONENT,
+  ['Y'] = LEX_IS_SYMBOL_COMPONENT, ['y'] = LEX_IS_SYMBOL_COMPONENT,
+  ['Z'] = LEX_IS_SYMBOL_COMPONENT, ['z'] = LEX_IS_SYMBOL_COMPONENT,
+  ['0'] = LEX_IS_SYMBOL_COMPONENT,
+  ['1'] = LEX_IS_SYMBOL_COMPONENT,
+  ['2'] = LEX_IS_SYMBOL_COMPONENT,
+  ['3'] = LEX_IS_SYMBOL_COMPONENT,
+  ['4'] = LEX_IS_SYMBOL_COMPONENT,
+  ['5'] = LEX_IS_SYMBOL_COMPONENT,
+  ['6'] = LEX_IS_SYMBOL_COMPONENT,
+  ['7'] = LEX_IS_SYMBOL_COMPONENT,
+  ['8'] = LEX_IS_SYMBOL_COMPONENT,
+  ['9'] = LEX_IS_SYMBOL_COMPONENT,
+#define INIT2(n) [n] = LEX_IS_SYMBOL_COMPONENT, \
+		 [(n) + 1] = LEX_IS_SYMBOL_COMPONENT
+#define INIT4(n)    INIT2 (n),  INIT2 ((n) +  2)
+#define INIT8(n)    INIT4 (n),  INIT4 ((n) +  4)
+#define INIT16(n)   INIT8 (n),  INIT8 ((n) +  8)
+#define INIT32(n)  INIT16 (n), INIT16 ((n) + 16)
+#define INIT64(n)  INIT32 (n), INIT32 ((n) + 32)
+#define INIT128(n) INIT64 (n), INIT64 ((n) + 64)
+  INIT128 (128),
+#undef INIT128
+#undef INIT64
+#undef INIT32
+#undef INIT16
+#undef INIT8
+#undef INIT4
+#undef INIT2
+};
 
 void
 do_scrub_begin (int m68k_mri ATTRIBUTE_UNUSED)
 {
   const char *p;
-  int c;
-
-  lex[' '] = LEX_IS_WHITESPACE;
-  lex['\t'] = LEX_IS_WHITESPACE;
-  lex['\r'] = LEX_IS_WHITESPACE;
-  lex['\n'] = LEX_IS_NEWLINE;
-  lex[':'] = LEX_IS_COLON;
 
 #ifdef TC_M68K
   scrub_m68k_mri = m68k_mri;
@@ -133,11 +181,6 @@ do_scrub_begin (int m68k_mri ATTRIBUTE_UNUSED)
 
   /* Note that these override the previous defaults, e.g. if ';' is a
      comment char, then it isn't a line separator.  */
-  for (p = symbol_chars; *p; ++p)
-    lex[(unsigned char) *p] = LEX_IS_SYMBOL_COMPONENT;
-
-  for (c = 128; c < 256; ++c)
-    lex[c] = LEX_IS_SYMBOL_COMPONENT;
 
 #ifdef tc_symbol_chars
   /* This macro permits the processor to specify all characters which
@@ -156,6 +199,9 @@ do_scrub_begin (int m68k_mri ATTRIBUTE_UNUSED)
   for (p = tc_comment_chars; *p; p++)
     lex[(unsigned char) *p] = LEX_IS_COMMENT_START;
 
+  /* While counter intuitive to have more special purpose line comment chars
+     override more general purpose ordinary ones, logic in do_scrub_chars()
+     depends on this ordering.   */
   for (p = line_comment_chars; *p; p++)
     lex[(unsigned char) *p] = LEX_IS_LINE_COMMENT_START;
 
@@ -172,7 +218,8 @@ do_scrub_begin (int m68k_mri ATTRIBUTE_UNUSED)
     lex[(unsigned char) *p] = LEX_IS_PARALLEL_SEPARATOR;
 #endif
 
-  /* Only allow slash-star comments if slash is not in use.
+  /* Only allow slash-star comments if slash is not in use.  Certain
+     other cases are dealt with in LEX_IS_LINE_COMMENT_START handling.
      FIXME: This isn't right.  We should always permit them.  */
   if (lex['/'] == 0)
     lex['/'] = LEX_IS_TWOCHAR_COMMENT_1ST;
@@ -345,6 +392,55 @@ process_escape (int ch)
     }
 }
 
+#define MULTIBYTE_WARN_COUNT_LIMIT 10
+static unsigned int multibyte_warn_count = 0;
+
+bool
+scan_for_multibyte_characters (const unsigned char *  start,
+			       const unsigned char *  end,
+			       bool                   warn)
+{
+  if (end <= start)
+    return false;
+
+  if (warn && multibyte_warn_count > MULTIBYTE_WARN_COUNT_LIMIT)
+    return false;
+
+  bool found = false;
+
+  while (start < end)
+    {
+      unsigned char c;
+
+      if ((c = * start++) <= 0x7f)
+	continue;
+
+      if (!warn)
+	return true;
+
+      found = true;
+
+      const char * filename;
+      unsigned int lineno;
+
+      filename = as_where (& lineno);
+      if (filename == NULL)
+	as_warn (_("multibyte character (%#x) encountered in input"), c);
+      else if (lineno == 0)
+	as_warn (_("multibyte character (%#x) encountered in %s"), c, filename);
+      else
+	as_warn (_("multibyte character (%#x) encountered in %s at or near line %u"), c, filename, lineno);
+
+      if (++ multibyte_warn_count == MULTIBYTE_WARN_COUNT_LIMIT)
+	{
+	  as_warn (_("further multibyte character warnings suppressed"));
+	  break;
+	}
+    }
+
+  return found;
+}
+
 /* This function is called to process input characters.  The GET
    parameter is used to retrieve more input characters.  GET should
    set its parameter to point to a buffer, and return the length of
@@ -357,7 +453,8 @@ process_escape (int ch)
    This is the way the old code used to work.  */
 
 size_t
-do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
+do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen,
+		bool check_multibyte)
 {
   char *to = tostart;
   char *toend = tostart + tolen;
@@ -381,11 +478,7 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	 10: After seeing whitespace in state 9 (keep white before symchar)
 	 11: After seeing a symbol character in state 0 (eg a label definition)
 	 -1: output string in out_string and go to the state in old_state
-	 -2: flush text until a '*' '/' is seen, then go to state old_state
-#ifdef TC_V850
-	 12: After seeing a dash, looking for a second dash as a start
-	     of comment.
-#endif
+	 12: no longer used
 #ifdef DOUBLEBAR_PARALLEL
 	 13: After seeing a vertical bar, looking for a second
 	     vertical bar as a parallel expression separator.
@@ -463,6 +556,11 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	return 0;
       from = input_buffer;
       fromend = from + fromlen;
+
+      if (check_multibyte)
+	(void) scan_for_multibyte_characters ((const unsigned char *) from,
+					      (const unsigned char* ) fromend,
+					      true /* Generate warnings.  */);
     }
 
   while (1)
@@ -480,43 +578,6 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	      old_state = 3;
 	    }
 	  PUT (ch);
-	  continue;
-
-	case -2:
-	  for (;;)
-	    {
-	      do
-		{
-		  ch = GET ();
-
-		  if (ch == EOF)
-		    {
-		      as_warn (_("end of file in comment"));
-		      goto fromeof;
-		    }
-
-		  if (ch == '\n')
-		    PUT ('\n');
-		}
-	      while (ch != '*');
-
-	      while ((ch = GET ()) == '*')
-		;
-
-	      if (ch == EOF)
-		{
-		  as_warn (_("end of file in comment"));
-		  goto fromeof;
-		}
-
-	      if (ch == '/')
-		break;
-
-	      UNGET (ch);
-	    }
-
-	  state = old_state;
-	  UNGET (' ');
 	  continue;
 
 	case 4:
@@ -632,6 +693,11 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	      PUT (quotechar);
 	      continue;
 
+	      /* These two are used inside macros.  */
+	    case '@':
+	    case '+':
+	      break;
+
 	    case '"':
 	    case '\\':
 	    case 'b':
@@ -671,16 +737,6 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	     line from just after the first white space.  */
 	  state = 1;
 	  PUT ('|');
-#ifdef TC_TIC6X
-	  /* "||^" is used for SPMASKed instructions.  */
-	  ch = GET ();
-	  if (ch == EOF)
-	    goto fromeof;
-	  else if (ch == '^')
-	    PUT ('^');
-	  else
-	    UNGET (ch);
-#endif
 	  continue;
 #endif
 #ifdef TC_Z80
@@ -694,6 +750,8 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	    }
 	  else
 	    {
+	      if (ch != EOF)
+		UNGET (ch);
 	      state = 9;
 	      break;
 	    }
@@ -765,7 +823,7 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	    {
 	      /* We've read the entire pseudo-op.  If this is the end
 		 of the line, go back to the beginning.  */
-	      if (IS_NEWLINE (ch))
+	      if (IS_NEWLINE (ch) || IS_LINE_SEPARATOR (ch))
 		symver_state = NULL;
 	    }
 	}
@@ -792,7 +850,7 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	  if (ch != '\0'
 	      && (*mri_state == ch
 		  || (*mri_state == ' '
-		      && lex[ch] == LEX_IS_WHITESPACE)
+		      && IS_WHITESPACE (ch))
 		  || (*mri_state == '0'
 		      && ch == '1')))
 	    {
@@ -800,8 +858,9 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	      ++mri_state;
 	    }
 	  else if (*mri_state != '\0'
-		   || (lex[ch] != LEX_IS_WHITESPACE
-		       && lex[ch] != LEX_IS_NEWLINE))
+		   || (!IS_WHITESPACE (ch)
+		       && !IS_LINE_SEPARATOR (ch)
+		       && !IS_NEWLINE (ch)))
 	    {
 	      /* We did not get the expected character, or we didn't
 		 get a valid terminating character after seeing the
@@ -873,7 +932,12 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 		}
 	    }
 #endif
+
+	  /* Prune trailing whitespace.  */
 	  if (IS_COMMENT (ch)
+	      || (IS_LINE_COMMENT (ch)
+	          && (state < 1 || strchr (tc_comment_chars, ch)))
+	      || IS_NEWLINE (ch)
 	      || IS_LINE_SEPARATOR (ch)
 	      || IS_PARALLEL_SEPARATOR (ch))
 	    {
@@ -886,6 +950,16 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 		}
 	      goto recycle;
 	    }
+#ifdef DOUBLESLASH_LINE_COMMENTS
+	  if (IS_TWOCHAR_COMMENT_1ST (ch))
+	    {
+	      ch2 = GET ();
+	      if (ch2 != EOF)
+	        UNGET (ch2);
+	      if (ch2 == '/')
+		goto recycle;
+	    }
+#endif
 
 	  /* If we're in state 2 or 11, we've seen a non-white
 	     character followed by whitespace.  If the next character
@@ -968,6 +1042,7 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	  ch2 = GET ();
 	  if (ch2 == '*')
 	    {
+	twochar_comment:
 	      for (;;)
 		{
 		  do
@@ -1032,10 +1107,12 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	      /* PUT didn't jump out.  We could just break, but we
 		 know what will happen, so optimize a bit.  */
 	      ch = GET ();
-	      old_state = 3;
+	      old_state = 9;
 	    }
-	  else if (state == 9)
-	    old_state = 3;
+	  else if (state == 3)
+	    old_state = 9;
+	  else if (state == 0)
+	    old_state = 11; /* Now seeing label definition.  */
 	  else
 	    old_state = state;
 	  state = 5;
@@ -1182,15 +1259,9 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	    {
 	      ch2 = GET ();
 	      if (ch2 == '*')
-		{
-		  old_state = 3;
-		  state = -2;
-		  break;
-		}
-	      else if (ch2 != EOF)
-		{
-		  UNGET (ch2);
-		}
+		goto twochar_comment;
+	      if (ch2 != EOF)
+		UNGET (ch2);
 	    }
 
 	  if (state == 0 || state == 1)	/* Only comment at start of line.  */
@@ -1260,14 +1331,10 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
 	     start of a line.  If this is also a normal comment
 	     character, fall through.  Otherwise treat it as a default
 	     character.  */
-	  if (strchr (tc_comment_chars, ch) == NULL
-	      && (! scrub_m68k_mri
-		  || (ch != '!' && ch != '*')))
+	  if (strchr (tc_comment_chars, ch) == NULL)
 	    goto de_fault;
 	  if (scrub_m68k_mri
-	      && (ch == '!' || ch == '*' || ch == '#')
-	      && state != 1
-	      && state != 10)
+	      && (ch == '!' || ch == '*' || ch == '#'))
 	    goto de_fault;
 	  /* Fall through.  */
 	case LEX_IS_COMMENT_START:
@@ -1480,4 +1547,17 @@ do_scrub_chars (size_t (*get) (char *, size_t), char *tostart, size_t tolen)
   if (to > tostart)
     last_char = to[-1];
   return to - tostart;
+}
+
+/* Return amount of pending input.  */
+
+size_t
+do_scrub_pending (void)
+{
+  size_t len = 0;
+  if (saved_input)
+    len += saved_input_len;
+  if (state == -1)
+    len += strlen (out_string);
+  return len;
 }

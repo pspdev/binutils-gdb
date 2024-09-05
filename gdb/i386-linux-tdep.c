@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux i386.
 
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "extract-store-integer.h"
 #include "gdbcore.h"
 #include "frame.h"
 #include "value.h"
@@ -40,6 +40,8 @@
 
 #include "i387-tdep.h"
 #include "gdbsupport/x86-xstate.h"
+#include "arch/i386-linux-tdesc.h"
+#include "arch/x86-linux-tdesc.h"
 
 /* The syscall's XML filename for i386.  */
 #define XML_SYSCALL_FILENAME_I386 "syscalls/i386-linux.xml"
@@ -54,7 +56,7 @@
    group.  Put the LINUX_ORIG_EAX register in the system group.  */
 static int
 i386_linux_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
-				struct reggroup *group)
+				const struct reggroup *group)
 {
   if (regnum == I386_LINUX_ORIG_EAX_REGNUM)
     return (group == system_reggroup
@@ -122,7 +124,7 @@ static const gdb_byte linux_sigtramp_code[] =
    start of the routine.  Otherwise, return 0.  */
 
 static CORE_ADDR
-i386_linux_sigtramp_start (struct frame_info *this_frame)
+i386_linux_sigtramp_start (const frame_info_ptr &this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
   gdb_byte buf[LINUX_SIGTRAMP_LEN];
@@ -190,7 +192,7 @@ static const gdb_byte linux_rt_sigtramp_code[] =
    start of the routine.  Otherwise, return 0.  */
 
 static CORE_ADDR
-i386_linux_rt_sigtramp_start (struct frame_info *this_frame)
+i386_linux_rt_sigtramp_start (const frame_info_ptr &this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
   gdb_byte buf[LINUX_RT_SIGTRAMP_LEN];
@@ -227,7 +229,7 @@ i386_linux_rt_sigtramp_start (struct frame_info *this_frame)
    routine.  */
 
 static int
-i386_linux_sigtramp_p (struct frame_info *this_frame)
+i386_linux_sigtramp_p (const frame_info_ptr &this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
   const char *name;
@@ -252,7 +254,7 @@ i386_linux_sigtramp_p (struct frame_info *this_frame)
 
 static int
 i386_linux_dwarf_signal_frame_p (struct gdbarch *gdbarch,
-				 struct frame_info *this_frame)
+				 const frame_info_ptr &this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
   const char *name;
@@ -275,7 +277,7 @@ i386_linux_dwarf_signal_frame_p (struct gdbarch *gdbarch,
    address of the associated sigcontext structure.  */
 
 static CORE_ADDR
-i386_linux_sigcontext_addr (struct frame_info *this_frame)
+i386_linux_sigcontext_addr (const frame_info_ptr &this_frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
@@ -386,7 +388,7 @@ i386_canonicalize_syscall (int syscall)
 
 /* Value of the sigcode in case of a boundary fault.  */
 
-#define SIG_CODE_BONDARY_FAULT 3
+#define SIG_CODE_BOUNDARY_FAULT 3
 
 /* i386 GNU/Linux implementation of the report_signal_info
    gdbarch hook.  Displays information related to MPX bound
@@ -415,13 +417,13 @@ i386_linux_report_signal_info (struct gdbarch *gdbarch, struct ui_out *uiout,
       access
 	= parse_and_eval_long ("$_siginfo._sifields._sigfault.si_addr");
     }
-  catch (const gdb_exception &exception)
+  catch (const gdb_exception_error &exception)
     {
       return;
     }
 
   /* If this is not a boundary violation just return.  */
-  if (sig_code != SIG_CODE_BONDARY_FAULT)
+  if (sig_code != SIG_CODE_BOUNDARY_FAULT)
     return;
 
   is_upper = (access > upper_bound ? 1 : 0);
@@ -466,9 +468,10 @@ i386_linux_intx80_sysenter_syscall_record (struct regcache *regcache)
 
   if (syscall_gdb < 0)
     {
-      printf_unfiltered (_("Process record and replay target doesn't "
-			   "support syscall number %s\n"), 
-			 plongest (syscall_native));
+      gdb_printf (gdb_stderr,
+		  _("Process record and replay target doesn't "
+		    "support syscall number %s\n"), 
+		  plongest (syscall_native));
       return -1;
     }
 
@@ -549,7 +552,7 @@ i386_linux_get_syscall_number_from_regcache (struct regcache *regcache)
      is stored at %eax register.  */
   regcache->cooked_read (I386_LINUX_ORIG_EAX_REGNUM, buf);
 
-  ret = extract_signed_integer (buf, 4, byte_order);
+  ret = extract_signed_integer (buf, byte_order);
 
   return ret;
 }
@@ -637,66 +640,53 @@ static int i386_linux_sc_reg_offset[] =
   0 * 4				/* %gs */
 };
 
-/* Get XSAVE extended state xcr0 from core dump.  */
+/* See i386-linux-tdep.h.  */
 
 uint64_t
-i386_linux_core_read_xcr0 (bfd *abfd)
+i386_linux_core_read_xsave_info (bfd *abfd, x86_xsave_layout &layout)
 {
   asection *xstate = bfd_get_section_by_name (abfd, ".reg-xstate");
-  uint64_t xcr0;
+  if (xstate == nullptr)
+    return 0;
 
-  if (xstate)
+  /* Check extended state size.  */
+  size_t size = bfd_section_size (xstate);
+  if (size < X86_XSTATE_AVX_SIZE)
+    return 0;
+
+  char contents[8];
+  if (! bfd_get_section_contents (abfd, xstate, contents,
+				  I386_LINUX_XSAVE_XCR0_OFFSET, 8))
     {
-      size_t size = bfd_section_size (xstate);
-
-      /* Check extended state size.  */
-      if (size < X86_XSTATE_AVX_SIZE)
-	xcr0 = X86_XSTATE_SSE_MASK;
-      else
-	{
-	  char contents[8];
-
-	  if (! bfd_get_section_contents (abfd, xstate, contents,
-					  I386_LINUX_XSAVE_XCR0_OFFSET,
-					  8))
-	    {
-	      warning (_("Couldn't read `xcr0' bytes from "
-			 "`.reg-xstate' section in core file."));
-	      return 0;
-	    }
-
-	  xcr0 = bfd_get_64 (abfd, contents);
-	}
+      warning (_("Couldn't read `xcr0' bytes from "
+		 "`.reg-xstate' section in core file."));
+      return 0;
     }
-  else
-    xcr0 = 0;
+
+  uint64_t xcr0 = bfd_get_64 (abfd, contents);
+
+  if (!i387_guess_xsave_layout (xcr0, size, layout))
+    return 0;
 
   return xcr0;
 }
 
 /* See i386-linux-tdep.h.  */
 
-const struct target_desc *
-i386_linux_read_description (uint64_t xcr0)
+bool
+i386_linux_core_read_x86_xsave_layout (struct gdbarch *gdbarch,
+				       x86_xsave_layout &layout)
 {
-  if (xcr0 == 0)
-    return NULL;
+  return i386_linux_core_read_xsave_info (current_program_space->core_bfd (),
+					  layout) != 0;
+}
 
-  static struct target_desc *i386_linux_tdescs \
-    [2/*X87*/][2/*SSE*/][2/*AVX*/][2/*MPX*/][2/*AVX512*/][2/*PKRU*/] = {};
-  struct target_desc **tdesc;
+/* See arch/x86-linux-tdesc.h.  */
 
-  tdesc = &i386_linux_tdescs[(xcr0 & X86_XSTATE_X87) ? 1 : 0]
-    [(xcr0 & X86_XSTATE_SSE) ? 1 : 0]
-    [(xcr0 & X86_XSTATE_AVX) ? 1 : 0]
-    [(xcr0 & X86_XSTATE_MPX) ? 1 : 0]
-    [(xcr0 & X86_XSTATE_AVX512) ? 1 : 0]
-    [(xcr0 & X86_XSTATE_PKRU) ? 1 : 0];
-
-  if (*tdesc == NULL)
-    *tdesc = i386_create_target_description (xcr0, true, false);
-
-  return *tdesc;
+void
+x86_linux_post_init_tdesc (target_desc *tdesc, bool is_64bit)
+{
+  /* Nothing.  */
 }
 
 /* Get Linux/x86 target description from core dump.  */
@@ -707,16 +697,18 @@ i386_linux_core_read_description (struct gdbarch *gdbarch,
 				  bfd *abfd)
 {
   /* Linux/i386.  */
-  uint64_t xcr0 = i386_linux_core_read_xcr0 (abfd);
-  const struct target_desc *tdesc = i386_linux_read_description (xcr0);
+  x86_xsave_layout layout;
+  uint64_t xcr0 = i386_linux_core_read_xsave_info (abfd, layout);
 
-  if (tdesc != NULL)
-    return tdesc;
+  if (xcr0 == 0)
+    {
+      if (bfd_get_section_by_name (abfd, ".reg-xfp") != nullptr)
+	xcr0 = X86_XSTATE_SSE_MASK;
+      else
+	xcr0 = X86_XSTATE_X87_MASK;
+    }
 
-  if (bfd_get_section_by_name (abfd, ".reg-xfp") != NULL)
-    return i386_linux_read_description (X86_XSTATE_SSE_MASK);
-  else
-    return i386_linux_read_description (X86_XSTATE_X87_MASK);
+  return i386_linux_read_description (xcr0);
 }
 
 /* Similar to i386_supply_fpregset, but use XSAVE extended state.  */
@@ -762,13 +754,13 @@ i386_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 					 void *cb_data,
 					 const struct regcache *regcache)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  i386_gdbarch_tdep *tdep = gdbarch_tdep<i386_gdbarch_tdep> (gdbarch);
 
   cb (".reg", 68, 68, &i386_gregset, NULL, cb_data);
 
-  if (tdep->xcr0 & X86_XSTATE_AVX)
-    cb (".reg-xstate", X86_XSTATE_SIZE (tdep->xcr0),
-	X86_XSTATE_SIZE (tdep->xcr0), &i386_linux_xstateregset,
+  if (tdep->xsave_layout.sizeof_xsave != 0)
+    cb (".reg-xstate", tdep->xsave_layout.sizeof_xsave,
+	tdep->xsave_layout.sizeof_xsave, &i386_linux_xstateregset,
 	"XSAVE extended state", cb_data);
   else if (tdep->xcr0 & X86_XSTATE_SSE)
     cb (".reg-xfp", 512, 512, &i386_fpregset, "extended floating-point",
@@ -824,7 +816,7 @@ i386_linux_displaced_step_copy_insn (struct gdbarch *gdbarch,
 static void
 i386_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  i386_gdbarch_tdep *tdep = gdbarch_tdep<i386_gdbarch_tdep> (gdbarch);
   const struct target_desc *tdesc = info.target_desc;
   struct tdesc_arch_data *tdesc_data = info.tdesc_data;
   const struct tdesc_feature *feature;
@@ -871,6 +863,8 @@ i386_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   tdep->sc_num_regs = ARRAY_SIZE (i386_linux_sc_reg_offset);
 
   tdep->xsave_xcr0_offset = I386_LINUX_XSAVE_XCR0_OFFSET;
+  set_gdbarch_core_read_x86_xsave_layout
+    (gdbarch, i386_linux_core_read_x86_xsave_layout);
 
   set_gdbarch_process_record (gdbarch, i386_process_record);
   set_gdbarch_process_record_signal (gdbarch, i386_linux_record_signal);
@@ -1044,7 +1038,7 @@ i386_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   /* GNU/Linux uses SVR4-style shared libraries.  */
   set_gdbarch_skip_trampoline_code (gdbarch, find_solib_trampoline_target);
   set_solib_svr4_fetch_link_map_offsets
-    (gdbarch, svr4_ilp32_fetch_link_map_offsets);
+    (gdbarch, linux_ilp32_fetch_link_map_offsets);
 
   /* GNU/Linux uses the dynamic linker included in the GNU C Library.  */
   set_gdbarch_skip_solib_resolver (gdbarch, glibc_skip_solib_resolver);

@@ -1,5 +1,5 @@
 /* sb.c - string buffer manipulation routines
-   Copyright (C) 1994-2021 Free Software Foundation, Inc.
+   Copyright (C) 1994-2024 Free Software Foundation, Inc.
 
    Written by Steve and Judy Chamberlain of Cygnus Support,
       sac@cygnus.com
@@ -111,8 +111,21 @@ sb_scrub_and_add_sb (sb *ptr, sb *s)
   sb_to_scrub = s;
   scrub_position = s->ptr;
 
-  sb_check (ptr, s->len);
-  ptr->len += do_scrub_chars (scrub_from_sb, ptr->ptr + ptr->len, s->len);
+  /* do_scrub_chars can expand text, for example when replacing
+     # 123 "filename"
+     with
+     \t.linefile 123 "filename"
+     or when replacing a 'c with the decimal ascii number for c.
+     So we loop until the input S is consumed.  */
+  while (1)
+    {
+      size_t copy = s->len - (scrub_position - s->ptr) + do_scrub_pending ();
+      if (copy == 0)
+	break;
+      sb_check (ptr, copy);
+      ptr->len += do_scrub_chars (scrub_from_sb, ptr->ptr + ptr->len,
+				  ptr->max - ptr->len, false);
+    }
 
   sb_to_scrub = 0;
   scrub_position = 0;
@@ -160,7 +173,7 @@ sb_reset (sb *ptr)
 /* Add character c to the end of the sb at ptr.  */
 
 void
-sb_add_char (sb *ptr, size_t c)
+sb_add_char (sb *ptr, char c)
 {
   sb_check (ptr, 1);
   ptr->ptr[ptr->len++] = c;

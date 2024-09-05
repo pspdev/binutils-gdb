@@ -994,23 +994,25 @@ _LT_EOF
         rm -f conftest.err libconftest.a conftest conftest.c
         rm -rf conftest.dSYM
     ])
-    case $host_os in
-    rhapsody* | darwin1.[[012]])
+    # Allow for Darwin 4-7 (macOS 10.0-10.3) although these are not expect to
+    # build without first building modern cctools / linker.
+    case $host_cpu-$host_os in
+    *-rhapsody* | *-darwin1.[[012]])
       _lt_dar_allow_undefined='${wl}-undefined ${wl}suppress' ;;
-    darwin1.*)
+    *-darwin1.*)
       _lt_dar_allow_undefined='${wl}-flat_namespace ${wl}-undefined ${wl}suppress' ;;
-    darwin*) # darwin 5.x on
-      # if running on 10.5 or later, the deployment target defaults
-      # to the OS version, if on x86, and 10.4, the deployment
-      # target defaults to 10.4. Don't you love it?
-      case ${MACOSX_DEPLOYMENT_TARGET-10.0},$host in
-	10.0,*86*-darwin8*|10.0,*-darwin[[91]]*)
-	  _lt_dar_allow_undefined='${wl}-undefined ${wl}dynamic_lookup' ;;
+    *-darwin*)
+      # darwin 5.x (macOS 10.1) onwards we only need to adjust when the
+      # deployment target is forced to an earlier version.
+      case ${MACOSX_DEPLOYMENT_TARGET-UNSET},$host in
+	UNSET,*-darwin[[89]]*|UNSET,*-darwin[[12]][[0123456789]]*)
+	  ;;
 	10.[[012]][[,.]]*)
-	  _lt_dar_allow_undefined='${wl}-flat_namespace ${wl}-undefined ${wl}suppress' ;;
-	10.*)
-	  _lt_dar_allow_undefined='${wl}-undefined ${wl}dynamic_lookup' ;;
-      esac
+	  _lt_dar_allow_undefined='${wl}-flat_namespace ${wl}-undefined ${wl}suppress'
+	  ;;
+	*)
+	  ;;
+     esac
     ;;
   esac
     if test "$lt_cv_apple_cc_single_mod" = "yes"; then
@@ -1033,7 +1035,7 @@ _LT_EOF
 
 # _LT_DARWIN_LINKER_FEATURES
 # --------------------------
-# Checks for linker and compiler features on darwin
+# Checks for linker and compiler features on Darwin / macOS / iOS
 m4_defun([_LT_DARWIN_LINKER_FEATURES],
 [
   m4_require([_LT_REQUIRED_DARWIN_CHECKS])
@@ -2362,7 +2364,7 @@ haiku*)
   soname_spec='${libname}${release}${shared_ext}$major'
   shlibpath_var=LIBRARY_PATH
   shlibpath_overrides_runpath=yes
-  sys_lib_dlsearch_path_spec='/boot/home/config/lib /boot/common/lib /boot/beos/system/lib'
+  sys_lib_dlsearch_path_spec='/boot/home/config/lib /boot/common/lib /boot/system/lib'
   hardcode_into_libs=yes
   ;;
 
@@ -2469,7 +2471,12 @@ linux*oldld* | linux*aout* | linux*coff*)
   ;;
 
 # This must be Linux ELF.
-linux* | k*bsd*-gnu | kopensolaris*-gnu | gnu*)
+
+# uclinux* changes (here and below) have been submitted to the libtool
+# project, but have not yet been accepted: they are GCC-local changes
+# for the time being.  (See
+# https://lists.gnu.org/archive/html/libtool-patches/2018-05/msg00000.html)
+linux* | k*bsd*-gnu | kopensolaris*-gnu | gnu* | uclinuxfdpiceabi)
   version_type=linux
   need_lib_prefix=no
   need_version=no
@@ -2698,6 +2705,25 @@ uts4*)
   shlibpath_var=LD_LIBRARY_PATH
   ;;
 
+# Shared libraries for VwWorks, >= 7 only at this stage
+# and (fpic) still incompatible with "large" code models
+# in a few configurations. Only for RTP mode in any case,
+# and upon explicit request at configure time.
+vxworks7*)
+  dynamic_linker=no
+  case ${with_multisubdir}-${enable_shared} in
+    *large*)
+      ;;
+    *mrtp*-yes)
+      version_type=linux
+      need_lib_prefix=no
+      need_version=no
+      library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}$major $libname${shared_ext}'
+      soname_spec='${libname}${release}${shared_ext}$major'
+      dynamic_linker="$host_os module_loader"
+      ;;
+  esac
+  ;;
 *)
   dynamic_linker=no
   ;;
@@ -3109,7 +3135,7 @@ irix5* | irix6* | nonstopux*)
   ;;
 
 # This must be Linux ELF.
-linux* | k*bsd*-gnu | kopensolaris*-gnu)
+linux* | k*bsd*-gnu | kopensolaris*-gnu | uclinuxfdpiceabi)
   lt_cv_deplibs_check_method=pass_all
   ;;
 
@@ -3185,6 +3211,11 @@ sysv4 | sysv4.3*)
 tpf*)
   lt_cv_deplibs_check_method=pass_all
   ;;
+vxworks*)
+  # Assume VxWorks cross toolchains are built on Linux, possibly
+  # as canadian for Windows hosts.
+  lt_cv_deplibs_check_method=pass_all
+  ;;
 esac
 ])
 file_magic_cmd=$lt_cv_file_magic_cmd
@@ -3200,53 +3231,61 @@ _LT_DECL([], [file_magic_cmd], [1],
 
 # LT_PATH_NM
 # ----------
-# find the pathname to a BSD- or MS-compatible name lister
+# find the pathname to a BSD- or MS-compatible name lister, and any flags
+# needed to make it compatible
 AC_DEFUN([LT_PATH_NM],
 [AC_REQUIRE([AC_PROG_CC])dnl
 AC_CACHE_CHECK([for BSD- or MS-compatible name lister (nm)], lt_cv_path_NM,
 [if test -n "$NM"; then
-  # Let the user override the test.
-  lt_cv_path_NM="$NM"
-else
-  lt_nm_to_check="${ac_tool_prefix}nm"
-  if test -n "$ac_tool_prefix" && test "$build" = "$host"; then
-    lt_nm_to_check="$lt_nm_to_check nm"
-  fi
-  for lt_tmp_nm in $lt_nm_to_check; do
-    lt_save_ifs="$IFS"; IFS=$PATH_SEPARATOR
-    for ac_dir in $PATH /usr/ccs/bin/elf /usr/ccs/bin /usr/ucb /bin; do
-      IFS="$lt_save_ifs"
-      test -z "$ac_dir" && ac_dir=.
-      tmp_nm="$ac_dir/$lt_tmp_nm"
-      if test -f "$tmp_nm" || test -f "$tmp_nm$ac_exeext" ; then
-	# Check to see if the nm accepts a BSD-compat flag.
-	# Adding the `sed 1q' prevents false positives on HP-UX, which says:
-	#   nm: unknown option "B" ignored
-	# Tru64's nm complains that /dev/null is an invalid object file
-	case `"$tmp_nm" -B /dev/null 2>&1 | sed '1q'` in
-	*/dev/null* | *'Invalid file or object type'*)
-	  lt_cv_path_NM="$tmp_nm -B"
-	  break
-	  ;;
-	*)
-	  case `"$tmp_nm" -p /dev/null 2>&1 | sed '1q'` in
-	  */dev/null*)
-	    lt_cv_path_NM="$tmp_nm -p"
-	    break
-	    ;;
-	  *)
-	    lt_cv_path_NM=${lt_cv_path_NM="$tmp_nm"} # keep the first match, but
-	    continue # so that we can try to find one that supports BSD flags
-	    ;;
-	  esac
-	  ;;
-	esac
-      fi
-    done
-    IFS="$lt_save_ifs"
-  done
-  : ${lt_cv_path_NM=no}
-fi])
+   # Let the user override the nm to test.
+   lt_nm_to_check="$NM"
+ else
+   lt_nm_to_check="${ac_tool_prefix}nm"
+   if test -n "$ac_tool_prefix" && test "$build" = "$host"; then
+     lt_nm_to_check="$lt_nm_to_check nm"
+   fi
+ fi
+ for lt_tmp_nm in "$lt_nm_to_check"; do
+   lt_save_ifs="$IFS"; IFS=$PATH_SEPARATOR
+   for ac_dir in $PATH /usr/ccs/bin/elf /usr/ccs/bin /usr/ucb /bin; do
+     IFS="$lt_save_ifs"
+     test -z "$ac_dir" && ac_dir=.
+     # Strip out any user-provided options from the nm to test twice,
+     # the first time to test to see if nm (rather than its options) has
+     # an explicit path, the second time to yield a file which can be
+     # nm'ed itself.
+     tmp_nm_path="`$ECHO "$lt_tmp_nm" | sed 's, -.*$,,'`"
+     case "$tmp_nm_path" in
+     */*|*\\*) tmp_nm="$lt_tmp_nm";;
+     *) tmp_nm="$ac_dir/$lt_tmp_nm";;
+     esac
+     tmp_nm_to_nm="`$ECHO "$tmp_nm" | sed 's, -.*$,,'`"
+     if test -f "$tmp_nm_to_nm" || test -f "$tmp_nm_to_nm$ac_exeext" ; then
+       # Check to see if the nm accepts a BSD-compat flag.
+       # Adding the `sed 1q' prevents false positives on HP-UX, which says:
+       #   nm: unknown option "B" ignored
+       case `"$tmp_nm" -B "$tmp_nm_to_nm" 2>&1 | grep -v '^ *$' | sed '1q'` in
+       *$tmp_nm*) lt_cv_path_NM="$tmp_nm -B"
+	 break
+	 ;;
+       *)
+	 case `"$tmp_nm" -p "$tmp_nm_to_nm" 2>&1 | grep -v '^ *$' | sed '1q'` in
+	 *$tmp_nm*)
+	   lt_cv_path_NM="$tmp_nm -p"
+	   break
+	   ;;
+	 *)
+	   lt_cv_path_NM=${lt_cv_path_NM="$tmp_nm"} # keep the first match, but
+	   continue # so that we can try to find one that supports BSD flags
+	   ;;
+	 esac
+	 ;;
+       esac
+     fi
+   done
+   IFS="$lt_save_ifs"
+ done
+ : ${lt_cv_path_NM=no}])
 if test "$lt_cv_path_NM" != "no"; then
   NM="$lt_cv_path_NM"
 else
@@ -3395,7 +3434,7 @@ osf*)
   symcode='[[BCDEGQRST]]'
   ;;
 solaris*)
-  symcode='[[BDRT]]'
+  symcode='[[BCDRT]]'
   ;;
 sco3.2v5*)
   symcode='[[DT]]'
@@ -4469,7 +4508,7 @@ _LT_EOF
       _LT_TAGVAR(archive_expsym_cmds, $1)='sed "s,^,_," $export_symbols >$output_objdir/$soname.expsym~$CC -shared $pic_flag $libobjs $deplibs $compiler_flags ${wl}-h,$soname ${wl}--retain-symbols-file,$output_objdir/$soname.expsym ${wl}--image-base,`expr ${RANDOM-$$} % 4096 / 2 \* 262144 + 1342177280` -o $lib'
       ;;
 
-    gnu* | linux* | tpf* | k*bsd*-gnu | kopensolaris*-gnu)
+    gnu* | linux* | tpf* | k*bsd*-gnu | kopensolaris*-gnu | uclinuxfdpiceabi)
       tmp_diet=no
       if test "$host_os" = linux-dietlibc; then
 	case $cc_basename in
@@ -4893,7 +4932,7 @@ _LT_EOF
       if test "$GCC" = yes && test "$with_gnu_ld" = no; then
 	case $host_cpu in
 	hppa*64*)
-	  _LT_TAGVAR(archive_cmds, $1)='$CC -shared ${wl}+h ${wl}$soname -o $lib $libobjs $deplibs $compiler_flags'
+	  _LT_TAGVAR(archive_cmds, $1)='$CC -shared ${wl}+h ${wl}$soname ${wl}+nodefaultrpath -o $lib $libobjs $deplibs $compiler_flags'
 	  ;;
 	ia64*)
 	  _LT_TAGVAR(archive_cmds, $1)='$CC -shared -fPIC ${wl}+h ${wl}$soname ${wl}+nodefaultrpath -o $lib $libobjs $deplibs $compiler_flags'
@@ -4905,7 +4944,7 @@ _LT_EOF
       else
 	case $host_cpu in
 	hppa*64*)
-	  _LT_TAGVAR(archive_cmds, $1)='$CC -b ${wl}+h ${wl}$soname -o $lib $libobjs $deplibs $compiler_flags'
+	  _LT_TAGVAR(archive_cmds, $1)='$CC -b ${wl}+h ${wl}$soname ${wl}+nodefaultrpath -o $lib $libobjs $deplibs $compiler_flags'
 	  ;;
 	ia64*)
 	  _LT_TAGVAR(archive_cmds, $1)='$CC -b ${wl}+h ${wl}$soname ${wl}+nodefaultrpath -o $lib $libobjs $deplibs $compiler_flags'
@@ -5882,7 +5921,7 @@ if test "$_lt_caught_CXX_error" != yes; then
           aCC*)
 	    case $host_cpu in
 	      hppa*64*)
-	        _LT_TAGVAR(archive_cmds, $1)='$CC -b ${wl}+h ${wl}$soname -o $lib $predep_objects $libobjs $deplibs $postdep_objects $compiler_flags'
+	        _LT_TAGVAR(archive_cmds, $1)='$CC -b ${wl}+h ${wl}$soname ${wl}+nodefaultrpath -o $lib $predep_objects $libobjs $deplibs $postdep_objects $compiler_flags'
 	        ;;
 	      ia64*)
 	        _LT_TAGVAR(archive_cmds, $1)='$CC -b ${wl}+h ${wl}$soname ${wl}+nodefaultrpath -o $lib $predep_objects $libobjs $deplibs $postdep_objects $compiler_flags'
@@ -5906,7 +5945,7 @@ if test "$_lt_caught_CXX_error" != yes; then
 	      if test $with_gnu_ld = no; then
 	        case $host_cpu in
 	          hppa*64*)
-	            _LT_TAGVAR(archive_cmds, $1)='$CC -shared -nostdlib -fPIC ${wl}+h ${wl}$soname -o $lib $predep_objects $libobjs $deplibs $postdep_objects $compiler_flags'
+	            _LT_TAGVAR(archive_cmds, $1)='$CC -shared -nostdlib -fPIC ${wl}+h ${wl}$soname ${wl}+nodefaultrpath -o $lib $predep_objects $libobjs $deplibs $postdep_objects $compiler_flags'
 	            ;;
 	          ia64*)
 	            _LT_TAGVAR(archive_cmds, $1)='$CC -shared -nostdlib -fPIC ${wl}+h ${wl}$soname ${wl}+nodefaultrpath -o $lib $predep_objects $libobjs $deplibs $postdep_objects $compiler_flags'
@@ -6025,20 +6064,20 @@ if test "$_lt_caught_CXX_error" != yes; then
 	      _LT_TAGVAR(prelink_cmds, $1)='tpldir=Template.dir~
 		rm -rf $tpldir~
 		$CC --prelink_objects --instantiation_dir $tpldir $objs $libobjs $compile_deplibs~
-		compile_command="$compile_command `find $tpldir -name \*.o | $NL2SP`"'
+		compile_command="$compile_command `find $tpldir -name \*.o | sort | $NL2SP`"'
 	      _LT_TAGVAR(old_archive_cmds, $1)='tpldir=Template.dir~
 		rm -rf $tpldir~
 		$CC --prelink_objects --instantiation_dir $tpldir $oldobjs$old_deplibs~
-		$AR $AR_FLAGS $oldlib$oldobjs$old_deplibs `find $tpldir -name \*.o | $NL2SP`~
+		$AR $AR_FLAGS $oldlib$oldobjs$old_deplibs `find $tpldir -name \*.o | sort | $NL2SP`~
 		$RANLIB $oldlib'
 	      _LT_TAGVAR(archive_cmds, $1)='tpldir=Template.dir~
 		rm -rf $tpldir~
 		$CC --prelink_objects --instantiation_dir $tpldir $predep_objects $libobjs $deplibs $convenience $postdep_objects~
-		$CC -shared $pic_flag $predep_objects $libobjs $deplibs `find $tpldir -name \*.o | $NL2SP` $postdep_objects $compiler_flags ${wl}-soname ${wl}$soname -o $lib'
+		$CC -shared $pic_flag $predep_objects $libobjs $deplibs `find $tpldir -name \*.o | sort | $NL2SP` $postdep_objects $compiler_flags ${wl}-soname ${wl}$soname -o $lib'
 	      _LT_TAGVAR(archive_expsym_cmds, $1)='tpldir=Template.dir~
 		rm -rf $tpldir~
 		$CC --prelink_objects --instantiation_dir $tpldir $predep_objects $libobjs $deplibs $convenience $postdep_objects~
-		$CC -shared $pic_flag $predep_objects $libobjs $deplibs `find $tpldir -name \*.o | $NL2SP` $postdep_objects $compiler_flags ${wl}-soname ${wl}$soname ${wl}-retain-symbols-file ${wl}$export_symbols -o $lib'
+		$CC -shared $pic_flag $predep_objects $libobjs $deplibs `find $tpldir -name \*.o | sort | $NL2SP` $postdep_objects $compiler_flags ${wl}-soname ${wl}$soname ${wl}-retain-symbols-file ${wl}$export_symbols -o $lib'
 	      ;;
 	    *) # Version 6 and above use weak symbols
 	      _LT_TAGVAR(archive_cmds, $1)='$CC -shared $pic_flag $predep_objects $libobjs $deplibs $postdep_objects $compiler_flags ${wl}-soname ${wl}$soname -o $lib'
@@ -6419,8 +6458,9 @@ if test "$_lt_caught_CXX_error" != yes; then
         ;;
 
       vxworks*)
-        # FIXME: insert proper C++ library support
-        _LT_TAGVAR(ld_shlibs, $1)=no
+        # For VxWorks ports, we assume the use of a GNU linker with
+        # standard elf conventions.
+        _LT_TAGVAR(ld_shlibs, $1)=yes
         ;;
 
       *)

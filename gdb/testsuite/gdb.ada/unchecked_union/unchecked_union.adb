@@ -1,4 +1,4 @@
---  Copyright 2019-2021 Free Software Foundation, Inc.
+--  Copyright 2019-2024 Free Software Foundation, Inc.
 --
 --  This program is free software; you can redistribute it and/or modify
 --  it under the terms of the GNU General Public License as published by
@@ -16,15 +16,19 @@
 with System;
 with Pck; use Pck;
 
-procedure Foo is
-   type Key is (Alpha, Omega);
+procedure Unchecked_Union is
+   type Key is (Alpha, Beta, Omega);
 
    type Inner(Disc : Key := Omega) is record
       case Disc is
          when Alpha =>
             Small : Integer range 0..255;
+            Second : Integer range 0..255;
+         when Beta =>
+            Bval : Integer range 0..255;
          when others =>
             Large : Integer range 255..510;
+            More : Integer range 255..510;
       end case;
    end record;
    pragma Unchecked_Union (Inner);
@@ -48,4 +52,4 @@ procedure Foo is
 
 begin
    Do_Nothing (Value'Address);          -- BREAK
-end Foo;
+end Unchecked_Union;

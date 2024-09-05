@@ -1,6 +1,6 @@
 /* Fortran language support definitions for GDB, the GNU debugger.
 
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2024 Free Software Foundation, Inc.
 
    Contributed by Motorola.  Adapted from the C definitions by Farooq Butt
    (fmbutt@engage.sps.mot.com).
@@ -23,6 +23,7 @@
 #ifndef F_LANG_H
 #define F_LANG_H
 
+#include "language.h"
 #include "valprint.h"
 
 struct type_print_options;
@@ -59,6 +60,12 @@ public:
   }
 
   /* See language.h.  */
+  void print_array_index (struct type *index_type,
+			  LONGEST index,
+			  struct ui_file *stream,
+			  const value_print_options *options) const override;
+
+  /* See language.h.  */
   void language_arch_info (struct gdbarch *gdbarch,
 			   struct language_arch_info *lai) const override;
 
@@ -67,7 +74,8 @@ public:
 
   /* See language.h.  */
 
-  char *demangle_symbol (const char *mangled, int options) const override
+  gdb::unique_xmalloc_ptr<char> demangle_symbol (const char *mangled,
+						 int options) const override
   {
       /* We could support demangling here to provide module namespaces
 	 also for inferiors with only minimal symbol table (ELF symbols).
@@ -132,9 +140,17 @@ public:
 
   /* See language.h.  */
 
+  struct block_symbol lookup_symbol_local
+       (const char *scope,
+	const char *name,
+	const struct block *block,
+	const domain_search_flags domain) const override;
+
+  /* See language.h.  */
+
   struct block_symbol lookup_symbol_nonlocal
 	(const char *name, const struct block *block,
-	 const domain_enum domain) const override;
+	 const domain_search_flags domain) const override;
 
   /* See language.h.  */
 
@@ -154,9 +170,9 @@ public:
   void printchar (int ch, struct type *chtype,
 		  struct ui_file *stream) const override
   {
-    fputs_filtered ("'", stream);
+    gdb_puts ("'", stream);
     emitchar (ch, chtype, stream, '\'');
-    fputs_filtered ("'", stream);
+    gdb_puts ("'", stream);
   }
 
   /* See language.h.  */
@@ -168,8 +184,8 @@ public:
   {
     const char *type_encoding = get_encoding (elttype);
 
-    if (TYPE_LENGTH (elttype) == 4)
-      fputs_filtered ("4_", stream);
+    if (elttype->length () == 4)
+      gdb_puts ("4_", stream);
 
     if (!encoding || !*encoding)
       encoding = type_encoding;
@@ -190,8 +206,13 @@ public:
     type = check_typedef (type);
     return (type->code () == TYPE_CODE_STRING
 	    || (type->code () == TYPE_CODE_ARRAY
-		&& TYPE_TARGET_TYPE (type)->code () == TYPE_CODE_CHAR));
+		&& type->target_type ()->code () == TYPE_CODE_CHAR));
   }
+
+  /* See language.h.  */
+
+  struct value *value_string (struct gdbarch *gdbarch,
+			      const char *ptr, ssize_t len) const override;
 
   /* See language.h.  */
 
@@ -259,6 +280,17 @@ private:
 				    int arrayprint_recurse_level,
 				    bool print_rank_only) const;
 
+  /* If TYPE is an extended type, then print out derivation information.
+
+     A typical output could look like this:
+     "Type, extends(point) :: waypoint"
+     "    Type point :: point"
+     "    real(kind=4) :: angle"
+     "End Type waypoint".  */
+
+  void f_type_print_derivation_info (struct type *type,
+				     struct ui_file *stream) const;
+
   /* Print the name of the type (or the ultimate pointer target, function
      value or array element), or the description of a structure or union.
 
@@ -299,21 +331,22 @@ extern int calc_f77_array_dims (struct type *);
 
 struct builtin_f_type
 {
-  struct type *builtin_character;
-  struct type *builtin_integer;
-  struct type *builtin_integer_s2;
-  struct type *builtin_integer_s8;
-  struct type *builtin_logical;
-  struct type *builtin_logical_s1;
-  struct type *builtin_logical_s2;
-  struct type *builtin_logical_s8;
-  struct type *builtin_real;
-  struct type *builtin_real_s8;
-  struct type *builtin_real_s16;
-  struct type *builtin_complex_s8;
-  struct type *builtin_complex_s16;
-  struct type *builtin_complex_s32;
-  struct type *builtin_void;
+  struct type *builtin_character = nullptr;
+  struct type *builtin_integer_s1 = nullptr;
+  struct type *builtin_integer_s2 = nullptr;
+  struct type *builtin_integer = nullptr;
+  struct type *builtin_integer_s8 = nullptr;
+  struct type *builtin_logical_s1 = nullptr;
+  struct type *builtin_logical_s2 = nullptr;
+  struct type *builtin_logical = nullptr;
+  struct type *builtin_logical_s8 = nullptr;
+  struct type *builtin_real = nullptr;
+  struct type *builtin_real_s8 = nullptr;
+  struct type *builtin_real_s16 = nullptr;
+  struct type *builtin_complex = nullptr;
+  struct type *builtin_complex_s8 = nullptr;
+  struct type *builtin_complex_s16 = nullptr;
+  struct type *builtin_void = nullptr;
 };
 
 /* Return the Fortran type table for the specified architecture.  */

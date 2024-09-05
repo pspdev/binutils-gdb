@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 dnl
-dnl   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+dnl   Copyright (C) 2012-2024 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -18,15 +18,15 @@ dnl <http://www.gnu.org/licenses/>.
 dnl
 
 m4_include([../bfd/version.m4])
-AC_INIT([opcodes], BFD_VERSION)
+AC_INIT([opcodes], [BFD_VERSION])
 AC_CONFIG_SRCDIR([z8k-dis.c])
 
 AC_CANONICAL_TARGET
 
 AM_INIT_AUTOMAKE
+AM_SILENT_RULES([yes])
 
 AC_PROG_CC
-AC_GNU_SOURCE
 AC_USE_SYSTEM_EXTENSIONS
 
 dnl These must be called before LT_INIT, because it may want
@@ -92,6 +92,7 @@ AM_PO_SUBDIRS
 . ${srcdir}/../bfd/configure.host
 
 BFD_CC_FOR_BUILD
+BFD_64_BIT
 
 AC_SUBST(HDEFINES)
 AC_PROG_INSTALL
@@ -110,7 +111,10 @@ if test $bfd_cv_func_sigsetjmp = yes; then
 fi
 
 cgen_maint=no
-cgendir='$(srcdir)/../cgen'
+cgendir='$(srcdir)/../../cgen'
+if test -r ${srcdir}/../cgen/iformat.scm; then
+    cgendir='$(srcdir)/../cgen'
+fi
 
 AC_ARG_ENABLE(cgen-maint,
 [  --enable-cgen-maint[=dir]    build cgen generated files],
@@ -185,7 +189,7 @@ changequote([,])dnl
   fi
 fi
 
-SHARED_LIBADD="$SHARED_LIBADD $LIBINTL"
+SHARED_LIBADD="$SHARED_LIBADD $LTLIBINTL"
 
 if test "$enable_shared" = "yes"; then
   case "${host}" in
@@ -193,19 +197,8 @@ if test "$enable_shared" = "yes"; then
       SHARED_LDFLAGS="-no-undefined"
       SHARED_LIBADD="-L`pwd`/../bfd -lbfd -L`pwd`/../libiberty -liberty $SHARED_LIBADD"
       ;;
-   *-*-darwin*)
-     SHARED_LIBADD="-Wl,`pwd`/../bfd/.libs/libbfd.dylib ${SHARED_LIBADD}"
-     SHARED_DEPENDENCIES="../bfd/libbfd.la"
-     ;;
     *)
-      case "$host_vendor" in
-        hp)
-          SHARED_LIBADD="-Wl,`pwd`/../bfd/.libs/libbfd.sl ${SHARED_LIBADD}"
-	  ;;
-	*)
-          SHARED_LIBADD="-Wl,`pwd`/../bfd/.libs/libbfd.so ${SHARED_LIBADD}"
-	  ;;
-      esac
+      SHARED_LIBADD="../bfd/libbfd.la ${SHARED_LIBADD}"
       SHARED_DEPENDENCIES="../bfd/libbfd.la"
       ;;
   esac
@@ -272,6 +265,7 @@ if test x${all_targets} = xfalse ; then
 	case "$arch" in
 	bfd_aarch64_arch)	ta="$ta aarch64-asm.lo aarch64-dis.lo aarch64-opc.lo aarch64-asm-2.lo aarch64-dis-2.lo aarch64-opc-2.lo" ;;
 	bfd_alpha_arch)		ta="$ta alpha-dis.lo alpha-opc.lo" ;;
+	bfd_amdgcn_arch)	;;
 	bfd_arc_arch)		ta="$ta arc-dis.lo arc-opc.lo arc-ext.lo" ;;
 	bfd_arm_arch)		ta="$ta arm-dis.lo" ;;
 	bfd_avr_arch)		ta="$ta avr-dis.lo" ;;
@@ -289,12 +283,13 @@ if test x${all_targets} = xfalse ; then
 	bfd_moxie_arch)		ta="$ta moxie-dis.lo moxie-opc.lo" ;;
 	bfd_h8300_arch)		ta="$ta h8300-dis.lo" ;;
 	bfd_hppa_arch)		ta="$ta hppa-dis.lo" ;;
-	bfd_i386_arch|bfd_iamcu_arch|bfd_l1om_arch|bfd_k1om_arch)
-				ta="$ta i386-dis.lo i386-opc.lo" ;;
+	bfd_i386_arch|bfd_iamcu_arch)
+				ta="$ta i386-dis.lo" ;;
 	bfd_ia64_arch)		ta="$ta ia64-dis.lo ia64-opc.lo" ;;
 	bfd_ip2k_arch)		ta="$ta ip2k-asm.lo ip2k-desc.lo ip2k-dis.lo ip2k-ibld.lo ip2k-opc.lo" using_cgen=yes ;;
 	bfd_epiphany_arch)	ta="$ta epiphany-asm.lo epiphany-desc.lo epiphany-dis.lo epiphany-ibld.lo epiphany-opc.lo" using_cgen=yes ;;
 	bfd_iq2000_arch)	ta="$ta iq2000-asm.lo iq2000-desc.lo iq2000-dis.lo iq2000-ibld.lo iq2000-opc.lo" using_cgen=yes ;;
+	bfd_kvx_arch)		ta="$ta kvx-opc.lo kvx-dis.lo" ;;
 	bfd_lm32_arch)		ta="$ta lm32-asm.lo lm32-desc.lo lm32-dis.lo lm32-ibld.lo lm32-opc.lo lm32-opinst.lo" using_cgen=yes ;;
 	bfd_m32c_arch)		ta="$ta m32c-asm.lo m32c-desc.lo m32c-dis.lo m32c-ibld.lo m32c-opc.lo" using_cgen=yes ;;
 	bfd_m32r_arch)		ta="$ta m32r-asm.lo m32r-desc.lo m32r-dis.lo m32r-ibld.lo m32r-opc.lo m32r-opinst.lo" using_cgen=yes ;;
@@ -348,13 +343,13 @@ if test x${all_targets} = xfalse ; then
 	bfd_vax_arch)		ta="$ta vax-dis.lo" ;;
 	bfd_visium_arch)	ta="$ta visium-dis.lo visium-opc.lo" ;;
         bfd_wasm32_arch)        ta="$ta wasm32-dis.lo" ;;
-	bfd_xc16x_arch)		ta="$ta xc16x-asm.lo xc16x-desc.lo xc16x-dis.lo xc16x-ibld.lo xc16x-opc.lo" using_cgen=yes ;;
 	bfd_xgate_arch)		ta="$ta xgate-dis.lo xgate-opc.lo" ;;
 	bfd_xstormy16_arch)	ta="$ta xstormy16-asm.lo xstormy16-desc.lo xstormy16-dis.lo xstormy16-ibld.lo xstormy16-opc.lo" using_cgen=yes ;;
 	bfd_xtensa_arch)	ta="$ta xtensa-dis.lo" ;;
 	bfd_z80_arch)		ta="$ta z80-dis.lo" ;;
 	bfd_z8k_arch)		ta="$ta z8k-dis.lo" ;;
-	bfd_bpf_arch)		ta="$ta bpf-asm.lo bpf-desc.lo bpf-dis.lo bpf-ibld.lo bpf-opc.lo" using_cgen=yes ;;
+	bfd_bpf_arch)		ta="$ta bpf-dis.lo bpf-opc.lo" ;;
+	bfd_loongarch_arch)	ta="$ta loongarch-dis.lo loongarch-opc.lo loongarch-coder.lo" ;;
 
 	"")			;;
 	*)		AC_MSG_ERROR(*** unknown target architecture $arch) ;;
@@ -389,7 +384,11 @@ if test x${all_targets} = xfalse ; then
 
 else	# all_targets is true
     archdefs=-DARCH_all
-    BFD_MACHINES='$(ALL_MACHINES)'
+    if test "$enable_64_bit_bfd" = "yes" ; then
+	BFD_MACHINES='$(ALL32_MACHINES) $(ALL64_MACHINES)'
+    else
+	BFD_MACHINES='$(ALL32_MACHINES)'
+    fi
 fi
 
 AC_SUBST(archdefs)

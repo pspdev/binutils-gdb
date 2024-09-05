@@ -1,6 +1,6 @@
 /* GNU/Linux/aarch64 specific target description, for the remote server
    for GDB.
-   Copyright (C) 2017-2021 Free Software Foundation, Inc.
+   Copyright (C) 2017-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "server.h"
 
 #include "linux-aarch64-tdesc.h"
 
@@ -25,35 +24,56 @@
 #include "arch/aarch64.h"
 #include "linux-aarch32-low.h"
 #include <inttypes.h>
-
-/* All possible aarch64 target descriptors.  */
-struct target_desc *tdesc_aarch64_list[AARCH64_MAX_SVE_VQ + 1][2/*pauth*/][2 /* mte */];
+#include <unordered_map>
 
 /* Create the aarch64 target description.  */
 
 const target_desc *
-aarch64_linux_read_description (uint64_t vq, bool pauth_p, bool mte_p)
+aarch64_linux_read_description (const aarch64_features &features)
 {
-  if (vq > AARCH64_MAX_SVE_VQ)
-    error (_("VQ is %" PRIu64 ", maximum supported value is %d"), vq,
+  /* All possible aarch64 target descriptors.  This map must live within
+     this function as the in-process-agent calls this function from a
+     constructor function, when globals might not yet have been
+     initialised.  */
+  static std::unordered_map<aarch64_features, target_desc *> tdesc_aarch64_map;
+
+  if (features.vq > AARCH64_MAX_SVE_VQ)
+    error (_("VQ is %" PRIu64 ", maximum supported value is %d"), features.vq,
 	   AARCH64_MAX_SVE_VQ);
 
-  struct target_desc *tdesc = tdesc_aarch64_list[vq][pauth_p][mte_p];
+  if (features.svq > AARCH64_MAX_SVE_VQ)
+    error (_("Streaming svq is %" PRIu8 ", maximum supported value is %d"),
+	   features.svq,
+	   AARCH64_MAX_SVE_VQ);
+
+  struct target_desc *tdesc = tdesc_aarch64_map[features];
 
   if (tdesc == NULL)
     {
-      tdesc = aarch64_create_target_description (vq, pauth_p, mte_p);
+      tdesc = aarch64_create_target_description (features);
 
-      static const char *expedite_regs_aarch64[] = { "x29", "sp", "pc", NULL };
-      static const char *expedite_regs_aarch64_sve[] = { "x29", "sp", "pc",
-							 "vg", NULL };
+      /* Configure the expedited registers.  By default we include x29, sp
+	 and pc, but we allow for up to 6 pointers as this is (currently)
+	 the most that we push.
 
-      if (vq == 0)
-	init_target_desc (tdesc, expedite_regs_aarch64);
-      else
-	init_target_desc (tdesc, expedite_regs_aarch64_sve);
+	 Calling init_target_desc takes a copy of all the strings pointed
+	 to by expedited_registers so this vector only needs to live for
+	 the scope of this function.  */
+      std::vector<const char *> expedited_registers (6);
+      expedited_registers.push_back ("x29");
+      expedited_registers.push_back ("sp");
+      expedited_registers.push_back ("pc");
 
-      tdesc_aarch64_list[vq][pauth_p][mte_p] = tdesc;
+      if (features.vq > 0)
+	expedited_registers.push_back ("vg");
+      if (features.svq > 0)
+	expedited_registers.push_back ("svg");
+
+      expedited_registers.push_back (nullptr);
+
+      init_target_desc (tdesc, (const char **) expedited_registers.data ());
+
+      tdesc_aarch64_map[features] = tdesc;
     }
 
   return tdesc;

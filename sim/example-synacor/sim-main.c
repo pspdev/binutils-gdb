@@ -1,6 +1,6 @@
 /* Example synacor simulator.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
    Contributed by Mike Frysinger.
 
    This file is part of simulators.
@@ -26,24 +26,27 @@
 
 #include "sim-main.h"
 #include "sim-signal.h"
+
+#include "example-synacor-sim.h"
 
 /* Get the register number from the number.  */
-static unsigned16
-register_num (SIM_CPU *cpu, unsigned16 num)
+static uint16_t
+register_num (SIM_CPU *cpu, uint16_t num)
 {
   SIM_DESC sd = CPU_STATE (cpu);
 
   if (num < 0x8000 || num >= 0x8008)
-    sim_engine_halt (sd, cpu, NULL, cpu->pc, sim_signalled, SIM_SIGILL);
+    sim_engine_halt (sd, cpu, NULL, sim_pc_get (cpu), sim_signalled, SIM_SIGILL);
 
   return num & 0xf;
 }
 
 /* Helper to process immediates according to the ISA.  */
-static unsigned16
-interp_num (SIM_CPU *cpu, unsigned16 num)
+static uint16_t
+interp_num (SIM_CPU *cpu, uint16_t num)
 {
   SIM_DESC sd = CPU_STATE (cpu);
+  struct example_sim_cpu *example_cpu = EXAMPLE_SIM_CPU (cpu);
 
   if (num < 0x8000)
     {
@@ -55,13 +58,13 @@ interp_num (SIM_CPU *cpu, unsigned16 num)
     {
       /* Numbers 32768..32775 instead mean registers 0..7.  */
       TRACE_DECODE (cpu, "%#x is register R%i", num, num & 0xf);
-      return cpu->regs[num & 0xf];
+      return example_cpu->regs[num & 0xf];
     }
   else
     {
       /* Numbers 32776..65535 are invalid.  */
       TRACE_DECODE (cpu, "%#x is an invalid number", num);
-      sim_engine_halt (sd, cpu, NULL, cpu->pc, sim_signalled, SIM_SIGILL);
+      sim_engine_halt (sd, cpu, NULL, example_cpu->pc, sim_signalled, SIM_SIGILL);
     }
 }
 
@@ -69,7 +72,8 @@ interp_num (SIM_CPU *cpu, unsigned16 num)
 void step_once (SIM_CPU *cpu)
 {
   SIM_DESC sd = CPU_STATE (cpu);
-  unsigned16 iw1, num1;
+  struct example_sim_cpu *example_cpu = EXAMPLE_SIM_CPU (cpu);
+  uint16_t iw1, num1;
   sim_cia pc = sim_pc_get (cpu);
 
   iw1 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc);
@@ -86,7 +90,7 @@ void step_once (SIM_CPU *cpu)
   else if (num1 == 1)
     {
       /* set: 1 a b: Set register <a> to the value of <b>.  */
-      unsigned16 iw2, iw3, num2, num3;
+      uint16_t iw2, iw3, num2, num3;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -96,23 +100,23 @@ void step_once (SIM_CPU *cpu)
       TRACE_INSN (cpu, "SET R%i %#x", num2, num3);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, num3);
-      cpu->regs[num2] = num3;
+      example_cpu->regs[num2] = num3;
 
       pc += 6;
     }
   else if (num1 == 2)
     {
       /* push: 2 a: Push <a> onto the stack.  */
-      unsigned16 iw2, num2;
+      uint16_t iw2, num2;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = interp_num (cpu, iw2);
       TRACE_EXTRACT (cpu, "PUSH %#x", iw2);
       TRACE_INSN (cpu, "PUSH %#x", num2);
 
-      sim_core_write_aligned_2 (cpu, pc, write_map, cpu->sp, num2);
-      cpu->sp -= 2;
-      TRACE_REGISTER (cpu, "SP = %#x", cpu->sp);
+      sim_core_write_aligned_2 (cpu, pc, write_map, example_cpu->sp, num2);
+      example_cpu->sp -= 2;
+      TRACE_REGISTER (cpu, "SP = %#x", example_cpu->sp);
 
       pc += 4;
     }
@@ -120,18 +124,18 @@ void step_once (SIM_CPU *cpu)
     {
       /* pop: 3 a: Remove the top element from the stack and write it into <a>.
 	 Empty stack = error.  */
-      unsigned16 iw2, num2, result;
+      uint16_t iw2, num2, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
       TRACE_EXTRACT (cpu, "POP %#x", iw2);
       TRACE_INSN (cpu, "POP R%i", num2);
-      cpu->sp += 2;
-      TRACE_REGISTER (cpu, "SP = %#x", cpu->sp);
-      result = sim_core_read_aligned_2 (cpu, pc, read_map, cpu->sp);
+      example_cpu->sp += 2;
+      TRACE_REGISTER (cpu, "SP = %#x", example_cpu->sp);
+      result = sim_core_read_aligned_2 (cpu, pc, read_map, example_cpu->sp);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 4;
     }
@@ -139,7 +143,7 @@ void step_once (SIM_CPU *cpu)
     {
       /* eq: 4 a b c: Set <a> to 1 if <b> is equal to <c>; set it to 0
 	 otherwise.  */
-      unsigned16 iw2, iw3, iw4, num2, num3, num4, result;
+      uint16_t iw2, iw3, iw4, num2, num3, num4, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -153,7 +157,7 @@ void step_once (SIM_CPU *cpu)
       TRACE_DECODE (cpu, "R%i = (%#x == %#x) = %i", num2, num3, num4, result);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 8;
     }
@@ -161,7 +165,7 @@ void step_once (SIM_CPU *cpu)
     {
       /* gt: 5 a b c: Set <a> to 1 if <b> is greater than <c>; set it to 0
 	 otherwise.  */
-      unsigned16 iw2, iw3, iw4, num2, num3, num4, result;
+      uint16_t iw2, iw3, iw4, num2, num3, num4, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -175,14 +179,14 @@ void step_once (SIM_CPU *cpu)
       TRACE_DECODE (cpu, "R%i = (%#x > %#x) = %i", num2, num3, num4, result);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 8;
     }
   else if (num1 == 6)
     {
       /* jmp: 6 a: Jump to <a>.  */
-      unsigned16 iw2, num2;
+      uint16_t iw2, num2;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = interp_num (cpu, iw2);
@@ -197,7 +201,7 @@ void step_once (SIM_CPU *cpu)
   else if (num1 == 7)
     {
       /* jt: 7 a b: If <a> is nonzero, jump to <b>.  */
-      unsigned16 iw2, iw3, num2, num3;
+      uint16_t iw2, iw3, num2, num3;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = interp_num (cpu, iw2);
@@ -220,7 +224,7 @@ void step_once (SIM_CPU *cpu)
   else if (num1 == 8)
     {
       /* jf: 8 a b: If <a> is zero, jump to <b>.  */
-      unsigned16 iw2, iw3, num2, num3;
+      uint16_t iw2, iw3, num2, num3;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = interp_num (cpu, iw2);
@@ -243,7 +247,7 @@ void step_once (SIM_CPU *cpu)
   else if (num1 == 9)
     {
       /* add: 9 a b c: Assign <a> the sum of <b> and <c> (modulo 32768).  */
-      unsigned16 iw2, iw3, iw4, num2, num3, num4, result;
+      uint16_t iw2, iw3, iw4, num2, num3, num4, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -258,7 +262,7 @@ void step_once (SIM_CPU *cpu)
 		    32768, result);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 8;
     }
@@ -266,7 +270,7 @@ void step_once (SIM_CPU *cpu)
     {
       /* mult: 10 a b c: Store into <a> the product of <b> and <c> (modulo
 	 32768).  */
-      unsigned16 iw2, iw3, iw4, num2, num3, num4, result;
+      uint16_t iw2, iw3, iw4, num2, num3, num4, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -281,14 +285,14 @@ void step_once (SIM_CPU *cpu)
 		    32768, result);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 8;
     }
   else if (num1 == 11)
     {
       /* mod: 11 a b c: Store into <a> the remainder of <b> divided by <c>.  */
-      unsigned16 iw2, iw3, iw4, num2, num3, num4, result;
+      uint16_t iw2, iw3, iw4, num2, num3, num4, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -302,14 +306,14 @@ void step_once (SIM_CPU *cpu)
       TRACE_DECODE (cpu, "R%i = %#x %% %#x = %#x", num2, num3, num4, result);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 8;
     }
   else if (num1 == 12)
     {
       /* and: 12 a b c: Stores into <a> the bitwise and of <b> and <c>.  */
-      unsigned16 iw2, iw3, iw4, num2, num3, num4, result;
+      uint16_t iw2, iw3, iw4, num2, num3, num4, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -323,14 +327,14 @@ void step_once (SIM_CPU *cpu)
       TRACE_DECODE (cpu, "R%i = %#x & %#x = %#x", num2, num3, num4, result);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 8;
     }
   else if (num1 == 13)
     {
       /* or: 13 a b c: Stores into <a> the bitwise or of <b> and <c>.  */
-      unsigned16 iw2, iw3, iw4, num2, num3, num4, result;
+      uint16_t iw2, iw3, iw4, num2, num3, num4, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -344,14 +348,14 @@ void step_once (SIM_CPU *cpu)
       TRACE_DECODE (cpu, "R%i = %#x | %#x = %#x", num2, num3, num4, result);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 8;
     }
   else if (num1 == 14)
     {
       /* not: 14 a b: Stores 15-bit bitwise inverse of <b> in <a>.  */
-      unsigned16 iw2, iw3, num2, num3, result;
+      uint16_t iw2, iw3, num2, num3, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -363,14 +367,14 @@ void step_once (SIM_CPU *cpu)
       TRACE_DECODE (cpu, "R%i = (~%#x) & 0x7fff = %#x", num2, num3, result);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 6;
     }
   else if (num1 == 15)
     {
       /* rmem: 15 a b: Read memory at address <b> and write it to <a>.  */
-      unsigned16 iw2, iw3, num2, num3, result;
+      uint16_t iw2, iw3, num2, num3, result;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = register_num (cpu, iw2);
@@ -385,14 +389,14 @@ void step_once (SIM_CPU *cpu)
       result = sim_core_read_aligned_2 (cpu, pc, read_map, num3);
 
       TRACE_REGISTER (cpu, "R%i = %#x", num2, result);
-      cpu->regs[num2] = result;
+      example_cpu->regs[num2] = result;
 
       pc += 6;
     }
   else if (num1 == 16)
     {
       /* wmem: 16 a b: Write the value from <b> into memory at address <a>.  */
-      unsigned16 iw2, iw3, num2, num3;
+      uint16_t iw2, iw3, num2, num3;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = interp_num (cpu, iw2);
@@ -412,7 +416,7 @@ void step_once (SIM_CPU *cpu)
     {
       /* call: 17 a: Write the address of the next instruction to the stack and
 	 jump to <a>.  */
-      unsigned16 iw2, num2;
+      uint16_t iw2, num2;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = interp_num (cpu, iw2);
@@ -422,9 +426,9 @@ void step_once (SIM_CPU *cpu)
       TRACE_INSN (cpu, "CALL %#x", num2);
 
       TRACE_MEMORY (cpu, "pushing %#x onto stack", (pc + 4) >> 1);
-      sim_core_write_aligned_2 (cpu, pc, write_map, cpu->sp, (pc + 4) >> 1);
-      cpu->sp -= 2;
-      TRACE_REGISTER (cpu, "SP = %#x", cpu->sp);
+      sim_core_write_aligned_2 (cpu, pc, write_map, example_cpu->sp, (pc + 4) >> 1);
+      example_cpu->sp -= 2;
+      TRACE_REGISTER (cpu, "SP = %#x", example_cpu->sp);
 
       pc = num2;
       TRACE_BRANCH (cpu, "CALL %#x", pc);
@@ -433,12 +437,12 @@ void step_once (SIM_CPU *cpu)
     {
       /* ret: 18: Remove the top element from the stack and jump to it; empty
 	 stack = halt.  */
-      unsigned16 result;
+      uint16_t result;
 
       TRACE_INSN (cpu, "RET");
-      cpu->sp += 2;
-      TRACE_REGISTER (cpu, "SP = %#x", cpu->sp);
-      result = sim_core_read_aligned_2 (cpu, pc, read_map, cpu->sp);
+      example_cpu->sp += 2;
+      TRACE_REGISTER (cpu, "SP = %#x", example_cpu->sp);
+      result = sim_core_read_aligned_2 (cpu, pc, read_map, example_cpu->sp);
       TRACE_MEMORY (cpu, "popping %#x off of stack", result << 1);
 
       pc = result << 1;
@@ -447,7 +451,7 @@ void step_once (SIM_CPU *cpu)
   else if (num1 == 19)
     {
       /* out: 19 a: Write the character <a> to the terminal.  */
-      unsigned16 iw2, num2;
+      uint16_t iw2, num2;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
       num2 = interp_num (cpu, iw2);
@@ -465,7 +469,7 @@ void step_once (SIM_CPU *cpu)
 	 to <a>.  It can be assumed that once input starts, it will continue
 	 until a newline is encountered.  This means that you can safely read
 	 lines from the keyboard and trust that they will be fully read.  */
-      unsigned16 iw2, num2;
+      uint16_t iw2, num2;
       char c;
 
       iw2 = sim_core_read_aligned_2 (cpu, pc, exec_map, pc + 2);
@@ -485,7 +489,7 @@ void step_once (SIM_CPU *cpu)
 	}
 
       TRACE_REGISTER (cpu, "R%i = %#x", iw2 & 0xf, c);
-      cpu->regs[iw2 & 0xf] = c;
+      example_cpu->regs[iw2 & 0xf] = c;
 
       pc += 4;
     }
@@ -507,14 +511,18 @@ void step_once (SIM_CPU *cpu)
 static sim_cia
 pc_get (sim_cpu *cpu)
 {
-  return cpu->pc;
+  struct example_sim_cpu *example_cpu = EXAMPLE_SIM_CPU (cpu);
+
+  return example_cpu->pc;
 }
 
 /* Set the program counter for this cpu to the new pc value. */
 static void
 pc_set (sim_cpu *cpu, sim_cia pc)
 {
-  cpu->pc = pc;
+  struct example_sim_cpu *example_cpu = EXAMPLE_SIM_CPU (cpu);
+
+  example_cpu->pc = pc;
 }
 
 /* Initialize the state for a single cpu.  Usuaully this involves clearing all
@@ -522,10 +530,12 @@ pc_set (sim_cpu *cpu, sim_cia pc)
    helper functions too.  */
 void initialize_cpu (SIM_DESC sd, SIM_CPU *cpu)
 {
-  memset (cpu->regs, 0, sizeof (cpu->regs));
-  cpu->pc = 0;
+  struct example_sim_cpu *example_cpu = EXAMPLE_SIM_CPU (cpu);
+
+  memset (example_cpu->regs, 0, sizeof (example_cpu->regs));
+  example_cpu->pc = 0;
   /* Make sure it's initialized outside of the 16-bit address space.  */
-  cpu->sp = 0x80000;
+  example_cpu->sp = 0x80000;
 
   CPU_PC_FETCH (cpu) = pc_get;
   CPU_PC_STORE (cpu) = pc_set;

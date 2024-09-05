@@ -1,6 +1,6 @@
 /* Skipping uninteresting files and functions while stepping.
 
-   Copyright (C) 2011-2021 Free Software Foundation, Inc.
+   Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,13 +15,13 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "skip.h"
+#include "event-top.h"
 #include "value.h"
 #include "valprint.h"
 #include "ui-out.h"
 #include "symtab.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "command.h"
 #include "completer.h"
 #include "stack.h"
@@ -29,14 +29,15 @@
 #include "arch-utils.h"
 #include "linespec.h"
 #include "objfiles.h"
-#include "breakpoint.h" /* for get_sal_arch () */
+#include "breakpoint.h"
 #include "source.h"
 #include "filenames.h"
 #include "fnmatch.h"
-#include "gdb_regex.h"
-#include "gdbsupport/gdb_optional.h"
+#include "gdbsupport/gdb_regex.h"
+#include <optional>
 #include <list>
 #include "cli/cli-style.h"
+#include "gdbsupport/buildargv.h"
 
 /* True if we want to print debug printouts related to file/function
    skipping. */
@@ -112,7 +113,7 @@ private: /* data */
   std::string m_function;
 
   /* If this is a function regexp, the compiled form.  */
-  gdb::optional<compiled_regex> m_compiled_function_regexp;
+  std::optional<compiled_regex> m_compiled_function_regexp;
 
   /* Enabled/disabled state.  */
   bool m_enabled = true;
@@ -183,7 +184,7 @@ skip_file_command (const char *arg, int from_tty)
   skiplist_entry::add_entry (false, std::string (filename),
 			     false, std::string ());
 
-  printf_filtered (_("File %s will be skipped when stepping.\n"), filename);
+  gdb_printf (_("File %s will be skipped when stepping.\n"), filename);
 }
 
 /* Create a skiplist entry for the given function NAME and add it to the
@@ -194,7 +195,7 @@ skip_function (const char *name)
 {
   skiplist_entry::add_entry (false, std::string (), false, std::string (name));
 
-  printf_filtered (_("Function %s will be skipped when stepping.\n"), name);
+  gdb_printf (_("Function %s will be skipped when stepping.\n"), name);
 }
 
 static void
@@ -203,7 +204,7 @@ skip_function_command (const char *arg, int from_tty)
   /* Default to the current function if no argument is given.  */
   if (arg == NULL)
     {
-      frame_info *fi = get_selected_frame (_("No default function now."));
+      frame_info_ptr fi = get_selected_frame (_("No default function now."));
       struct symbol *sym = get_frame_function (fi);
       const char *name = NULL;
 
@@ -330,20 +331,20 @@ skip_command (const char *arg, int from_tty)
 
     if (function_to_print == NULL)
       {
-	printf_filtered (_("%s %s will be skipped when stepping.\n"),
-			 file_text, file_to_print);
+	gdb_printf (_("%s %s will be skipped when stepping.\n"),
+		    file_text, file_to_print);
       }
     else if (file_to_print == NULL)
       {
-	printf_filtered (_("%s %s will be skipped when stepping.\n"),
-			 function_text, function_to_print);
+	gdb_printf (_("%s %s will be skipped when stepping.\n"),
+		    function_text, function_to_print);
       }
     else
       {
-	printf_filtered (_("%s %s in %s %s will be skipped"
-			   " when stepping.\n"),
-			 function_text, function_to_print,
-			 lower_file_text, file_to_print);
+	gdb_printf (_("%s %s in %s %s will be skipped"
+		      " when stepping.\n"),
+		    function_text, function_to_print,
+		    lower_file_text, file_to_print);
       }
   }
 }
@@ -485,9 +486,9 @@ bool
 skiplist_entry::do_skip_file_p (const symtab_and_line &function_sal) const
 {
   if (debug_skip)
-    fprintf_unfiltered (gdb_stdlog,
-			"skip: checking if file %s matches non-glob %s...",
-			function_sal.symtab->filename, m_file.c_str ());
+    gdb_printf (gdb_stdlog,
+		"skip: checking if file %s matches non-glob %s...",
+		function_sal.symtab->filename, m_file.c_str ());
 
   bool result;
 
@@ -512,7 +513,7 @@ skiplist_entry::do_skip_file_p (const symtab_and_line &function_sal) const
     }
 
   if (debug_skip)
-    fprintf_unfiltered (gdb_stdlog, result ? "yes.\n" : "no.\n");
+    gdb_printf (gdb_stdlog, result ? "yes.\n" : "no.\n");
 
   return result;
 }
@@ -521,9 +522,9 @@ bool
 skiplist_entry::do_skip_gfile_p (const symtab_and_line &function_sal) const
 {
   if (debug_skip)
-    fprintf_unfiltered (gdb_stdlog,
-			"skip: checking if file %s matches glob %s...",
-			function_sal.symtab->filename, m_file.c_str ());
+    gdb_printf (gdb_stdlog,
+		"skip: checking if file %s matches glob %s...",
+		function_sal.symtab->filename, m_file.c_str ());
 
   bool result;
 
@@ -552,7 +553,7 @@ skiplist_entry::do_skip_gfile_p (const symtab_and_line &function_sal) const
     }
 
   if (debug_skip)
-    fprintf_unfiltered (gdb_stdlog, result ? "yes.\n" : "no.\n");
+    gdb_printf (gdb_stdlog, result ? "yes.\n" : "no.\n");
 
   return result;
 }
@@ -583,9 +584,9 @@ skiplist_entry::skip_function_p (const char *function_name) const
   if (m_function_is_regexp)
     {
       if (debug_skip)
-	fprintf_unfiltered (gdb_stdlog,
-			    "skip: checking if function %s matches regex %s...",
-			    function_name, m_function.c_str ());
+	gdb_printf (gdb_stdlog,
+		    "skip: checking if function %s matches regex %s...",
+		    function_name, m_function.c_str ());
 
       gdb_assert (m_compiled_function_regexp);
       result
@@ -594,15 +595,15 @@ skiplist_entry::skip_function_p (const char *function_name) const
   else
     {
       if (debug_skip)
-	fprintf_unfiltered (gdb_stdlog,
-			    ("skip: checking if function %s matches non-regex "
-			     "%s..."),
-			    function_name, m_function.c_str ());
+	gdb_printf (gdb_stdlog,
+		    ("skip: checking if function %s matches non-regex "
+		     "%s..."),
+		    function_name, m_function.c_str ());
       result = (strcmp_iw (function_name, m_function.c_str ()) == 0);
     }
 
   if (debug_skip)
-    fprintf_unfiltered (gdb_stdlog, result ? "yes.\n" : "no.\n");
+    gdb_printf (gdb_stdlog, result ? "yes.\n" : "no.\n");
 
   return result;
 }
@@ -650,7 +651,7 @@ complete_skip_number (cmd_list_element *cmd,
 
   for (const skiplist_entry &entry : skiplist_entries)
     {
-      gdb::unique_xmalloc_ptr<char> name (xstrprintf ("%d", entry.number ()));
+      gdb::unique_xmalloc_ptr<char> name = xstrprintf ("%d", entry.number ());
       if (strncmp (word, name.get (), word_len) == 0)
 	completer.add_completion (std::move (name));
     }
@@ -722,7 +723,7 @@ If you don't specify any numbers or ranges, we'll delete all skip entries."),
   add_info ("skip", info_skip_command, _("\
 Display the status of skips.\n\
 Usage: info skip [NUMBER | RANGES]...\n\
-You can specify numbers (e.g. \"info skip 1 3\"), \n\
+You can specify numbers (e.g. \"info skip 1 3\"),\n\
 ranges (e.g. \"info skip 4-8\"), or both (e.g. \"info skip 1 3 4-8\").\n\n\
 If you don't specify any numbers or ranges, we'll show all skips."));
   set_cmd_completer (c, complete_skip_number);

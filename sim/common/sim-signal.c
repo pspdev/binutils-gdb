@@ -1,5 +1,5 @@
 /* Simulator signal support
-   Copyright (C) 1997-2021 Free Software Foundation, Inc.
+   Copyright (C) 1997-2024 Free Software Foundation, Inc.
    Contributed by Cygnus Support
 
 This file is part of the GNU Simulators.
@@ -21,7 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "defs.h"
 
 #include <signal.h>
-#include "sim-main.h"
+
+#include "sim/sim.h"
+#include "sim-io.h"
 #include "sim-signal.h"
 
 /* Convert SIM_SIGFOO to SIGFOO.

@@ -1,6 +1,6 @@
 /* Machine independent support for Solaris /proc (process file system) for GDB.
 
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2024 Free Software Foundation, Inc.
 
    Written by Michael Snyder at Cygnus Solutions.
    Based on work by Fred Fish, Stu Grossman, Geoff Noer, and others.
@@ -24,15 +24,14 @@
  * Pretty-print trace of api calls to the /proc api
  */
 
-#include "defs.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "completer.h"
 
 #include <sys/types.h>
 #include <sys/procfs.h>
-#include <sys/proc.h>	/* for struct proc */
-#include <sys/user.h>	/* for struct user */
-#include <fcntl.h>	/* for O_RDWR etc.  */
+#include <sys/proc.h>
+#include <sys/user.h>
+#include <fcntl.h>
 #include "gdbsupport/gdb_wait.h"
 
 #include "proc-utils.h"
@@ -50,14 +49,14 @@ struct trans {
 
 static bool  procfs_trace   = false;
 static FILE *procfs_file     = NULL;
-static char *procfs_filename;
+static std::string procfs_filename = "procfs_trace";
 
 static void
 prepare_to_trace (void)
 {
   if (procfs_trace)			/* if procfs tracing turned on */
     if (procfs_file == NULL)		/* if output file not yet open */
-      procfs_file = fopen (procfs_filename, "a");	/* open output file */
+      procfs_file = fopen (procfs_filename.c_str (), "a");	/* open output file */
 }
 
 static void
@@ -425,7 +424,6 @@ Show tracing for /proc api calls."), NULL,
 			   NULL, /* FIXME: i18n: */
 			   &setlist, &showlist);
 
-  procfs_filename = xstrdup ("procfs_trace");
   add_setshow_filename_cmd ("procfs-file", no_class, &procfs_filename, _("\
 Set filename for /proc tracefile."), _("\
 Show filename for /proc tracefile."), NULL,

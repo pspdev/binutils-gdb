@@ -1,6 +1,6 @@
 /* CLI utilities.
 
-   Copyright (C) 2011-2021 Free Software Foundation, Inc.
+   Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "cli/cli-utils.h"
 #include "value.h"
 
@@ -37,7 +36,7 @@ get_ulongest (const char **pp, int trailer)
 
       if (val != NULL)	/* Value history reference */
 	{
-	  if (value_type (val)->code () == TYPE_CODE_INT)
+	  if (val->type ()->code () == TYPE_CODE_INT)
 	    retval = value_as_long (val);
 	  else
 	    error (_("History value must have integer type."));
@@ -96,11 +95,11 @@ get_number_trailer (const char **pp, int trailer)
 
       if (val)	/* Value history reference */
 	{
-	  if (value_type (val)->code () == TYPE_CODE_INT)
+	  if (val->type ()->code () == TYPE_CODE_INT)
 	    retval = value_as_long (val);
 	  else
 	    {
-	      printf_filtered (_("History value must have integer type.\n"));
+	      gdb_printf (_("History value must have integer type.\n"));
 	      retval = 0;
 	    }
 	}
@@ -122,8 +121,8 @@ get_number_trailer (const char **pp, int trailer)
 	    retval = (int) longest_val;
 	  else
 	    {
-	      printf_filtered (_("Convenience variable must "
-				 "have integer value.\n"));
+	      gdb_printf (_("Convenience variable must "
+			    "have integer value.\n"));
 	      retval = 0;
 	    }
 	}
@@ -209,7 +208,7 @@ The flag -q disables the production of these headers and messages.%s"),
 		     prefix, entity_kind, entity_kind, entity_kind,
 		     (document_n_flag ? _("\n\
 By default, the command will include non-debug symbols in the output;\n\
-these can be excluded using the -n flag.") : ""));
+these can be excluded using the -n flag.") : "")).release ();
 }
 
 /* See documentation in cli-utils.h.  */

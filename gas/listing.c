@@ -1,5 +1,5 @@
 /* listing.c - maintain assembly listings
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -176,13 +176,16 @@ struct list_info_struct
   /* Pointers to linked list of messages associated with this line.  */
   struct list_message *messages, *last_message;
 
-  enum edict_enum edict;
-  char *edict_arg;
-
+#ifdef OBJ_ELF
   /* Nonzero if this line is to be omitted because it contains
      debugging information.  This can become a flags field if we come
      up with more information to store here.  */
-  int debugging;
+  bool debugging;
+#endif
+
+  enum edict_enum edict;
+  char *edict_arg;
+
 };
 
 typedef struct list_info_struct list_info_type;
@@ -226,7 +229,6 @@ static unsigned int calc_hex (list_info_type *);
 static void print_lines (list_info_type *, unsigned int, const char *,
 			 unsigned int);
 static void list_symbol_table (void);
-static int debugging_pseudo (list_info_type *, const char *);
 static void listing_listing (char *);
 
 static void
@@ -311,7 +313,8 @@ listing_newline (char *ps)
      considered to be debugging information.  This includes the
      statement which switches us into the debugging section, which we
      can only set after we are already in the debugging section.  */
-  if ((listing & LISTING_NODEBUG) != 0
+  if (IS_ELF
+      && (listing & LISTING_NODEBUG) != 0
       && listing_tail != NULL
       && ! listing_tail->debugging)
     {
@@ -320,7 +323,7 @@ listing_newline (char *ps)
       segname = segment_name (now_seg);
       if (startswith (segname, ".debug")
 	  || startswith (segname, ".line"))
-	listing_tail->debugging = 1;
+	listing_tail->debugging = true;
     }
 #endif
 
@@ -421,13 +424,13 @@ listing_newline (char *ps)
   new_i->edict = EDICT_NONE;
   new_i->hll_file = (file_info_type *) NULL;
   new_i->hll_line = 0;
-  new_i->debugging = 0;
 
   new_frag ();
 
 #ifdef OBJ_ELF
   /* In ELF, anything in a section beginning with .debug or .line is
      considered to be debugging information.  */
+  new_i->debugging = false;
   if ((listing & LISTING_NODEBUG) != 0)
     {
       const char *segname;
@@ -435,7 +438,7 @@ listing_newline (char *ps)
       segname = segment_name (now_seg);
       if (startswith (segname, ".debug")
 	  || startswith (segname, ".line"))
-	new_i->debugging = 1;
+	new_i->debugging = true;
     }
 #endif
 }
@@ -815,6 +818,28 @@ calc_hex (list_info_type *list)
 		var_rep_idx = var_rep_max;
 	    }
 	}
+      else if (frag_ptr->fr_type == rs_fill_nop && frag_ptr->fr_opcode)
+	{
+	  gas_assert (!octet_in_frag);
+
+	  /* Print as many bytes from fr_opcode as is sensible.  */
+	  while (octet_in_frag < (unsigned int) frag_ptr->fr_offset
+		 && data_buffer_size < MAX_BYTES - 3)
+	    {
+	      if (address == ~(unsigned int) 0)
+		address = frag_ptr->fr_address / OCTETS_PER_BYTE;
+
+	      sprintf (data_buffer + data_buffer_size,
+		       "%02X",
+		       frag_ptr->fr_opcode[octet_in_frag] & 0xff);
+	      data_buffer_size += 2;
+
+	      octet_in_frag++;
+	    }
+
+	  free (frag_ptr->fr_opcode);
+	  frag_ptr->fr_opcode = NULL;
+	}
 
       frag_ptr = frag_ptr->fr_next;
     }
@@ -936,26 +961,10 @@ list_symbol_table (void)
 
 	  if (S_GET_NAME (ptr))
 	    {
-	      char buf[30], fmt[8];
+	      char buf[30];
 	      valueT val = S_GET_VALUE (ptr);
 
-	      /* @@ Note that this is dependent on the compilation options,
-		 not solely on the target characteristics.  */
-	      if (sizeof (val) == 4 && sizeof (int) == 4)
-		sprintf (buf, "%08lx", (unsigned long) val);
-	      else if (sizeof (val) <= sizeof (unsigned long))
-		{
-		  sprintf (fmt, "%%0%lulx",
-			   (unsigned long) (sizeof (val) * 2));
-		  sprintf (buf, fmt, (unsigned long) val);
-		}
-#if defined (BFD64)
-	      else if (sizeof (val) > 4)
-		sprintf_vma (buf, val);
-#endif
-	      else
-		abort ();
-
+	      bfd_sprintf_vma (stdoutput, buf, val);
 	      if (!got_some)
 		{
 		  fprintf (list_file, "DEFINED SYMBOLS\n");
@@ -1114,24 +1123,20 @@ print_source (file_info_type *  current_file,
 /* Sometimes the user doesn't want to be bothered by the debugging
    records inserted by the compiler, see if the line is suspicious.  */
 
-static int
-debugging_pseudo (list_info_type *list, const char *line)
+static bool
+debugging_pseudo (list_info_type *list ATTRIBUTE_UNUSED, const char *line)
 {
 #ifdef OBJ_ELF
-  static int in_debug;
-  int was_debug;
-#endif
+  static bool in_debug;
+  bool was_debug;
 
   if (list->debugging)
     {
-#ifdef OBJ_ELF
-      in_debug = 1;
-#endif
-      return 1;
+      in_debug = true;
+      return true;
     }
-#ifdef OBJ_ELF
   was_debug = in_debug;
-  in_debug = 0;
+  in_debug = false;
 #endif
 
   while (ISSPACE (*line))
@@ -1150,42 +1155,42 @@ debugging_pseudo (list_info_type *list, const char *line)
 	  && list->next != NULL
 	  && list->next->debugging)
 	{
-	  in_debug = 1;
-	  return 1;
+	  in_debug = true;
+	  return true;
 	}
 #endif
 
-      return 0;
+      return false;
     }
 
   line++;
 
   if (startswith (line, "def"))
-    return 1;
+    return true;
   if (startswith (line, "val"))
-    return 1;
+    return true;
   if (startswith (line, "scl"))
-    return 1;
+    return true;
   if (startswith (line, "line"))
-    return 1;
+    return true;
   if (startswith (line, "endef"))
-    return 1;
+    return true;
   if (startswith (line, "ln"))
-    return 1;
+    return true;
   if (startswith (line, "type"))
-    return 1;
+    return true;
   if (startswith (line, "size"))
-    return 1;
+    return true;
   if (startswith (line, "dim"))
-    return 1;
+    return true;
   if (startswith (line, "tag"))
-    return 1;
+    return true;
   if (startswith (line, "stabs"))
-    return 1;
+    return true;
   if (startswith (line, "stabn"))
-    return 1;
+    return true;
 
-  return 0;
+  return false;
 }
 
 static void
@@ -1263,18 +1268,7 @@ listing_listing (char *name ATTRIBUTE_UNUSED)
 	  if (current_hll_file && list->hll_line && (listing & LISTING_HLL))
 	    print_source (current_hll_file, list, width);
 
-	  if (list->line_contents)
-	    {
-	      if (!((listing & LISTING_NODEBUG)
-		    && debugging_pseudo (list, list->line_contents)))
-		print_lines (list,
-			     list->file->linenum == 0 ? list->line : list->file->linenum,
-			     list->line_contents, calc_hex (list));
-
-	      free (list->line_contents);
-	      list->line_contents = NULL;
-	    }
-	  else
+	  if (!list->line_contents || list->file->linenum)
 	    {
 	      while (list->file->linenum < list_line
 		     && !list->file->at_end)
@@ -1292,6 +1286,17 @@ listing_listing (char *name ATTRIBUTE_UNUSED)
 			&& debugging_pseudo (list, p)))
 		    print_lines (list, list->file->linenum, p, address);
 		}
+	    }
+
+	  if (list->line_contents)
+	    {
+	      if (!((listing & LISTING_NODEBUG)
+		    && debugging_pseudo (list, list->line_contents)))
+		print_lines (list, list->line, list->line_contents,
+			     calc_hex (list));
+
+	      free (list->line_contents);
+	      list->line_contents = NULL;
 	    }
 
 	  if (list->edict == EDICT_EJECT)

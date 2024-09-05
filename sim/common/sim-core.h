@@ -1,6 +1,6 @@
 /* The common simulator framework for GDB, the GNU Debugger.
 
-   Copyright 2002-2021 Free Software Foundation, Inc.
+   Copyright 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney and Red Hat.
 
@@ -23,6 +23,7 @@
 #ifndef SIM_CORE_H
 #define SIM_CORE_H
 
+#include "symcat.h"
 
 /* core signals (error conditions)
    Define SIM_CORE_SIGNAL to catch these signals - see sim-core.c for
@@ -39,7 +40,7 @@ typedef void (SIM_CORE_SIGNAL_FN)
      (SIM_DESC sd, sim_cpu *cpu, sim_cia cia, unsigned map, int nr_bytes,
       address_word addr, transfer_type transfer, sim_core_signals sig);
 
-extern SIM_CORE_SIGNAL_FN sim_core_signal;
+extern SIM_CORE_SIGNAL_FN sim_core_signal ATTRIBUTE_NORETURN;
 
 
 /* basic types */
@@ -248,7 +249,7 @@ extern void *sim_core_trans_addr
    order (including xor endian).  Should the transfer fail, the
    operation shall abort (no return).
 
-   ALIGNED assumes yhat the specified ADDRESS is correctly alligned
+   ALIGNED assumes that the specified ADDRESS is correctly aligned
    for an N byte transfer (no alignment checks are made).  Passing an
    incorrectly aligned ADDRESS is erroneous.
 
@@ -256,7 +257,7 @@ extern void *sim_core_trans_addr
    of an N byte transfer. Action, as defined by WITH_ALIGNMENT, being
    taken should the check fail.
 
-   MISSALIGNED transfers the data regardless.
+   MISALIGNED transfers the data regardless.
 
    Misaligned xor-endian accesses are broken into a sequence of
    transfers each <= WITH_XOR_ENDIAN bytes */

@@ -1,4 +1,4 @@
-/* Copyright 2009-2021 Free Software Foundation, Inc.
+/* Copyright 2009-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,15 +19,7 @@
    instructions.  */
 
 	.text
-
-	.global _start,main
-_start:
-	# The area at _start is used as the displaced stepping buffer.  Put
-	# more than enough nop instructions so that the instructions under test
-	# below don't conflict with it.
-	.rept 200
-	nop
-	.endr
+	.global main
 main:
         nop
 
@@ -66,7 +58,7 @@ ro_var:
 
 done:
 	mov $0,%rdi
-	call _exit
+	call exit
 	hlt
 
 /* RIP-relative data for VEX3 test above.  */
@@ -75,3 +67,4 @@ done:
 var128:
 	.8byte 0xaa55aa55aa55aa55
 	.8byte 0x55aa55aa55aa55aa
+	.section	.note.GNU-stack,"",@progbits

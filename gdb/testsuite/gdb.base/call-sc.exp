@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 
-# Copyright 2004-2021 Free Software Foundation, Inc.
+# Copyright 2004-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,20 +22,11 @@
 # Some targets can't call functions, so don't even bother with this
 # test.
 
-if [target_info exists gdb,cannot_call_functions] {
-    unsupported "this target can not call functions"
-    continue
-}
+require {!target_info exists gdb,cannot_call_functions}
 
 standard_testfile .c
 
-# Create and source the file that provides information about the
-# compiler used to compile the test case.
-
-if [get_compiler_info] {
-    return -1
-}
-set skip_float_test [gdb_skip_float_test]
+set allow_float_test [allow_float_test]
 
 # Compile a variant of scalars.c using TYPE to specify the type of the
 # parameter and return-type.  Run the compiled program up to "main".
@@ -67,7 +58,7 @@ proc start_scalars_test { type } {
     }
 
     # Advance to main
-    if { ![runto_main] } then {
+    if {![runto_main]} {
 	return
     }
 
@@ -393,10 +384,17 @@ proc test_scalar_returns { } {
 # Test every single char struct from 1..17 in size.  This is what the
 # original "scalars" test was doing.
 
-start_scalars_test tc
-test_scalar_calls
-test_scalar_returns
+proc test { type } {
+    with_test_prefix $type {
+	if { [start_scalars_test $type] == -1 } {
+	    return
+	}
+	test_scalar_calls
+	test_scalar_returns
+    }
+}
 
+test tc
 
 # Let the fun begin.
 
@@ -413,45 +411,27 @@ test_scalar_returns
 # naturally aligned.  Padding being added where needed.
 
 # Approx size: 2, 4, ...
-start_scalars_test ts
-test_scalar_calls
-test_scalar_returns
+test ts
 
 # Approx size: 4, 8, ...
-start_scalars_test ti
-test_scalar_calls
-test_scalar_returns
+test ti
 
 # Approx size: 4, 8, ...
-start_scalars_test tl
-test_scalar_calls
-test_scalar_returns
+test tl
 
 # Approx size: 8, 16, ...
-start_scalars_test tll
-test_scalar_calls
-test_scalar_returns
+test tll
 
-if {!$skip_float_test} {
+if {$allow_float_test} {
     # Approx size: 4, 8, ...
-    start_scalars_test tf
-    test_scalar_calls
-    test_scalar_returns
+    test tf
 
     # Approx size: 8, 16, ...
-    start_scalars_test td
-    test_scalar_calls
-    test_scalar_returns
+    test td
 
     # Approx size: 16, 32, ...
-    start_scalars_test tld
-    test_scalar_calls
-    test_scalar_returns
+    test tld
 }
 
 # Approx size: 4, 8, ...
-start_scalars_test te
-test_scalar_calls
-test_scalar_returns
-
-return 0
+test te

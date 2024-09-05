@@ -1,4 +1,4 @@
-# Copyright 2021 Free Software Foundation, Inc.
+# Copyright 2021-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,9 +20,7 @@
 load_lib dwarf.exp
 
 # This test can only be run on targets which support DWARF-2 and use gas.
-if {![dwarf2_support]} {
-    return 0
-}
+require dwarf2_support
 
 standard_testfile .c -dw.S
 
@@ -100,12 +98,27 @@ if ![runto_main] {
 # field names, all of which are stored in the .debug_str section.
 gdb_test "p global_var" " = \\{aa = 0, bb = 0, cc = 0\\}"
 
+set host_binfile [gdb_remote_download host $binfile]
+
+# Verify that the executable actually contains a .debug_str section, before
+# trying to remove it.  This can be missing with target boards
+# cc-with-dwz-m.exp and cc-with-gnu-debuglink.exp.  Handle this by
+# skipping the remainder of the test-case.
+set debug_str_section "${host_binfile}-debug-str"
+set args "--dump-section .debug_str=${debug_str_section} $host_binfile"
+set result [remote_exec host "[gdb_find_objcopy] $args"]
+set status [lindex $result 0]
+set output [lindex $result 1]
+if { $status == 0 && ![string equal $output ""] } {
+    return -1
+}
+
 # Now copy the executable, and remove the .debug_str section.  This
 # creates an executable with an invalid DWARF configuration.  GDB
 # should give an error when trying to read the debug information from
 # this executable.
-set binfile_no_debug_str "${binfile}-no-debug-str"
-set args "--remove-section .debug_str $binfile ${binfile_no_debug_str}"
+set binfile_no_debug_str "${host_binfile}-no-debug-str"
+set args "--remove-section .debug_str $host_binfile ${binfile_no_debug_str}"
 if {[run_on_host "objcopy" [gdb_find_objcopy] "$args"]} {
     perror "failed to run objcopy"
     return -1
@@ -115,28 +128,34 @@ if {[run_on_host "objcopy" [gdb_find_objcopy] "$args"]} {
 # executable we're going to get an error, which we check for below.
 clean_restart
 
+gdb_test_no_output "maint set dwarf synchronous on"
+
+set line1 "Reading symbols from \[^\r\n\]+"
+set dwarf_error "DWARF Error: DW_FORM_strp used without required section"
+
 # This pattern is hit when GDB does not use -readnow (i.e. the default
 # behaviour).
 set pattern1 \
     [multi_line \
-        "Reading symbols from \[^\r\n\]+" \
-        "Dwarf Error: DW_FORM_strp used without required section" \
+         $line1 \
+         $dwarf_error \
         "\\(No debugging symbols \[^\r\n\]+\\)"]
 
 # This pattern is hit when GDB does use -readnow (e.g. running with
 # --target_board=readnow).
 set pattern2 \
     [multi_line \
-        "Reading symbols from \[^\r\n\]+" \
+        $line1 \
         "Expanding full symbols from \[^\r\n\]+" \
-        "Dwarf Error: DW_FORM_strp used without required section"]
+        $dwarf_error]
+
+# This pattern is hit when gcc adds an index (e.g. running with
+# --target_board=cc-with-gdb-index).
+set pattern3 \
+    [multi_line \
+        $line1 \
+        $dwarf_error]
 
 # Load the executable, we expect an error from the DWARF parser.
-gdb_test_multiple "file $binfile_no_debug_str" "file $testfile" {
-    -wrap -re $pattern1 {
-       pass $gdb_test_name
-    }
-    -re -wrap "$pattern2" {
-       pass $gdb_test_name
-    }
-}
+gdb_test "file $binfile_no_debug_str" "($pattern1|$pattern2|$pattern3)" \
+    "file $testfile"

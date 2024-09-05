@@ -1,5 +1,5 @@
 /* Simulator tracing/debugging support.
-   Copyright (C) 1997-2021 Free Software Foundation, Inc.
+   Copyright (C) 1997-2024 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
 This file is part of GDB, the GNU debugger.
@@ -22,6 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 #ifndef SIM_TRACE_H
 #define SIM_TRACE_H
 
+#include <stdarg.h>
+
+#include "ansidecl.h"
+#include "bfd.h"
 #include "dis-asm.h"
 
 /* Standard traceable entities.  */
@@ -122,10 +126,10 @@ enum {
 #define TRACE_debug    (1 << TRACE_DEBUG_IDX)
 
 /* Return non-zero if tracing of idx is enabled (compiled in).  */
-#define WITH_TRACE_P(idx)	(WITH_TRACE & (1 << idx))
+#define WITH_TRACE_P(idx)	((WITH_TRACE & (1 << idx)) != 0)
 
 /* Preprocessor macros to simplify tests of WITH_TRACE.  */
-#define WITH_TRACE_ANY_P	(WITH_TRACE)
+#define WITH_TRACE_ANY_P	(WITH_TRACE != 0)
 #define WITH_TRACE_INSN_P	WITH_TRACE_P (TRACE_INSN_IDX)
 #define WITH_TRACE_DISASM_P	WITH_TRACE_P (TRACE_DISASM_IDX)
 #define WITH_TRACE_DECODE_P	WITH_TRACE_P (TRACE_DECODE_IDX)
@@ -176,13 +180,13 @@ typedef struct _trace_data {
   /* Buffer to save the inputs for the current instruction.  Use a
      union to force the buffer into correct alignment */
   union {
-    unsigned8 i8;
-    unsigned16 i16;
-    unsigned32 i32;
-    unsigned64 i64;
+    uint8_t i8;
+    uint16_t i16;
+    uint32_t i32;
+    uint64_t i64;
   } trace_input_data[16];
-  unsigned8 trace_input_fmt[16];
-  unsigned8 trace_input_size[16];
+  uint8_t trace_input_fmt[16];
+  uint8_t trace_input_size[16];
   int trace_input_idx;
 #define TRACE_INPUT_DATA(t) ((t)->trace_input_data)
 #define TRACE_INPUT_FMT(t) ((t)->trace_input_fmt)

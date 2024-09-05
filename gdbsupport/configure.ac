@@ -1,5 +1,5 @@
 dnl Autoconf configure script for GDB support library
-dnl Copyright (C) 2020-2021 Free Software Foundation, Inc.
+dnl Copyright (C) 2020-2024 Free Software Foundation, Inc.
 dnl
 dnl This program is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -16,9 +16,9 @@ dnl along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT([gdbsupport], 1.0)
+AC_INIT([gdbsupport], [1.0])
 AC_CONFIG_SRCDIR(common-defs.h)
-AC_CONFIG_HEADER(config.h:config.in)
+AC_CONFIG_HEADERS([config.h:config.in])
 
 # Set build, build_cpu, build_vendor and build_os.
 AC_CANONICAL_BUILD
@@ -41,9 +41,9 @@ AC_PROG_RANLIB
 AC_USE_SYSTEM_EXTENSIONS
 ACX_LARGEFILE
 
-# We require a C++11 compiler.  Check if one is available, and if
+# We require a C++17 compiler.  Check if one is available, and if
 # necessary, set CXX_DIALECT to some -std=xxx switch.
-AX_CXX_COMPILE_STDCXX(11, , mandatory)
+AX_CXX_COMPILE_STDCXX(17, , mandatory)
 
 dnl Set up for gettext.
 ZW_GNU_GETTEXT_SISTER_DIR
@@ -53,15 +53,23 @@ GDB_AC_COMMON
 GDB_AC_SELFTEST
 AM_CONDITIONAL(SELFTEST, $enable_unittests)
 
+AM_CONDITIONAL(HAVE_PIPE_OR_PIPE2,
+   [test x$ac_cv_func_pipe = xyes -o x$ac_cv_func_pipe2 = xyes ])
+
 # Check the return and argument types of ptrace.
 GDB_AC_PTRACE
 
 # Detect support warning flags.
+AM_GDB_COMPILER_TYPE
 AM_GDB_WARNINGS
 
-TARGET_WORD_SIZE=`sed -n 's,#define BFD_ARCH_SIZE \(.*\)$,\1,p' ../bfd/bfd-in3.h`
-AC_DEFINE_UNQUOTED(TARGET_WORD_SIZE, $TARGET_WORD_SIZE,
-   [Define to the word size for the target.])
+# Set the 'development' global.
+. $srcdir/../bfd/development.sh
+
+if test "$development" = true ; then
+   AC_DEFINE(DEVELOPMENT, 1,
+	     [Define if development-mode features are enabled.])
+fi
 
 case ${host} in
   *mingw32*)
@@ -72,6 +80,8 @@ case ${host} in
 	       for Cygwin.])
     ;;
 esac
+
+AC_SUBST([CONFIG_STATUS_DEPENDENCIES], ['$(srcdir)/../bfd/development.sh'])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

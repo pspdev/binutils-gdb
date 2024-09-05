@@ -1,5 +1,5 @@
 # Basic expect script for LD Regression Tests
-#   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+#   Copyright (C) 1993-2024 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -20,6 +20,23 @@
 #
 # Written by Jeffrey Wheat (cassidy@cygnus.com)
 #
+
+if [info exists env(LD_UNDER_TEST)] {
+    # LD_UNDER_TEST must be an absolute full path.
+    if {[file pathtype $env(LD_UNDER_TEST)] ne "absolute"} {
+	perror "**************************************************"
+	perror "Environment variable LD_UNDER_TEST ($env(LD_UNDER_TEST)) isn't an absolute full path."
+	perror "**************************************************"
+	exit 1
+    } elseif {![file exists $env(LD_UNDER_TEST)]} {
+	perror "**************************************************"
+	perror "Environment variable LD_UNDER_TEST ($env(LD_UNDER_TEST)) doesn't exist."
+	perror "**************************************************"
+	exit 1
+    }
+    set ld "$env(LD_UNDER_TEST)"
+    set LD "$ld"
+}
 
 if ![info exists ld] then {
     set ld [findfile $base_dir/ld-new $base_dir/ld-new [transform ld]]
@@ -57,14 +74,26 @@ remote_exec host "mkdir -p tmpdir"
 
 # Make symlinks from tmpdir/ld to the linker and assembler in the
 # build tree, so that we can use a -B option to gcc to force it to use
-# the newly built linker and assembler. 
-if {![file isdirectory tmpdir/ld]} then {
+# the newly built linker and assembler.
+# The variable ld_testsuite_bindir allows to provide another directory
+# for -B option. This can be useful when launching the testsuite outside
+# the build tree as the symlinks will be wrong in this case.
+if {[info exists ld_testsuite_bindir]} {
+    set gcc_B_opt "-B$ld_testsuite_bindir/"
+} else {
+    # Delete tmpdir/ld first to remove tmpdir/ld/ld created by the
+    # previous LD_UNDER_TEST runs.
+    file delete -force tmpdir/ld
     catch "exec mkdir tmpdir/ld" status
-    catch "exec ln -s ../../ld-new tmpdir/ld/ld" status
+    if [info exists env(LD_UNDER_TEST)] {
+	catch "exec ln -s $env(LD_UNDER_TEST) tmpdir/ld/ld" status
+    } else {
+	catch "exec ln -s ../../ld-new tmpdir/ld/ld" status
+    }
     catch "exec ln -s ld tmpdir/ld/collect-ld" status
     catch "exec ln -s ../../../gas/as-new tmpdir/ld/as" status
+    set gcc_B_opt "-B[pwd]/tmpdir/ld/"
 }
-set gcc_B_opt "-B[pwd]/tmpdir/ld/"
 
 # load the linker path
 set ld_L_opt ""
@@ -76,20 +105,23 @@ if {[file exists tmpdir/libpath.exp]} {
     }
 }
 
-# The "make check" target in the Makefile passes in
-# "CC=$(CC_FOR_TARGET)".  But, if the user invokes runtest directly
-# (as when testing an installed linker), these flags may not be set.  
 if {![info exists CC]} {
-    set CC [find_gcc]
+    set CC gcc
 }
 if {![info exists CFLAGS]} {
     set CFLAGS "-g -O2"
 }
-if {![info exists CXX]} {
-    set CXX [find_g++]
+if {![info exists CC_FOR_TARGET]} {
+    set CC_FOR_TARGET [find_gcc]
 }
-if {![info exists CXXFLAGS]} {
-    set CXXFLAGS ""
+if {![info exists CFLAGS_FOR_TARGET]} {
+    set CFLAGS_FOR_TARGET "-g -O2"
+}
+if {![info exists CXX_FOR_TARGET]} {
+    set CXX_FOR_TARGET [find_g++]
+}
+if {![info exists CXXFLAGS_FOR_TARGET]} {
+    set CXXFLAGS_FOR_TARGET ""
 }
 
 # This allows us to run the linker testsuite with clang as the compilation
@@ -298,6 +330,14 @@ if ![info exists READELFFLAGS] then {
     set READELFFLAGS {}
 }
 
+if ![info exists SIZE] then {
+    set SIZE [findfile $base_dir/../binutils/size]
+}
+
+if ![info exists SIZEFLAGS] then {
+    set SIZEFLAGS ""
+}
+
 if ![info exists ELFEDIT] then {
     set ELFEDIT [findfile $base_dir/../binutils/elfedit]
 }
@@ -308,6 +348,38 @@ if ![info exists LD] then {
 
 if ![info exists LDFLAGS] then {
     set LDFLAGS {}
+}
+
+if { ![info exists DT_RELR_LDFLAGS] } then {
+    if { [supports_dt_relr] } then {
+	set DT_RELR_LDFLAGS "-z pack-relative-relocs"
+    } else {
+	set DT_RELR_LDFLAGS {}
+    }
+}
+
+if { ![info exists DT_RELR_CC_LDFLAGS] } then {
+    if { [supports_dt_relr] } then {
+	set DT_RELR_CC_LDFLAGS "-Wl,-z,pack-relative-relocs"
+    } else {
+	set DT_RELR_CC_LDFLAGS {}
+    }
+}
+
+if { ![info exists NO_DT_RELR_LDFLAGS] } then {
+    if { [supports_dt_relr] } then {
+	set NO_DT_RELR_LDFLAGS "-z nopack-relative-relocs"
+    } else {
+	set NO_DT_RELR_LDFLAGS {}
+    }
+}
+
+if { ![info exists NO_DT_RELR_CC_LDFLAGS] } then {
+    if { [supports_dt_relr] } then {
+	set NO_DT_RELR_CC_LDFLAGS "-Wl,-z,nopack-relative-relocs"
+    } else {
+	set NO_DT_RELR_CC_LDFLAGS {}
+    }
 }
 
 # Set LD_CLASS to "64bit" for a 64-bit *host* linker.
@@ -324,7 +396,7 @@ if { ![info exists LD_CLASS] } then {
 # Compiler tests
 proc compiler_supports { flag args } {
     if { [check_compiler_available] } {
-	global CC
+	global CC_FOR_TARGET
 	set flags ""
 	if [board_info [target_info name] exists cflags] {
 	    append flags " [board_info [target_info name] cflags]"
@@ -333,6 +405,7 @@ proc compiler_supports { flag args } {
 	    append flags " [board_info [target_info name] ldflags]"
 	}
 	set fn "cs[pid].c"
+	set rfno "cs[pid].exe"
 	set f [open $fn "w"]
 	if { [llength $args] > 0 } {
 	    puts $f [lindex $args 0]
@@ -341,7 +414,8 @@ proc compiler_supports { flag args } {
 	}
 	close $f
 	set rfn [remote_download host $fn]
-	set avail [run_host_cmd_yesno "$CC" "$flags $flag $rfn -o /dev/null"]
+	set avail [run_host_cmd_yesno "$CC_FOR_TARGET" "$flags $flag $rfn -o $rfno"]
+	remote_file host delete $rfno
 	remote_file host delete $rfn
 	file delete $fn
 	return $avail
@@ -407,6 +481,9 @@ if { ![info exists NOSANITIZE_CFLAGS] } then {
     }
 }
 
+append CFLAGS_FOR_TARGET " $NOSANITIZE_CFLAGS"
+append CXXFLAGS_FOR_TARGET " $NOSANITIZE_CFLAGS"
+
 if { ![info exists NOLTO_CFLAGS] } then {
     set NOLTO_CFLAGS ""
     if [compiler_supports "-fno-lto"] {
@@ -421,7 +498,7 @@ if { [istarget alpha*-*-*vms*] } {
     close $f
     if { [ld_assemble $as $src tmpdir/empty.o]
 	 && ![ld_link $LD tmpdir/empty tmpdir/empty.o]
-	 && [regsub -all {[^\n]*: cannot find -l([^\n]*)} $exec_output {tmpdir/lib\1.a } missing_libs] } {
+	 && [regsub -all {[^\n]*: cannot find -l([^\n :]*)[^\n]*} $exec_output {tmpdir/lib\1.a } missing_libs] } {
 	regsub -all {\$} $missing_libs {\\\$} missing_libs
 	for { set i 0 } { $i < [llength $missing_libs] } { incr i } {
 	    set f [lindex $missing_libs $i]
@@ -442,9 +519,9 @@ if { [check_compiler_available] } {
 	cyglto_plugin-0.dll
     }
     foreach plug $plugin_names {
-	set plug_so [run_host_cmd $CC "--print-prog-name $plug"]
+	set plug_so [string trim [run_host_cmd $CC_FOR_TARGET "--print-prog-name $plug"]]
 	if { $plug_so eq $plug } then {
-	    set plug_so [run_host_cmd $CC "--print-file-name $plug"]
+	    set plug_so [string trim [run_host_cmd $CC_FOR_TARGET "--print-file-name $plug"]]
 	}
 	if { $plug_so ne $plug } then {
 	    set plug_opt "--plugin $plug_so"

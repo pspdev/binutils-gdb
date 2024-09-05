@@ -1,6 +1,6 @@
 /* This is the machine dependent code of the Visium Assembler.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -53,9 +53,8 @@
 
 
 /* This string holds the chars that always start a comment. If the
-   pre-processor is disabled, these aren't very useful. The macro
-   tc_comment_chars points to this.  */
-const char *visium_comment_chars = "!;";
+   pre-processor is disabled, these aren't very useful.  */
+const char comment_chars[] = "!;";
 
 /* This array holds the chars that only start a comment at the beginning
    of a line.  If the line seems to have the form '# 123 filename' .line
@@ -163,40 +162,19 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixp)
   return reloc;
 }
 
-extern char *input_line_pointer;
-
-
-static void s_bss (int);
 static void visium_rdata (int);
 
 static void visium_update_parity_bit (char *);
 static char *parse_exp (char *, expressionS *);
 
-/* These are the back-ends for the various machine dependent pseudo-ops.  */
-void demand_empty_rest_of_line (void);
-
-
-static void
-s_bss (int ignore ATTRIBUTE_UNUSED)
-{
-  /* We don't support putting frags in the BSS segment, we fake it
-     by marking in_bss, then looking at s_skip for clues.  */
-
-  subseg_set (bss_section, 0);
-  demand_empty_rest_of_line ();
-}
-
-
 /* This table describes all the machine specific pseudo-ops the assembler
-   has to support. The fields are:
+   has to support, and that aren't handled elsewhere. The fields are:
 
    1: Pseudo-op name without dot.
    2: Function to call to execute this pseudo-op.
    3: Integer arg to pass to the function.  */
 const pseudo_typeS md_pseudo_table[] =
 {
-  {"bss", s_bss, 0},
-  {"skip", s_space, 0},
   {"align", s_align_bytes, 0},
   {"noopt", s_ignore, 0},
   {"optim", s_ignore, 0},

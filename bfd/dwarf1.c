@@ -1,5 +1,5 @@
 /* DWARF 1 find nearest line (_bfd_dwarf1_find_nearest_line).
-   Copyright (C) 1998-2021 Free Software Foundation, Inc.
+   Copyright (C) 1998-2024 Free Software Foundation, Inc.
 
    Written by Gavin Romig-Koch of Cygnus Solutions (gavin@cygnus.com).
 
@@ -193,8 +193,8 @@ parse_die (bfd *	     abfd,
     return false;
   aDieInfo->length = bfd_get_32 (abfd, xptr);
   xptr += 4;
-  if (aDieInfo->length == 0
-      || this_die + aDieInfo->length > aDiePtrEnd)
+  if (aDieInfo->length <= 4
+      || (size_t) (aDiePtrEnd - this_die) < aDieInfo->length)
     return false;
   aDiePtrEnd = this_die + aDieInfo->length;
   if (aDieInfo->length < 6)
@@ -258,8 +258,7 @@ parse_die (bfd *	     abfd,
 	  if (xptr + 2 <= aDiePtrEnd)
 	    {
 	      block_len = bfd_get_16 (abfd, xptr);
-	      if (xptr + block_len > aDiePtrEnd
-		  || xptr + block_len < xptr)
+	      if ((size_t) (aDiePtrEnd - xptr) < block_len)
 		return false;
 	      xptr += block_len;
 	    }
@@ -269,8 +268,7 @@ parse_die (bfd *	     abfd,
 	  if (xptr + 4 <= aDiePtrEnd)
 	    {
 	      block_len = bfd_get_32 (abfd, xptr);
-	      if (xptr + block_len > aDiePtrEnd
-		  || xptr + block_len < xptr)
+	      if ((size_t) (aDiePtrEnd - xptr) < block_len)
 		return false;
 	      xptr += block_len;
 	    }
@@ -303,13 +301,13 @@ parse_line_table (struct dwarf1_debug* stash, struct dwarf1_unit* aUnit)
       bfd_size_type size;
 
       msec = bfd_get_section_by_name (stash->abfd, ".line");
-      if (! msec)
+      if (! msec || (msec->flags & SEC_HAS_CONTENTS) == 0)
 	return false;
 
       size = msec->rawsize ? msec->rawsize : msec->size;
       stash->line_section
-	= bfd_simple_get_relocated_section_contents
-	(stash->abfd, msec, NULL, stash->syms);
+	= bfd_simple_get_relocated_section_contents (stash->abfd, msec, NULL,
+						     stash->syms);
 
       if (! stash->line_section)
 	return false;
@@ -512,7 +510,8 @@ _bfd_dwarf1_find_nearest_line (bfd *abfd,
 	return false;
 
       msec = bfd_get_section_by_name (abfd, ".debug");
-      if (! msec)
+      if (! msec
+	  || (msec->flags & SEC_HAS_CONTENTS) == 0)
 	/* No dwarf1 info.  Note that at this point the stash
 	   has been allocated, but contains zeros, this lets
 	   future calls to this function fail quicker.  */
@@ -593,4 +592,16 @@ _bfd_dwarf1_find_nearest_line (bfd *abfd,
     }
 
   return false;
+}
+
+void
+_bfd_dwarf1_cleanup_debug_info (bfd *abfd ATTRIBUTE_UNUSED, void **pinfo)
+{
+  struct dwarf1_debug* stash = *pinfo;
+
+  if (stash == NULL)
+    return;
+
+  free (stash->debug_section);
+  free (stash->line_section);
 }

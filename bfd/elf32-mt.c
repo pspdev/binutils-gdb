@@ -1,5 +1,5 @@
 /* Morpho Technologies MT specific support for 32-bit ELF
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -48,7 +48,7 @@ static reloc_howto_type mt_elf_howto_table [] =
   /* This reloc does nothing.  */
   HOWTO (R_MT_NONE,	      /* type */
 	  0,			  /* rightshift */
-	  3,			  /* size (0 = byte, 1 = short, 2 = long) */
+	  0,			  /* size */
 	  0,			  /* bitsize */
 	  false,		  /* pc_relative */
 	  0,			  /* bitpos */
@@ -63,7 +63,7 @@ static reloc_howto_type mt_elf_howto_table [] =
   /* A 16 bit absolute relocation.  */
   HOWTO (R_MT_16,	      /* type */
 	  0,			  /* rightshift */
-	  2,			  /* size (0 = byte, 1 = short, 2 = long) */
+	  4,			  /* size */
 	  16,			  /* bitsize */
 	  false,		  /* pc_relative */
 	  0,			  /* bitpos */
@@ -78,7 +78,7 @@ static reloc_howto_type mt_elf_howto_table [] =
   /* A 32 bit absolute relocation.  */
   HOWTO (R_MT_32,	      /* type */
 	  0,			  /* rightshift */
-	  2,			  /* size (0 = byte, 1 = short, 2 = long) */
+	  4,			  /* size */
 	  32,			  /* bitsize */
 	  false,		  /* pc_relative */
 	  0,			  /* bitpos */
@@ -93,7 +93,7 @@ static reloc_howto_type mt_elf_howto_table [] =
   /* A 32 bit pc-relative relocation.  */
   HOWTO (R_MT_32_PCREL,	      /* type */
 	  0,			  /* rightshift */
-	  2,			  /* size (0 = byte, 1 = short, 2 = long) */
+	  4,			  /* size */
 	  32,			  /* bitsize */
 	  true,			  /* pc_relative */
 	  0,			  /* bitpos */
@@ -108,7 +108,7 @@ static reloc_howto_type mt_elf_howto_table [] =
   /* A 16 bit pc-relative relocation.  */
   HOWTO (R_MT_PC16,	      /* type */
 	  0,			  /* rightshift */
-	  2,			  /* size (0 = byte, 1 = short, 2 = long) */
+	  4,			  /* size */
 	  16,			  /* bitsize */
 	  true,			  /* pc_relative */
 	  0,			  /* bitpos */
@@ -123,7 +123,7 @@ static reloc_howto_type mt_elf_howto_table [] =
   /* high 16 bits of symbol value.  */
   HOWTO (R_MT_HI16,	     /* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -138,7 +138,7 @@ static reloc_howto_type mt_elf_howto_table [] =
   /* Low 16 bits of symbol value.  */
   HOWTO (R_MT_LO16,	     /* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */

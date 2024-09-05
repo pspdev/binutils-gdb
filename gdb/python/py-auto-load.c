@@ -1,6 +1,6 @@
 /* GDB routines for supporting auto-loaded scripts.
 
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,9 +17,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "top.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "objfiles.h"
 #include "python.h"
 #include "auto-load.h"
@@ -37,7 +36,7 @@ static void
 show_auto_load_python_scripts (struct ui_file *file, int from_tty,
 			       struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Auto-loading of Python scripts is %s.\n"), value);
+  gdb_printf (file, _("Auto-loading of Python scripts is %s.\n"), value);
 }
 
 /* See python-internal.h.  */
@@ -53,10 +52,11 @@ gdbpy_auto_load_enabled (const struct extension_language_defn *extlang)
 static void
 info_auto_load_python_scripts (const char *pattern, int from_tty)
 {
-  auto_load_info_scripts (pattern, from_tty, &extension_language_python);
+  auto_load_info_scripts (current_program_space, pattern, from_tty,
+			  &extension_language_python);
 }
 
-int
+static int CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION
 gdbpy_initialize_auto_load (void)
 {
   add_setshow_boolean_cmd ("python-scripts", class_support,
@@ -95,3 +95,5 @@ Print the list of automatically loaded Python scripts, deprecated."));
 
   return 0;
 }
+
+GDBPY_INITIALIZE_FILE (gdbpy_initialize_auto_load);

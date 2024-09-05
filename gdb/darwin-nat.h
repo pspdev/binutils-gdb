@@ -1,5 +1,5 @@
 /* Common things used by the various darwin files
-   Copyright (C) 1995-2021 Free Software Foundation, Inc.
+   Copyright (C) 1995-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -100,7 +100,7 @@ class darwin_nat_target : public inf_child_target
 
   std::string pid_to_str (ptid_t) override;
 
-  char *pid_to_exec_file (int pid) override;
+  const char *pid_to_exec_file (int pid) override;
 
   enum target_xfer_status xfer_partial (enum target_object object,
 					const char *annex,
@@ -111,7 +111,7 @@ class darwin_nat_target : public inf_child_target
 
   bool supports_multi_process () override;
 
-  ptid_t get_ada_task_ptid (long lwp, long thread) override;
+  ptid_t get_ada_task_ptid (long lwp, ULONGEST thread) override;
 
 private:
   ptid_t wait_1 (ptid_t, struct target_waitstatus *);
@@ -126,7 +126,7 @@ private:
   void stop_inferior (inferior *inf);
   void init_thread_list (inferior *inf);
   void ptrace_him (int pid);
-  int cancel_breakpoint (ptid_t ptid);
+  int cancel_breakpoint (inferior *inf, ptid_t ptid);
 };
 
 /* Describe the mach exception handling state for a task.  This state is saved
@@ -154,7 +154,7 @@ struct darwin_exception_info
 static inline darwin_thread_info *
 get_darwin_thread_info (class thread_info *thread)
 {
-  return static_cast<darwin_thread_info *> (thread->priv.get ());
+  return gdb::checked_static_cast<darwin_thread_info *> (thread->priv.get ());
 }
 
 /* Describe an inferior.  */
@@ -188,7 +188,7 @@ struct darwin_inferior : public private_inferior
 static inline darwin_inferior *
 get_darwin_inferior (inferior *inf)
 {
-  return static_cast<darwin_inferior *> (inf->priv.get ());
+  return gdb::checked_static_cast<darwin_inferior *> (inf->priv.get ());
 }
 
 /* Exception port.  */
@@ -200,14 +200,8 @@ extern mach_port_t darwin_port_set;
 /* A copy of mach_host_self ().  */
 extern mach_port_t darwin_host_self;
 
-/* FUNCTION_NAME is defined in common-utils.h (or not).  */
-#ifdef FUNCTION_NAME
 #define MACH_CHECK_ERROR(ret) \
-  mach_check_error (ret, __FILE__, __LINE__, FUNCTION_NAME)
-#else
-#define MACH_CHECK_ERROR(ret) \
-  mach_check_error (ret, __FILE__, __LINE__, "??")
-#endif
+  mach_check_error (ret, __FILE__, __LINE__, __func__)
 
 extern void mach_check_error (kern_return_t ret, const char *file,
 			      unsigned int line, const char *func);

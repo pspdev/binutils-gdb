@@ -1,11 +1,10 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: powerpc-isa205-ppr-dscr-vsx64l.xml */
 
-#include "defs.h"
 #include "osabi.h"
 #include "target-descriptions.h"
 
-struct target_desc *tdesc_powerpc_isa205_ppr_dscr_vsx64l;
+const struct target_desc *tdesc_powerpc_isa205_ppr_dscr_vsx64l;
 static void
 initialize_tdesc_powerpc_isa205_ppr_dscr_vsx64l (void)
 {

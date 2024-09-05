@@ -1,5 +1,5 @@
 /* Simulator for Xilinx MicroBlaze processor
-   Copyright 2009-2021 Free Software Foundation, Inc.
+   Copyright 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB, the GNU debugger.
 
@@ -19,7 +19,6 @@
 /* This must come before any other includes.  */
 #include "defs.h"
 
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -33,12 +32,13 @@
 #include "sim-signal.h"
 #include "sim-syscall.h"
 
-#include "microblaze-dis.h"
+#include "microblaze-sim.h"
+#include "opcodes/microblaze-dis.h"
 
 #define target_big_endian (CURRENT_TARGET_BYTE_ORDER == BFD_ENDIAN_BIG)
 
 static unsigned long
-microblaze_extract_unsigned_integer (unsigned char *addr, int len)
+microblaze_extract_unsigned_integer (const unsigned char *addr, int len)
 {
   unsigned long retval;
   unsigned char *p;
@@ -97,7 +97,6 @@ static void
 set_initial_gprs (SIM_CPU *cpu)
 {
   int i;
-  long space;
 
   /* Set up machine just out of reset.  */
   PC = 0;
@@ -120,20 +119,15 @@ sim_engine_run (SIM_DESC sd,
 		int siggnal) /* ignore  */
 {
   SIM_CPU *cpu = STATE_CPU (sd, 0);
-  int needfetch;
-  word inst;
+  signed_4 inst;
   enum microblaze_instr op;
   int memops;
   int bonus_cycles;
   int insts;
-  int w;
-  int cycs;
-  word WLhash;
-  ubyte carry;
+  unsigned_1 carry;
   bool imm_unsigned;
   short ra, rb, rd;
-  long immword;
-  uword oldpc, newpc;
+  unsigned_4 oldpc, newpc;
   short delay_slot_enable;
   short branch_taken;
   short num_delay_slot; /* UNUSED except as reqd parameter */
@@ -321,7 +315,7 @@ sim_engine_run (SIM_DESC sd,
 }
 
 static int
-microblaze_reg_store (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
+microblaze_reg_store (SIM_CPU *cpu, int rn, const void *memory, int length)
 {
   if (rn < NUM_REGS + NUM_SPECIAL && rn >= 0)
     {
@@ -343,7 +337,7 @@ microblaze_reg_store (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
 }
 
 static int
-microblaze_reg_fetch (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
+microblaze_reg_fetch (SIM_CPU *cpu, int rn, void *memory, int length)
 {
   long ival;
 
@@ -368,7 +362,7 @@ microblaze_reg_fetch (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
 }
 
 void
-sim_info (SIM_DESC sd, int verbose)
+sim_info (SIM_DESC sd, bool verbose)
 {
   SIM_CPU *cpu = STATE_CPU (sd, 0);
   host_callback *callback = STATE_CALLBACK (sd);
@@ -382,13 +376,13 @@ sim_info (SIM_DESC sd, int verbose)
 static sim_cia
 microblaze_pc_get (sim_cpu *cpu)
 {
-  return cpu->microblaze_cpu.spregs[0];
+  return MICROBLAZE_SIM_CPU (cpu)->spregs[0];
 }
 
 static void
 microblaze_pc_set (sim_cpu *cpu, sim_cia pc)
 {
-  cpu->microblaze_cpu.spregs[0] = pc;
+  MICROBLAZE_SIM_CPU (cpu)->spregs[0] = pc;
 }
 
 static void
@@ -409,7 +403,8 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
   SIM_ASSERT (STATE_MAGIC (sd) == SIM_MAGIC_NUMBER);
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
-  if (sim_cpu_alloc_all (sd, 1) != SIM_RC_OK)
+  if (sim_cpu_alloc_all_extra (sd, 0, sizeof (struct microblaze_regset))
+      != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -429,10 +424,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
     }
 
   /* Check for/establish the a reference program image.  */
-  if (sim_analyze_program (sd,
-			   (STATE_PROG_ARGV (sd) != NULL
-			    ? *STATE_PROG_ARGV (sd)
-			    : NULL), abfd) != SIM_RC_OK)
+  if (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;

@@ -1,6 +1,6 @@
 /* Target dependent code for ARC architecture, for GDB.
 
-   Copyright 2005-2021 Free Software Foundation, Inc.
+   Copyright 2005-2024 Free Software Foundation, Inc.
    Contributed by Synopsys Inc.
 
    This file is part of GDB.
@@ -19,16 +19,17 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 /* GDB header files.  */
-#include "defs.h"
 #include "arch-utils.h"
 #include "elf-bfd.h"
 #include "disasm.h"
 #include "dwarf2/frame.h"
+#include "extract-store-integer.h"
 #include "frame-base.h"
 #include "frame-unwind.h"
 #include "gdbcore.h"
+#include "inferior.h"
 #include "reggroups.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "objfiles.h"
 #include "osabi.h"
 #include "prologue-value.h"
@@ -298,7 +299,7 @@ static const struct arc_register_feature arc_common_aux_reg_feature =
   }
 };
 
-static char *arc_disassembler_options = NULL;
+static std::string arc_disassembler_options;
 
 /* Functions are sorted in the order as they are used in the
    _initialize_arc_tdep (), which uses the same order as gdbarch.h.  Static
@@ -321,7 +322,7 @@ arc_insn_get_operand_value (const struct arc_instruction &insn,
       return insn.operands[operand_num].value;
     default:
       /* Value in instruction is a register number.  */
-      struct regcache *regcache = get_current_regcache ();
+      regcache *regcache = get_thread_regcache (inferior_thread ());
       ULONGEST value;
       regcache_cooked_read_unsigned (regcache,
 				     insn.operands[operand_num].value,
@@ -343,14 +344,14 @@ arc_insn_get_operand_value_signed (const struct arc_instruction &insn,
       /* Convert unsigned raw value to signed one.  This assumes 2's
 	 complement arithmetic, but so is the LONG_MIN value from generic
 	 defs.h and that assumption is true for ARC.  */
-      gdb_static_assert (sizeof (insn.limm_value) == sizeof (int));
+      static_assert (sizeof (insn.limm_value) == sizeof (int));
       return (((LONGEST) insn.limm_value) ^ INT_MIN) - INT_MIN;
     case ARC_OPERAND_KIND_SHIMM:
       /* Sign conversion has been done by binutils.  */
       return insn.operands[operand_num].value;
     default:
       /* Value in instruction is a register number.  */
-      struct regcache *regcache = get_current_regcache ();
+      regcache *regcache = get_thread_regcache (inferior_thread ());
       LONGEST value;
       regcache_cooked_read_signed (regcache,
 				   insn.operands[operand_num].value,
@@ -435,20 +436,20 @@ arc_insn_get_branch_target (const struct arc_instruction &insn)
   /* JLI and EI depend on optional AUX registers.  Not supported right now.  */
   else if (insn.insn_class == JLI)
     {
-      fprintf_unfiltered (gdb_stderr,
-			  "JLI_S instruction is not supported by the GDB.");
+      gdb_printf (gdb_stderr,
+		  "JLI_S instruction is not supported by the GDB.");
       return 0;
     }
   else if (insn.insn_class == EI)
     {
-      fprintf_unfiltered (gdb_stderr,
-			  "EI_S instruction is not supported by the GDB.");
+      gdb_printf (gdb_stderr,
+		  "EI_S instruction is not supported by the GDB.");
       return 0;
     }
   /* LEAVE_S: PC = BLINK.  */
   else if (insn.insn_class == LEAVE)
     {
-      struct regcache *regcache = get_current_regcache ();
+      regcache *regcache = get_thread_regcache (inferior_thread ());
       ULONGEST value;
       regcache_cooked_read_unsigned (regcache, ARC_BLINK_REGNUM, &value);
       return value;
@@ -463,6 +464,16 @@ arc_insn_get_branch_target (const struct arc_instruction &insn)
 
       /* Offset is relative to the 4-byte aligned address of the current
 	 instruction, hence last two bits should be truncated.  */
+      return pcrel_addr + align_down (insn.address, 4);
+    }
+  /* DBNZ is the only branch instruction that keeps a branch address in
+     the second operand. It must be intercepted and treated differently. */
+  else if (insn.insn_class == DBNZ)
+    {
+      CORE_ADDR pcrel_addr = arc_insn_get_operand_value_signed (insn, 1);
+
+      /* Offset is relative to the 4-byte aligned address of the current
+	 instruction, hence last two bits should be truncated. */
       return pcrel_addr + align_down (insn.address, 4);
     }
   /* B, Bcc, BL, BLcc, LP, LPcc: PC = currentPC + operand.  */
@@ -490,7 +501,7 @@ arc_insn_get_branch_target (const struct arc_instruction &insn)
 static void
 arc_insn_dump (const struct arc_instruction &insn)
 {
-  struct gdbarch *gdbarch = target_gdbarch ();
+  struct gdbarch *gdbarch = current_inferior ()->arch ();
 
   arc_print ("Dumping arc_instruction at %s\n",
 	     paddress (gdbarch, insn.address));
@@ -761,7 +772,7 @@ arc_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	 argument's size up to an integral number of words.  */
       for (int i = 0; i < nargs; i++)
 	{
-	  unsigned int len = TYPE_LENGTH (value_type (args[i]));
+	  unsigned int len = args[i]->type ()->length ();
 	  unsigned int space = align_up (len, 4);
 
 	  total_space += space;
@@ -776,12 +787,13 @@ arc_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
       gdb_byte *data = memory_image;
       for (int i = 0; i < nargs; i++)
 	{
-	  unsigned int len = TYPE_LENGTH (value_type (args[i]));
+	  unsigned int len = args[i]->type ()->length ();
 	  unsigned int space = align_up (len, 4);
 
-	  memcpy (data, value_contents (args[i]), (size_t) len);
+	  memcpy (data, args[i]->contents ().data (), (size_t) len);
 	  arc_debug_printf ("copying arg %d, val 0x%08x, len %d to mem",
-			    i, *((int *) value_contents (args[i])), len);
+			    i, *((int *) args[i]->contents ().data ()),
+			    len);
 
 	  data += space;
 	}
@@ -849,7 +861,7 @@ arc_push_dummy_code (struct gdbarch *gdbarch, CORE_ADDR sp, CORE_ADDR funaddr,
 		     struct regcache *regcache)
 {
   *real_pc = funaddr;
-  *bp_addr = entry_point_address ();
+  *bp_addr = entry_point_address (current_program_space);
   return sp;
 }
 
@@ -905,7 +917,7 @@ static void
 arc_extract_return_value (struct gdbarch *gdbarch, struct type *type,
 			  struct regcache *regcache, gdb_byte *valbuf)
 {
-  unsigned int len = TYPE_LENGTH (type);
+  unsigned int len = type->length ();
 
   arc_debug_printf ("called");
 
@@ -956,7 +968,7 @@ static void
 arc_store_return_value (struct gdbarch *gdbarch, struct type *type,
 			struct regcache *regcache, const gdb_byte *valbuf)
 {
-  unsigned int len = TYPE_LENGTH (type);
+  unsigned int len = type->length ();
 
   arc_debug_printf ("called");
 
@@ -996,12 +1008,12 @@ arc_store_return_value (struct gdbarch *gdbarch, struct type *type,
 /* Implement the "get_longjmp_target" gdbarch method.  */
 
 static int
-arc_get_longjmp_target (struct frame_info *frame, CORE_ADDR *pc)
+arc_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 {
   arc_debug_printf ("called");
 
   struct gdbarch *gdbarch = get_frame_arch (frame);
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  arc_gdbarch_tdep *tdep = gdbarch_tdep<arc_gdbarch_tdep> (gdbarch);
   int pc_offset = tdep->jb_pc * ARC_REGISTER_SIZE;
   gdb_byte buf[ARC_REGISTER_SIZE];
   CORE_ADDR jb_addr = get_frame_register_unsigned (frame, ARC_FIRST_ARG_REGNUM);
@@ -1028,7 +1040,7 @@ arc_return_value (struct gdbarch *gdbarch, struct value *function,
      stored.  Otherwise, the result is returned in registers.  */
   int is_struct_return = (valtype->code () == TYPE_CODE_STRUCT
 			  || valtype->code () == TYPE_CODE_UNION
-			  || TYPE_LENGTH (valtype) > 2 * ARC_REGISTER_SIZE);
+			  || valtype->length () > 2 * ARC_REGISTER_SIZE);
 
   arc_debug_printf ("readbuf = %s, writebuf = %s",
 		    host_address_to_string (readbuf),
@@ -1060,7 +1072,7 @@ arc_return_value (struct gdbarch *gdbarch, struct value *function,
    frame pointer.  */
 
 static CORE_ADDR
-arc_frame_base_address (struct frame_info *this_frame, void **prologue_cache)
+arc_frame_base_address (const frame_info_ptr &this_frame, void **prologue_cache)
 {
   return (CORE_ADDR) get_frame_register_unsigned (this_frame, ARC_FP_REGNUM);
 }
@@ -1305,30 +1317,6 @@ arc_is_in_prologue (struct gdbarch *gdbarch, const struct arc_instruction &insn,
   return false;
 }
 
-/* Copy of gdb_buffered_insn_length_fprintf from disasm.c.  */
-
-static int ATTRIBUTE_PRINTF (2, 3)
-arc_fprintf_disasm (void *stream, const char *format, ...)
-{
-  return 0;
-}
-
-struct disassemble_info
-arc_disassemble_info (struct gdbarch *gdbarch)
-{
-  struct disassemble_info di;
-  init_disassemble_info (&di, &null_stream, arc_fprintf_disasm);
-  di.arch = gdbarch_bfd_arch_info (gdbarch)->arch;
-  di.mach = gdbarch_bfd_arch_info (gdbarch)->mach;
-  di.endian = gdbarch_byte_order (gdbarch);
-  di.read_memory_func = [](bfd_vma memaddr, gdb_byte *myaddr,
-			   unsigned int len, struct disassemble_info *info)
-    {
-      return target_read_code (memaddr, myaddr, len);
-    };
-  return di;
-}
-
 /* Analyze the prologue and update the corresponding frame cache for the frame
    unwinder for unwinding frames that doesn't have debug info.  In such
    situation GDB attempts to parse instructions in the prologue to understand
@@ -1399,9 +1387,10 @@ arc_analyze_prologue (struct gdbarch *gdbarch, const CORE_ADDR entrypoint,
   while (current_prologue_end < limit_pc)
     {
       struct arc_instruction insn;
-      struct disassemble_info di = arc_disassemble_info (gdbarch);
-      arc_insn_decode (current_prologue_end, &di, arc_delayed_print_insn,
-		       &insn);
+
+      struct gdb_non_printing_memory_disassembler dis (gdbarch);
+      arc_insn_decode (current_prologue_end, dis.disasm_info (),
+		       arc_delayed_print_insn, &insn);
 
       if (arc_debug)
 	arc_insn_dump (insn);
@@ -1664,7 +1653,7 @@ arc_print_frame_cache (struct gdbarch *gdbarch, const char *message,
 /* Frame unwinder for normal frames.  */
 
 static struct arc_frame_cache *
-arc_make_frame_cache (struct frame_info *this_frame)
+arc_make_frame_cache (const frame_info_ptr &this_frame)
 {
   arc_debug_printf ("called");
 
@@ -1731,7 +1720,7 @@ arc_make_frame_cache (struct frame_info *this_frame)
 /* Implement the "this_id" frame_unwind method.  */
 
 static void
-arc_frame_this_id (struct frame_info *this_frame, void **this_cache,
+arc_frame_this_id (const frame_info_ptr &this_frame, void **this_cache,
 		   struct frame_id *this_id)
 {
   arc_debug_printf ("called");
@@ -1776,7 +1765,7 @@ arc_frame_this_id (struct frame_info *this_frame, void **this_cache,
 /* Implement the "prev_register" frame_unwind method.  */
 
 static struct value *
-arc_frame_prev_register (struct frame_info *this_frame,
+arc_frame_prev_register (const frame_info_ptr &this_frame,
 			 void **this_cache, int regnum)
 {
   if (*this_cache == NULL)
@@ -1813,7 +1802,7 @@ arc_frame_prev_register (struct frame_info *this_frame,
 static void
 arc_dwarf2_frame_init_reg (struct gdbarch *gdbarch, int regnum,
 			   struct dwarf2_frame_state_reg *reg,
-			   struct frame_info *info)
+			   const frame_info_ptr &info)
 {
   if (regnum == gdbarch_pc_regnum (gdbarch))
     /* The return address column.  */
@@ -1827,11 +1816,12 @@ arc_dwarf2_frame_init_reg (struct gdbarch *gdbarch, int regnum,
     from within signal handlers.  */
 
 static struct arc_frame_cache *
-arc_make_sigtramp_frame_cache (struct frame_info *this_frame)
+arc_make_sigtramp_frame_cache (const frame_info_ptr &this_frame)
 {
   arc_debug_printf ("called");
 
-  struct gdbarch_tdep *tdep = gdbarch_tdep (get_frame_arch (this_frame));
+  gdbarch *arch = get_frame_arch (this_frame);
+  arc_gdbarch_tdep *tdep = gdbarch_tdep<arc_gdbarch_tdep> (arch);
 
   /* Allocate new frame cache instance and space for saved register info.  */
   struct arc_frame_cache *cache = FRAME_OBSTACK_ZALLOC (struct arc_frame_cache);
@@ -1865,7 +1855,7 @@ arc_make_sigtramp_frame_cache (struct frame_info *this_frame)
    frames.  */
 
 static void
-arc_sigtramp_frame_this_id (struct frame_info *this_frame,
+arc_sigtramp_frame_this_id (const frame_info_ptr &this_frame,
 			    void **this_cache, struct frame_id *this_id)
 {
   arc_debug_printf ("called");
@@ -1884,7 +1874,7 @@ arc_sigtramp_frame_this_id (struct frame_info *this_frame,
 /* Get a register from a signal handler frame.  */
 
 static struct value *
-arc_sigtramp_frame_prev_register (struct frame_info *this_frame,
+arc_sigtramp_frame_prev_register (const frame_info_ptr &this_frame,
 				  void **this_cache, int regnum)
 {
   arc_debug_printf ("regnum = %d", regnum);
@@ -1902,14 +1892,13 @@ arc_sigtramp_frame_prev_register (struct frame_info *this_frame,
 
 static int
 arc_sigtramp_frame_sniffer (const struct frame_unwind *self,
-			    struct frame_info *this_frame,
+			    const frame_info_ptr &this_frame,
 			    void **this_cache)
 {
-  struct gdbarch_tdep *tdep;
-
   arc_debug_printf ("called");
 
-  tdep = gdbarch_tdep (get_frame_arch (this_frame));
+  gdbarch *arch = get_frame_arch (this_frame);
+  arc_gdbarch_tdep *tdep = gdbarch_tdep<arc_gdbarch_tdep> (arch);
 
   /* If we have a sigcontext_addr handler, then just return 1 (same as the
      "default_frame_sniffer ()").  */
@@ -1957,20 +1946,6 @@ static const struct frame_base arc_normal_base = {
   arc_frame_base_address
 };
 
-/* Add all the expected register sets into GDBARCH.  */
-
-static void
-arc_add_reggroups (struct gdbarch *gdbarch)
-{
-  reggroup_add (gdbarch, general_reggroup);
-  reggroup_add (gdbarch, float_reggroup);
-  reggroup_add (gdbarch, system_reggroup);
-  reggroup_add (gdbarch, vector_reggroup);
-  reggroup_add (gdbarch, all_reggroup);
-  reggroup_add (gdbarch, save_reggroup);
-  reggroup_add (gdbarch, restore_reggroup);
-}
-
 static enum arc_isa
 mach_type_to_arc_isa (const unsigned long mach)
 {
@@ -1983,8 +1958,7 @@ mach_type_to_arc_isa (const unsigned long mach)
     case bfd_mach_arc_arcv2:
       return ARC_ISA_ARCV2;
     default:
-	internal_error (__FILE__, __LINE__,
-			_("unknown machine id %lu"), mach);
+	internal_error (_("unknown machine id %lu"), mach);
     }
 }
 
@@ -2009,8 +1983,7 @@ arc_arch_features_create (const bfd *abfd, const unsigned long mach)
       else if (eclass == ELFCLASS64)
 	reg_size = 8;
       else
-	internal_error (__FILE__, __LINE__,
-			_("unknown ELF header class %d"), eclass);
+	internal_error (_("unknown ELF header class %d"), eclass);
     }
 
   /* MACH from a bfd_arch_info struct is used here.  It should be a safe
@@ -2273,7 +2246,7 @@ arc_type_align (struct gdbarch *gdbarch, struct type *type)
     case TYPE_CODE_METHODPTR:
     case TYPE_CODE_MEMBERPTR:
       type = check_typedef (type);
-      return std::min<ULONGEST> (4, TYPE_LENGTH (type));
+      return std::min<ULONGEST> (4, type->length ());
     default:
       return 0;
     }
@@ -2294,11 +2267,11 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Allocate the ARC-private target-dependent information structure, and the
      GDB target-independent information structure.  */
-  gdb::unique_xmalloc_ptr<struct gdbarch_tdep> tdep
-    (XCNEW (struct gdbarch_tdep));
+  gdbarch *gdbarch
+    = gdbarch_alloc (&info, gdbarch_tdep_up (new arc_gdbarch_tdep));
+  arc_gdbarch_tdep *tdep = gdbarch_tdep<arc_gdbarch_tdep> (gdbarch);
   tdep->jb_pc = -1; /* No longjmp support by default.  */
   tdep->has_hw_loops = arc_check_for_hw_loops (tdesc, tdesc_data.get ());
-  struct gdbarch *gdbarch = gdbarch_alloc (&info, tdep.release ());
 
   /* Data types.  */
   set_gdbarch_short_bit (gdbarch, 16);
@@ -2369,9 +2342,6 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   /* This doesn't include possible long-immediate value.  */
   set_gdbarch_max_insn_length (gdbarch, 4);
 
-  /* Add default register groups.  */
-  arc_add_reggroups (gdbarch);
-
   /* Frame unwinders and sniffers.  */
   dwarf2_frame_set_init_reg (gdbarch, arc_dwarf2_frame_init_reg);
   dwarf2_append_unwinders (gdbarch);
@@ -2383,7 +2353,7 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
      It can override functions set earlier.  */
   gdbarch_init_osabi (info, gdbarch);
 
-  if (gdbarch_tdep (gdbarch)->jb_pc >= 0)
+  if (tdep->jb_pc >= 0)
     set_gdbarch_get_longjmp_target (gdbarch, arc_get_longjmp_target);
 
   /* Disassembler options.  Enforce CPU if it was specified in XML target
@@ -2395,7 +2365,6 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 	= tdesc_architecture (info.target_desc);
       if (tdesc_arch != NULL)
 	{
-	  xfree (arc_disassembler_options);
 	  /* FIXME: It is not really good to change disassembler options
 	     behind the scene, because that might override options
 	     specified by the user.  However as of now ARC doesn't support
@@ -2416,24 +2385,24 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 	  switch (tdesc_arch->mach)
 	    {
 	    case bfd_mach_arc_arc601:
-	      arc_disassembler_options = xstrdup ("cpu=arc601");
+	      arc_disassembler_options = "cpu=arc601";
 	      break;
 	    case bfd_mach_arc_arc600:
-	      arc_disassembler_options = xstrdup ("cpu=arc600");
+	      arc_disassembler_options = "cpu=arc600";
 	      break;
 	    case bfd_mach_arc_arc700:
-	      arc_disassembler_options = xstrdup ("cpu=arc700");
+	      arc_disassembler_options = "cpu=arc700";
 	      break;
 	    case bfd_mach_arc_arcv2:
 	      /* Machine arcv2 has three arches: ARCv2, EM and HS; where ARCv2
 		 is treated as EM.  */
 	      if (arc_arch_is_hs (tdesc_arch))
-		arc_disassembler_options = xstrdup ("cpu=hs38_linux");
+		arc_disassembler_options = "cpu=hs38_linux";
 	      else
-		arc_disassembler_options = xstrdup ("cpu=em4_fpuda");
+		arc_disassembler_options = "cpu=em4_fpuda";
 	      break;
 	    default:
-	      arc_disassembler_options = NULL;
+	      arc_disassembler_options = "";
 	      break;
 	    }
 	}
@@ -2453,18 +2422,18 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 static void
 arc_dump_tdep (struct gdbarch *gdbarch, struct ui_file *file)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  arc_gdbarch_tdep *tdep = gdbarch_tdep<arc_gdbarch_tdep> (gdbarch);
 
-  fprintf_unfiltered (file, "arc_dump_tdep: jb_pc = %i\n", tdep->jb_pc);
+  gdb_printf (file, "arc_dump_tdep: jb_pc = %i\n", tdep->jb_pc);
 
-  fprintf_unfiltered (file, "arc_dump_tdep: is_sigtramp = <%s>\n",
-		      host_address_to_string (tdep->is_sigtramp));
-  fprintf_unfiltered (file, "arc_dump_tdep: sigcontext_addr = <%s>\n",
-		      host_address_to_string (tdep->sigcontext_addr));
-  fprintf_unfiltered (file, "arc_dump_tdep: sc_reg_offset = <%s>\n",
-		      host_address_to_string (tdep->sc_reg_offset));
-  fprintf_unfiltered (file, "arc_dump_tdep: sc_num_regs = %d\n",
-		      tdep->sc_num_regs);
+  gdb_printf (file, "arc_dump_tdep: is_sigtramp = <%s>\n",
+	      host_address_to_string (tdep->is_sigtramp));
+  gdb_printf (file, "arc_dump_tdep: sigcontext_addr = <%s>\n",
+	      host_address_to_string (tdep->sigcontext_addr));
+  gdb_printf (file, "arc_dump_tdep: sc_reg_offset = <%s>\n",
+	      host_address_to_string (tdep->sc_reg_offset));
+  gdb_printf (file, "arc_dump_tdep: sc_num_regs = %d\n",
+	      tdep->sc_num_regs);
 }
 
 /* This command accepts single argument - address of instruction to
@@ -2475,15 +2444,15 @@ dump_arc_instruction_command (const char *args, int from_tty)
 {
   struct value *val;
   if (args != NULL && strlen (args) > 0)
-    val = evaluate_expression (parse_expression (args).get ());
+    val = parse_expression (args)->evaluate ();
   else
     val = access_value_history (0);
-  record_latest_value (val);
+  val->record_latest ();
 
   CORE_ADDR address = value_as_address (val);
   struct arc_instruction insn;
-  struct disassemble_info di = arc_disassemble_info (target_gdbarch ());
-  arc_insn_decode (address, &di, arc_delayed_print_insn, &insn);
+  gdb_non_printing_memory_disassembler dis (current_inferior ()->arch ());
+  arc_insn_decode (address, dis.disasm_info (), arc_delayed_print_insn, &insn);
   arc_insn_dump (insn);
 }
 
@@ -2496,11 +2465,11 @@ _initialize_arc_tdep ()
   /* Register ARC-specific commands with gdb.  */
 
   /* Add root prefix command for "maintenance print arc" commands.  */
-  add_show_prefix_cmd ("arc", class_maintenance,
-		       _("ARC-specific maintenance commands for printing GDB "
-			 "internal state."),
-		       &maintenance_print_arc_list,
-		       0, &maintenanceprintlist);
+  add_basic_prefix_cmd ("arc", class_maintenance,
+			_("ARC-specific maintenance commands for printing GDB "
+			  "internal state."),
+			&maintenance_print_arc_list,
+			0, &maintenanceprintlist);
 
   add_cmd ("arc-instruction", class_maintenance,
 	   dump_arc_instruction_command,

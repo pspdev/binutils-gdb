@@ -1,4 +1,4 @@
-#   Copyright 1988-2021 Free Software Foundation, Inc.
+#   Copyright 1988-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,7 +25,10 @@ if { [prepare_for_testing "failed to prepare" "hbreak2" {break.c break1.c} {debu
 set srcfile break.c
 set srcfile1 break1.c
 
-if ![runto_main] then { fail "break tests suppressed" }
+if {![runto_main]} {
+    return
+}
+
 delete_breakpoints
 
 #
@@ -147,7 +150,7 @@ delete_breakpoints
 #
 gdb_test "hbreak -q main" \
     "Hardware assisted breakpoint.*at.* file .*$srcfile, line.*" \
-    "hardware breakpoint function (2)"
+    "hardware breakpoint function, 2"
 gdb_run_cmd
 gdb_test "" \
     "Breakpoint \[0-9\]+,.*main .*argc.*argv.* at .*$srcfile:$bp_location6.*$bp_location6\[\t \]+if .argc.* \{.*" \
@@ -159,7 +162,7 @@ delete_breakpoints
 #
 gdb_test "hbreak $bp_location1" \
     "Hardware assisted breakpoint.*at.* file .*$srcfile, line $bp_location1\\." \
-    "hardware breakpoint line number (2)"
+    "hardware breakpoint line number, 2"
 gdb_test "continue" \
     "Continuing\\..*Breakpoint \[0-9\]+, main \\(argc=.*, argv=.*, envp=.*\\) at .*$srcfile:$bp_location1.*$bp_location1\[\t \]+printf.*factorial.*" \
     "run until breakpoint set at a line number"
@@ -170,7 +173,7 @@ delete_breakpoints
 #
 gdb_test "hbreak $srcfile:factorial" \
     "Hardware assisted breakpoint.*at.* file .*$srcfile, line.*" \
-    "hardware breakpoint function in file (2)"
+    "hardware breakpoint function in file, 2"
 for {set i 6} {$i >= 1} {incr i -1} {
     gdb_test "continue" \
 	"Continuing\\..*Breakpoint \[0-9\]+, factorial \\(value=$i\\) at .*$srcfile:$bp_location7.*$bp_location7\[\t \]+.*if .value > 1. \{.*" \
@@ -183,7 +186,7 @@ delete_breakpoints
 #
 gdb_test "hbreak \"marker2\"" \
     "Hardware assisted breakpoint.*at.* file .*$srcfile1, line.*" \
-    "hardware breakpoint quoted function (2)"
+    "hardware breakpoint quoted function, 2"
 gdb_test "continue" \
     "Continuing\\..*Breakpoint \[0-9\]+, (0x\[0-9a-f\]+ in )?marker2 \\(a=43\\) at .*$srcfile1:$bp_location8.*" \
     "run until quoted breakpoint"
@@ -193,7 +196,7 @@ delete_breakpoints
 #
 gdb_test "hbreak $srcfile:$bp_location2" \
     "Hardware assisted breakpoint.*at.* file .*$srcfile, line $bp_location2\\." \
-    "hardware breakpoint line number in file (2)"
+    "hardware breakpoint line number in file, 2"
 gdb_test "continue" \
     "Continuing\\..*Breakpoint \[0-9\]+, main \\(argc=.*, argv=.*, envp=.*\\) at .*$srcfile:$bp_location2.*$bp_location2\[\t \]+argc = \\(argc == 12345\\);.*" \
     "run until file:linenum breakpoint"
@@ -225,7 +228,7 @@ gdb_test "continue" \
     "continue to hardware breakpoint at }"
 
 #
-# Delete all breakpoints so we can start over, course this can be a test too.
+# Delete all breakpoints, watchpoints, tracepoints, and catchpoints so we can start over, course this can be a test too.
 #
 delete_breakpoints
 
@@ -284,14 +287,16 @@ gdb_test "info break" \
 
 #***********
 
-if ![runto_main] then { fail "break tests suppressed" }
+if {![runto_main]} {
+    return
+}
 
 # Verify that GDB responds gracefully when asked to set a breakpoint
 # on a nonexistent source line.
 #
 gdb_test_no_output "set breakpoint pending off"
 gdb_test "hbreak 999" \
-    "No line 999 in the current file." \
+    "^No compiled code for line 999 in the current file\\." \
     "hardware break on non-existent source line"
 
 # Run to the desired default location.  If not positioned here, the
@@ -310,7 +315,9 @@ gdb_test "hbreak" "Hardware assisted breakpoint \[0-9\]*.*" \
 # Verify that a "silent" breakpoint can be set, and that GDB is indeed
 # "silent" about its triggering.
 #
-if ![runto_main] then { fail "break tests suppressed" }
+if {![runto_main]} {
+    return
+}
 
 gdb_test_multiple "hbreak $bp_location1" \
     "set to-be-silent hardware break bp_location1" {
@@ -513,7 +520,10 @@ if { [prepare_for_testing "failed to prepare" "hbreak2o2" {break.c break1.c} {de
     return -1
 }
 
-if ![runto_main] then { fail "break tests suppressed" }
+if {![runto_main]} {
+    return
+}
+
 delete_breakpoints
 
 #

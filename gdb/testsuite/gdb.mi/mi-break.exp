@@ -1,4 +1,4 @@
-# Copyright 1999-2021 Free Software Foundation, Inc.
+# Copyright 1999-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -93,75 +93,6 @@ proc_with_prefix test_tbreak_creation_and_listing {} {
 
     mi_gdb_test "777-break-delete" \
 	    "777\\^done" \
-	    "delete temp breakpoints"
-}
-
-proc_with_prefix test_rbreak_creation_and_listing {} {
-    global line_callee4_body
-    global line_callee3_body
-    global line_callee2_body
-    global line_callee1_body
-    global line_main_body
-
-    # Insert some breakpoints and list them
-    # Also, disable some so they do not interfere with other tests
-    # Tests:
-    # -break-insert -r main
-    # -break-insert -r callee2
-    # -break-insert -r callee
-    # -break-insert -r .*llee
-    # -break-list
-
-    setup_kfail "*-*-*" mi/14270
-    set bps {}
-    lappend bps [mi_make_breakpoint -number 5 -file ".*basics.c" \
-		     -line $line_main_body]
-    mi_gdb_test "122-break-insert -r main" \
-	"122\\^done,[lindex $bps end]" \
-	"break-insert -r operation"
-
-    setup_kfail "*-*-*" mi/14270
-    lappend bps [mi_make_breakpoint -number 6 -file ".*basics.c" \
-		     -line $line_callee2_body]
-    mi_gdb_test "133-break-insert -r callee2" \
-	"133\\^done,[lindex $bps end]" \
-	"insert breakpoint with regexp callee2"
-
-    setup_kfail "*-*-*" mi/14270
-    set start [llength $bps]
-    lappend bps [mi_make_breakpoint -number 7 -file ".*basics.c" \
-		     -line $line_callee1_body]
-    lappend bps [mi_make_breakpoint -number 8 -file ".*basics.c" \
-		     -line $line_callee2_body]
-    lappend bps [mi_make_breakpoint -number 9 -file ".*basics.c" \
-		     -line $line_callee3_body]
-    lappend bps [mi_make_breakpoint -number 10 -file ".*basics.c" \
-		     -line $line_callee4_body]
-    mi_gdb_test "144-break-insert -r callee" \
-	"144\\^done,[join [lrange $bps $start end] ,]" \
-	"insert breakpoint with regexp callee"
-
-    setup_kfail "*-*-*" mi/14270
-    set start [llength $bps]
-    lappend bps [mi_make_breakpoint -number 11 -file ".*basics.c" \
-		     -line $line_callee1_body]
-    lappend bps [mi_make_breakpoint -number 12 -file ".*basics.c" \
-		     -line $line_callee2_body]
-    lappend bps [mi_make_breakpoint -number 13 -file ".*basics.c" \
-		     -line $line_callee3_body]
-    lappend bps [mi_make_breakpoint -number 14 -file ".*basics.c" \
-		     -line $line_callee4_body]
-    mi_gdb_test "155-break-insert -r \.\*llee" \
-	"155\\^done,[join [lrange $bps $start end] ,]" \
-	"insert breakpoint with regexp .*llee"
-
-    setup_kfail "*-*-*" mi/14270
-    mi_gdb_test "166-break-list" \
-	"166\\^done,[mi_make_breakpoint_table $bps]" \
-	"list of breakpoints"
-
-    mi_gdb_test "177-break-delete" \
-	    "177\\^done" \
 	    "delete temp breakpoints"
 }
 
@@ -272,7 +203,7 @@ proc_with_prefix test_breakpoint_commands {} {
     # seen.
     set bp_script [mi_make_breakpoint -number 7 -disp keep -func callee2 \
 		       -file ".*basics.c" -line $line_callee2_body \
-		       -script {\{"print 10","continue"\}}]
+		       -script {\["print 10","continue"\]}]
     mi_gdb_test "-break-info 7" \
 	"\\^done,[mi_make_breakpoint_table [list $bp_script]]" \
 	"breakpoint commands: check that commands are set"
@@ -341,7 +272,7 @@ proc_with_prefix test_explicit_breakpoints {} {
 
     # First check mixed explicit/parsed linespecs.
     mi_gdb_test "-break-insert --function main $srcfile:$line_callee3_head" \
-	".*Garbage following explicit linespec"
+	".*Garbage following explicit location.*"
 
     # Insert some breakpoints and list them
     # Also, disable some so they do not interfere with other tests
@@ -389,7 +320,7 @@ proc_with_prefix test_explicit_breakpoints {} {
     # linespecs.
     mi_gdb_test \
 	"-break-insert -c \"foo == 3\" --source $srcfile --function main --label label" \
-	".*No symbol \"foo\" in current context.*"
+	".*No label .*label.* defined in function .*main.*"
 
     mi_gdb_test \
 	"-break-insert --source foobar.c --line 3" \
@@ -397,15 +328,15 @@ proc_with_prefix test_explicit_breakpoints {} {
 
     mi_gdb_test \
 	"-break-insert --source $srcfile --function foobar" \
-	".*Function \"foobar\" not defined in \"$srcfile\".*"
+	".*Function .*foobar.* not defined in .*$srcfile.*"
 
     mi_gdb_test \
 	"-break-insert --source $srcfile --function main --label foobar" \
-	".*No label \"foobar\" defined in function \"main\".*"
+	".*No label .*foobar.* defined in function .*main.*"
 
     mi_gdb_test \
 	"-break-insert --source $srcfile" \
-	".*Source filename requires function, label, or line offset.*"
+	".*-break-insert: --source option requires --function, --label, or --line.*"
 }
 
 # Test forcing an invalid condition.
@@ -435,28 +366,43 @@ proc_with_prefix test_forced_conditions {} {
     mi_gdb_test "-break-info 16" \
 	"\\^done,[mi_make_breakpoint_table [list $bp]]" \
 	"invalid condition is defined"
+
+    # No cond argument should clear the condition.
+    mi_gdb_test "-break-condition 16" \
+	"~\"Breakpoint 16's condition is now valid at location 1, enabling.*\\^done" \
+	"clear the condition"
+    set bp [mi_make_breakpoint -number 16]
+    mi_gdb_test "-break-info 16" \
+	"\\^done,[mi_make_breakpoint_table [list $bp]]" \
+	"condition is cleared"
+
+    # Zero-argument is an error.
+    mi_gdb_test "-break-condition" \
+	"\\^error,msg=\"-break-condition: Missing the <number> argument\"" \
+	"no arguments to -break-condition"
+
+    # Passing --force with no condition should not crash or raise an error.
+    mi_gdb_test "-break-condition --force 16" \
+	"\\^done" \
+	"clear the condition with --force"
+    mi_gdb_test "-break-condition --force" \
+	"\\^error,msg=\"-break-condition: Missing the <number> argument\"" \
+	"no arguments with --force"
 }
 
 proc test_break {mi_mode} {
     global srcdir subdir binfile
-
-    mi_gdb_exit
 
     if {$mi_mode == "separate"} {
 	set start_ops "separate-mi-tty"
     } else {
 	set start_ops ""
     }
-    if [mi_gdb_start $start_ops] {
+    if [mi_clean_restart $binfile $start_ops ] {
 	return
     }
 
-    mi_delete_breakpoints
-    mi_gdb_reinitialize_dir $srcdir/$subdir
-    mi_gdb_load ${binfile}
-
     test_tbreak_creation_and_listing
-    test_rbreak_creation_and_listing
 
     test_ignore_count
 
@@ -473,13 +419,6 @@ proc test_break {mi_mode} {
     test_forced_conditions
 }
 
-if [gdb_debug_enabled] {
-  # gdb debug doesn't work for separate-mi-tty.
-  set modes {"main"}
-} else {
-  set modes {"main" "separate"}
-}
-
-foreach_with_prefix mi-mode $modes {
+foreach_mi_ui_mode mi-mode {
     test_break ${mi-mode}
 }

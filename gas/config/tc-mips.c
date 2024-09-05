@@ -1,5 +1,5 @@
 /* tc-mips.c -- assemble code for a MIPS chip.
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
    Contributed by the OSF and Ralph Campbell.
    Written by Keith Knowles and Ralph Campbell, working independently.
    Modified for ECOFF and R4000 support by Ian Lance Taylor of Cygnus
@@ -106,7 +106,7 @@ static char *mips_flags_frag;
 
 #define FCSR 31
 
-#define ILLEGAL_REG (32)
+#define ILLEGAL_REG RNUM_MASK
 
 #define AT  mips_opts.at
 
@@ -399,6 +399,12 @@ static int mips_32bitmode = 0;
    || (ISA) == ISA_MIPS64R5		\
    || (ISA) == ISA_MIPS64R6)
 
+/* Return true if the ISA and CPU support trap instructions.  */
+#define ISA_HAS_TRAPS(ISA, CPU)		\
+  (((ISA) != ISA_MIPS1			\
+    && (CPU) != CPU_ALLEGREX)		\
+   || mips_opts.micromips)		\
+
 /* Return true if ISA supports 64-bit right rotate (dror et al.)
    instructions.  */
 #define ISA_HAS_DROR(ISA)		\
@@ -437,6 +443,7 @@ static int mips_32bitmode = 0;
     || (ISA) == ISA_MIPS64R3		\
     || (ISA) == ISA_MIPS64R5		\
     || (ISA) == ISA_MIPS64R6		\
+    || (CPU) == CPU_ALLEGREX		\
     || (CPU) == CPU_R5900)		\
    && ((CPU) != CPU_GS464		\
     || (CPU) != CPU_GS464E		\
@@ -525,7 +532,7 @@ static int mips_32bitmode = 0;
 #define CPU_HAS_DROR(CPU)	((CPU) == CPU_VR5400 || (CPU) == CPU_VR5500)
 
 /* True if CPU has a ror instruction.  */
-#define CPU_HAS_ROR(CPU)	CPU_HAS_DROR (CPU)
+#define CPU_HAS_ROR(CPU)	(CPU_HAS_DROR (CPU) || (CPU) == CPU_ALLEGREX)
 
 /* True if CPU is in the Octeon family.  */
 #define CPU_IS_OCTEON(CPU) ((CPU) == CPU_OCTEON || (CPU) == CPU_OCTEONP \
@@ -535,8 +542,9 @@ static int mips_32bitmode = 0;
 #define CPU_HAS_SEQ(CPU)	(CPU_IS_OCTEON (CPU))
 
 /* True, if CPU has support for ldc1 and sdc1. */
-#define CPU_HAS_LDC1_SDC1(CPU)	\
-   ((mips_opts.isa != ISA_MIPS1) && ((CPU) != CPU_R5900))
+#define CPU_HAS_LDC1_SDC1(CPU)	(mips_opts.isa != ISA_MIPS1		\
+				 && (CPU) != CPU_ALLEGREX		\
+				 && (CPU) != CPU_R5900)
 
 /* True if mflo and mfhi can be immediately followed by instructions
    which write to the HI and LO registers.
@@ -561,6 +569,7 @@ static int mips_32bitmode = 0;
    || mips_opts.isa == ISA_MIPS64R3                   \
    || mips_opts.isa == ISA_MIPS64R5                   \
    || mips_opts.isa == ISA_MIPS64R6                   \
+   || mips_opts.arch == CPU_ALLEGREX                  \
    || mips_opts.arch == CPU_R4010                     \
    || mips_opts.arch == CPU_R5900                     \
    || mips_opts.arch == CPU_R10000                    \
@@ -818,7 +827,7 @@ static struct mips_cl_insn history[1 + MAX_NOPS + MAX_LLSC_RANGE];
 #define MAX_LABELS_SAME 10
 
 /* Arrays of operands for each instruction.  */
-#define MAX_OPERANDS 6
+#define MAX_OPERANDS 16
 struct mips_operand_array
 {
   const struct mips_operand *operand[MAX_OPERANDS];
@@ -1805,7 +1814,7 @@ static const struct mips_ase mips_ases[] = {
 
   { "mt", ASE_MT, 0,
     OPTION_MT, OPTION_NO_MT,
-     2,  2, -1, -1,
+    2, 2, 2, 2,
     -1 },
 
   { "smartmips", ASE_SMARTMIPS, 0,
@@ -2038,7 +2047,7 @@ mips_mark_labels (void)
     mips_compressed_mark_labels ();
 }
 
-static char *expr_end;
+static char *expr_parse_end;
 
 /* An expression in a macro instruction.  This is set by mips_ip and
    mips16_ip and when populated is always an O_constant.  */
@@ -2051,6 +2060,8 @@ static expressionS imm_expr;
    operands in macros.  */
 
 static expressionS offset_expr;
+static expressionS vimm_expr[4];
+static expressionS voffset_expr[4];
 static bfd_reloc_code_real_type offset_reloc[3]
   = {BFD_RELOC_UNUSED, BFD_RELOC_UNUSED, BFD_RELOC_UNUSED};
 
@@ -2677,25 +2688,27 @@ struct regname {
   unsigned int num;
 };
 
-#define RNUM_MASK	0x00000ff
-#define RTYPE_MASK	0x0ffff00
-#define RTYPE_NUM	0x0000100
-#define RTYPE_FPU	0x0000200
-#define RTYPE_FCC	0x0000400
-#define RTYPE_VEC	0x0000800
-#define RTYPE_GP	0x0001000
-#define RTYPE_CP0	0x0002000
-#define RTYPE_PC	0x0004000
-#define RTYPE_ACC	0x0008000
-#define RTYPE_CCC	0x0010000
-#define RTYPE_VI	0x0020000
-#define RTYPE_VF	0x0040000
-#define RTYPE_R5900_I	0x0080000
-#define RTYPE_R5900_Q	0x0100000
-#define RTYPE_R5900_R	0x0200000
-#define RTYPE_R5900_ACC	0x0400000
-#define RTYPE_MSA	0x0800000
-#define RWARN		0x8000000
+#define RNUM_MASK	0x00000fff
+#define RTYPE_MASK	0x0ffff000
+#define RTYPE_NUM	0x00001000
+#define RTYPE_FPU	0x00002000
+#define RTYPE_FCC	0x00004000
+#define RTYPE_VEC	0x00008000
+#define RTYPE_GP	0x00010000
+#define RTYPE_CP0	0x00020000
+#define RTYPE_PC	0x00040000
+#define RTYPE_ACC	0x00080000
+#define RTYPE_CCC	0x00100000
+#define RTYPE_VI	0x00200000
+#define RTYPE_VF	0x00400000
+#define RTYPE_R5900_I	0x00800000
+#define RTYPE_R5900_Q	0x01000000
+#define RTYPE_R5900_R	0x02000000
+#define RTYPE_R5900_ACC	0x04000000
+#define RTYPE_MSA	0x08000000
+#define RTYPE_VFPU     	0x10000000
+#define RTYPE_VFPU_CTR  0x20000000
+#define RWARN		0x80000000
 
 #define GENERIC_REGISTER_NUMBERS \
     {"$0",	RTYPE_NUM | 0},  \
@@ -2899,6 +2912,38 @@ struct regname {
     {"$ac2",	RTYPE_ACC | 2}, \
     {"$ac3",	RTYPE_ACC | 3}
 
+// The two top bits encode the register type, needed for semantic
+// with the opcode and other operands
+
+#define VFPU_RSINGLE         (0 << 8)
+#define VFPU_VECTOR_ANY      (1 << 8)
+#define VFPU_VECTOR_PAIR     (2 << 8)
+#define VFPU_VECTOR_TRIPLE   (3 << 8)
+#define VFPU_VECTOR_QUAD     (4 << 8)
+#define VFPU_MATRIX_ANY      (6 << 8)
+#define VFPU_MATRIX_PAIR     (7 << 8)
+#define VFPU_MATRIX_TRIPLE   (8 << 8)
+#define VFPU_MATRIX_QUAD     (9 << 8)
+
+#define VFPU_REGISTER_NAMES \
+    /* VFPU control registers */       \
+    {"$128",	RTYPE_VFPU_CTR | 128}, \
+    {"$129",	RTYPE_VFPU_CTR | 129}, \
+    {"$130",	RTYPE_VFPU_CTR | 130}, \
+    {"$131",	RTYPE_VFPU_CTR | 131}, \
+    {"$132",	RTYPE_VFPU_CTR | 132}, \
+    {"$133",	RTYPE_VFPU_CTR | 133}, \
+    {"$134",	RTYPE_VFPU_CTR | 134}, \
+    {"$135",	RTYPE_VFPU_CTR | 135}, \
+    {"$136",	RTYPE_VFPU_CTR | 136}, \
+    {"$137",	RTYPE_VFPU_CTR | 137}, \
+    {"$138",	RTYPE_VFPU_CTR | 138}, \
+    {"$139",	RTYPE_VFPU_CTR | 139}, \
+    {"$140",	RTYPE_VFPU_CTR | 140}, \
+    {"$141",	RTYPE_VFPU_CTR | 141}, \
+    {"$142",	RTYPE_VFPU_CTR | 142}, \
+    {"$143",	RTYPE_VFPU_CTR | 143}
+
 static const struct regname reg_names[] = {
   GENERIC_REGISTER_NUMBERS,
   FPU_REGISTER_NAMES,
@@ -2917,6 +2962,7 @@ static const struct regname reg_names[] = {
   R5900_Q_NAMES,
   R5900_R_NAMES,
   R5900_ACC_NAMES,
+  VFPU_REGISTER_NAMES,
   MIPS_DSP_ACCUMULATOR_NAMES,
   {0, 0}
 };
@@ -3022,6 +3068,212 @@ mips_parse_register (char **sptr, unsigned int *symval_ptr,
   if (channels_ptr)
     *channels_ptr = channels;
   return true;
+}
+
+/* Try to parse a VFPU register and fill its attributes */
+static bool
+mips_vfpu_parse_register (char **sptr, unsigned int *regval)
+{
+  char *s = *sptr;
+  char regtype = TOLOWER(*s++);
+  unsigned suffix = 0;
+  unsigned int m, c, r;
+
+  static const unsigned int vecsz[] = {
+    VFPU_VECTOR_ANY, VFPU_RSINGLE, VFPU_VECTOR_PAIR,
+    VFPU_VECTOR_TRIPLE, VFPU_VECTOR_QUAD
+  };
+  static const unsigned int mtxsz[] = {
+    VFPU_MATRIX_ANY, VFPU_RSINGLE, VFPU_MATRIX_PAIR,
+    VFPU_MATRIX_TRIPLE, VFPU_MATRIX_QUAD
+  };
+
+  /* Check digit ranges */
+  if (s[0] < '0' || s[0] > '7')
+    return false;
+  if (s[1] < '0' || s[1] > '3')
+    return false;
+  if (s[2] < '0' || s[2] > '3')
+    return false;
+
+  m = *s++ - '0';
+  c = *s++ - '0';
+  r = *s++ - '0';
+
+  /* Attempt to parse suffix (.s/.p/.t/.q) */
+  if (*s == '.') {
+    s++;
+    switch (*s++) {
+    case 's': suffix = 1; break;
+    case 'p': suffix = 2; break;
+    case 't': suffix = 3; break;
+    case 'q': suffix = 4; break;
+    default:
+      return false;
+    };
+  }
+
+  /* .s matching */
+  if (regtype == 's' && suffix > 1)
+    return false;
+  if (regtype != 's' && suffix == 1)
+    return false;
+
+  switch (regtype) {
+  case 's':
+    /* Single register type */
+    *regval = RTYPE_VFPU | VFPU_RSINGLE | (c + m * 4 + r * 32);
+    break;
+
+  case 'c':
+    /* Vector register (column) type */
+    switch (r) {
+    case 0:
+      *regval = RTYPE_VFPU | vecsz[suffix] | (c + m * 4);
+      break;
+    case 1:
+      if (suffix && suffix != 3)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_VECTOR_TRIPLE | (c + m * 4 + 64);
+      break;
+    case 2:
+      if (suffix && suffix != 2)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_VECTOR_PAIR | (c + m * 4 + 64);
+      break;
+    default:
+      return false;
+    };
+    break;
+
+  case 'r':
+    /* Vector register (row) type */
+    switch (c) {
+    case 0:
+      *regval = RTYPE_VFPU | vecsz[suffix] | (r + m * 4 + 32);
+      break;
+    case 1:
+      if (suffix && suffix != 3)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_VECTOR_TRIPLE | (r + m * 4 + 96);
+      break;
+    case 2:
+      if (suffix && suffix != 2)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_VECTOR_PAIR | (r + m * 4 + 96);
+      break;
+    default:
+      return false;
+    };
+    break;
+
+  case 'm':
+    /* Matrix register type */
+    switch (c + r * 4) {
+    case 0:  /* MX00 */
+      *regval = RTYPE_VFPU | mtxsz[suffix] | (m * 4);
+      break;
+    case 1:  /* MX10 */
+      if (suffix && suffix != 3)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_MATRIX_TRIPLE | (m * 4) | 1;
+      break;
+    case 2:  /* MX20 */
+      if (suffix && suffix != 2)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_MATRIX_PAIR | (m * 4) | 2;
+      break;
+
+    case 4:  /* MX01 */
+    case 5:  /* MX11 */
+      if (suffix && suffix != 3)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_MATRIX_TRIPLE | (m * 4 + c) | 64;
+      break;
+
+    case 8:  /* MX02 */
+    case 10: /* MX22 */
+      if (suffix && suffix != 2)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_MATRIX_PAIR | (m * 4 + c) | 64;
+      break;
+
+    default:
+      return false;
+    };
+    break;
+
+  case 'e':
+    /* Matrix register (transposed) type */
+    switch (c + r * 4) {
+    case 0:  /* EX00 */
+      *regval = RTYPE_VFPU | mtxsz[suffix] | (m * 4) | 32;
+      break;
+    case 1:  /* EX10 */
+      if (suffix && suffix != 3)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_MATRIX_TRIPLE | (m * 4) | 96;
+      break;
+    case 2:  /* EX20 */
+      if (suffix && suffix != 2)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_MATRIX_PAIR | (m * 4) | 96;
+      break;
+
+    case 4:  /* EX01 */
+    case 5:  /* EX11 */
+      if (suffix && suffix != 3)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_MATRIX_TRIPLE | (m * 4 + c * 64) | 32 | 1;
+      break;
+
+    case 8:  /* EX02 */
+    case 10: /* EX22 */
+      if (suffix && suffix != 2)
+        return false;
+      *regval = RTYPE_VFPU | VFPU_MATRIX_PAIR | (m * 4 + c * 32) | 32 | 2;
+      break;
+
+    default:
+      return false;
+    };
+    break;
+
+  default:
+    return false;
+  };
+
+  *sptr = s;
+  return true;
+}
+
+/* Try to parse a VFPU register and fill its attributes */
+static bool
+mips_vfpu_parse_condcode (char **sptr, unsigned int *regval)
+{
+  char *s = *sptr;
+  char code[3];
+
+  static const char * const vfpu_cond_names[16] = {
+    "FL",  "EQ",  "LT",  "LE",  "TR",  "NE",  "GE",  "GT",
+    "EZ",  "EN",  "EI",  "ES",  "NZ",  "NN",  "NI",  "NS"
+  };
+
+  if (IS_SPACE_OR_NUL(s[0]) || IS_SPACE_OR_NUL(s[1]))
+    return false;
+
+  code[0] = TOUPPER(s[0]);
+  code[1] = TOUPPER(s[1]);
+  code[2] = 0;
+
+  for (unsigned i = 0; i < 16; i++) {
+    if (!strcmp(code, vfpu_cond_names[i])) {
+      *regval = RTYPE_VFPU_CTR | i ;
+      *sptr = *sptr + 2;
+      return true;
+    }
+  }
+  return false;
 }
 
 /* Check if SPTR points at a valid register specifier according to TYPES.
@@ -3161,6 +3413,211 @@ mips_add_token (struct mips_operand_token *token,
   obstack_grow (&mips_operand_tokens, token, sizeof (*token));
 }
 
+#define PFX_RET(value, skip) \
+{ \
+  *channel = (value) | neg | abs; \
+  s += skip; \
+  return s; \
+}
+
+#define PFX_DEST   0x80  // Mask or saturation
+#define PFX_CONST  0x40
+#define PFX_SWZ    0x20
+#define PFX_NEG    0x10
+#define PFX_ABS    0x08
+
+#define PFX_X         0
+#define PFX_Y         1
+#define PFX_Z         2
+#define PFX_W         3
+
+#define PFX_01        1
+#define PFX_11        3
+#define PFX_MSK       4
+
+#define PFX_C0        0
+#define PFX_C1        1
+#define PFX_C2        2
+#define PFX_C12       3
+#define PFX_C3        4
+#define PFX_C13       5
+#define PFX_C14       6
+#define PFX_C16       7
+
+/* Parse one VFPU prefix channel, which can be either source or destination.
+   Returns NULL if the parsed data cannot be a valid prefix. */
+static char *
+mips_parse_vfpu_prefix (char *s, unsigned int *channel)
+{
+  unsigned abs = 0, neg = 0;
+  SKIP_SPACE_TABS (s);
+
+  /* If there's nothing, just return empty channel */
+  if (*s == ',' || *s == ']' || *s == 0)
+    return s;
+
+  /* Check for sign or abs chars */
+  if (*s == '-') {
+    neg = PFX_NEG;
+    s++;
+  }
+  SKIP_SPACE_TABS (s);
+
+  if (*s == 'm' || *s == 'M') {
+    PFX_RET(PFX_DEST | PFX_MSK, 1);    // Masked entry
+  }
+  else if (!strncmp(s, "0:1", 3)) {
+    PFX_RET(PFX_DEST | PFX_01, 3);    // 0:1
+  }
+  else if (!strncmp(s, "[0:1]", 5)) {
+    PFX_RET(PFX_DEST | PFX_01, 5);    // 0:1
+  }
+  else if (*s == '0') {
+    PFX_RET(PFX_CONST | PFX_C0, 1);   // 0
+  }
+  else if (!strncmp(s, "1:1", 3)) {
+    if (neg) {
+      neg = 0;
+      PFX_RET(PFX_DEST | PFX_11, 3);    // -1:1
+    }
+    set_insn_error (0, _("invalid VFPU prefix, only 0:1 and -1:1 allowed"));
+  }
+  else if (!strncmp(s, "[-1:1]", 6)) {
+    PFX_RET(PFX_DEST | PFX_11, 6);    // -1:1
+  }
+  else if (*s == '1') {
+    s++; SKIP_SPACE_TABS (s);
+
+    if (*s == ',' || *s == ']' || IS_SPACE_OR_NUL (*s))
+      PFX_RET(PFX_CONST | PFX_C1, 0);   // 1
+
+    if (*s == '/') {
+      s++; SKIP_SPACE_TABS (s);
+      switch (*s) {
+        case '2': PFX_RET(PFX_CONST | PFX_C12, 1);   // 1/2
+        case '3': PFX_RET(PFX_CONST | PFX_C13, 1);   // 1/3
+        case '4': PFX_RET(PFX_CONST | PFX_C14, 1);   // 1/4
+        case '6': PFX_RET(PFX_CONST | PFX_C16, 1);   // 1/6
+      };
+    }
+
+    set_insn_error (0, _("invalid VFPU prefix constant"));
+  }
+  else if (*s == '2') {
+    PFX_RET(PFX_CONST | PFX_C2, 1);
+  }
+  else if (*s == '3') {
+    PFX_RET(PFX_CONST | PFX_C3, 1);
+  }
+  else {
+    /* Must be a variable */
+    unsigned var;
+    if (*s == '|') {
+      abs = PFX_ABS;
+      s++;
+    }
+    SKIP_SPACE_TABS (s);
+
+    switch (*s++) {
+      case 'x': case 'X': var = PFX_SWZ | PFX_X; break;
+      case 'y': case 'Y': var = PFX_SWZ | PFX_Y; break;
+      case 'z': case 'Z': var = PFX_SWZ | PFX_Z; break;
+      case 'w': case 'W': var = PFX_SWZ | PFX_W; break;
+      default:
+        set_insn_error (0, _("invalid VFPU prefix"));
+        return NULL;
+    };
+    SKIP_SPACE_TABS (s);
+
+    if (abs) {
+      if (*s != '|') {
+        set_insn_error (0, _("unmatched '|' in VFPU prefix"));
+        return NULL;
+      }
+      s++;
+    }
+
+    PFX_RET(var, 0);
+  }
+  return NULL;
+}
+
+/* Parse vrot rotation code array. This encodes the argument into some
+   temporary expression to be encoded later. It accepts expressions that
+   are not encodeable but look plausibly so.  */
+static char *
+mips_parse_vfpu_vrotarg (char *s, unsigned int *immval)
+{
+  unsigned p = 0;
+  int chs[4] = {-1, -1, -1, -1};
+  int neg = -1;
+  while (*s != 0) {
+    SKIP_SPACE_TABS (s);
+
+    switch (*s++) {
+    default:
+      return NULL;
+
+    case ',':
+      if (p >= 3 || chs[p] < 0)
+        return NULL;   // Empty argument or too many args
+      p++;
+      break;
+
+    case ']':
+      if (p < 1 || chs[p] < 0)
+        return NULL;   // Missing last operand
+
+      // Calculate the final imm value
+      *immval = 0;
+      for (unsigned j = 0; j <= p; j++)
+        *immval = ((*immval) << 2) | chs[j];
+      if (neg == 1)
+        *immval |= 0x800;
+      *immval |= (p-1) << 8;
+
+      return s;
+
+    case '0':
+      if (chs[p] >= 0)
+        return NULL;
+      chs[p] = 0;
+      break;
+
+    case 'c':
+      if (chs[p] >= 0)
+        return NULL;
+      chs[p] = 3;
+      break;
+
+    case 's':
+      // Cannot mix `s` and `-s`
+      if (neg == 1)
+        return NULL;
+      if (chs[p] >= 0)
+        return NULL;
+      chs[p] = 2;
+      neg = 0;
+      break;
+
+    case '-':
+      // Only sine can be negated
+      if (TOLOWER(*s) != 's')
+        return NULL;
+      // Cannot mix `s` and `-s`
+      if (neg == 0)
+        return NULL;
+      if (chs[p] >= 0)
+        return NULL;
+      chs[p] = 2;
+      neg = 1;
+      s++;
+      break;
+    };
+  }
+  return NULL;
+}
+
 /* Check whether S is '(' followed by a register name.  Add OT_CHAR
    and OT_REG tokens for them if so, and return a pointer to the first
    unconsumed character.  Return null otherwise.  */
@@ -3228,7 +3685,7 @@ mips_parse_base_start (char *s)
    mips_parse_arguments.  */
 
 static char *
-mips_parse_argument_token (char *s, char float_format)
+mips_parse_argument_token (char *s, char float_format, const struct mips_opcode *mo)
 {
   char *end, *save_in;
   const char *err;
@@ -3249,6 +3706,55 @@ mips_parse_argument_token (char *s, char float_format)
       ++s;
       return s;
     }
+ /* Handle VFPU condition codes. */
+  if ((mo->pinfo2 & INSN2_VFPU_CC) && mips_vfpu_parse_condcode (&s, &regno1))
+  {
+    /* This is essentially treated as a register.  */
+    token.u.regno = regno1;
+    mips_add_token (&token, OT_REG);
+    return s;
+  }
+
+  /* Handle VFPU registers (and potential prefixes). */
+  if ((mo->pinfo2 & INSN2_VFPU_REG) && mips_vfpu_parse_register (&s, &regno1))
+  {
+    /* Add the register itself.  */
+    token.u.regno = regno1;
+    mips_add_token (&token, OT_REG);
+
+    if (*s == '[')
+    {
+      /* We just parsed the VFPU reg, now parse the prefix */
+      for (unsigned i = 0; i < 4; i++) {
+        unsigned int vchan = 0;
+        s = mips_parse_vfpu_prefix (s + 1, &vchan);
+        if (!s)
+          return NULL;
+
+        token.u.channels = vchan;
+        mips_add_token (&token, OT_CHANNELS);
+
+        // Check that we have a separator or EOF
+        SKIP_SPACE_TABS (s);
+
+        if (*s == ',') {
+          if (i == 3) {
+            set_insn_error (0, _("invalid VFPU prefix, too many elements"));
+            return NULL;
+          }
+        }
+        else if (*s == ']') {
+          return s + 1;
+        }
+        else {
+          set_insn_error (0, _("invalid VFPU prefix, expecting ',' or ']'"));
+          return NULL;
+        }
+      }
+      return s;
+    }
+    return s;
+  }
 
   /* Handle tokens that start with a register.  */
   if (mips_parse_register (&s, &regno1, &channels))
@@ -3303,7 +3809,7 @@ mips_parse_argument_token (char *s, char float_format)
 		  set_insn_error (0, _("vector element must be constant"));
 		  return 0;
 		}
-	      s = expr_end;
+	      s = expr_parse_end;
 	      token.u.index = element.X_add_number;
 	      mips_add_token (&token, OT_INTEGER_INDEX);
 	    }
@@ -3339,12 +3845,57 @@ mips_parse_argument_token (char *s, char float_format)
 	}
     }
 
+  /* Attempt to parse a VFPU prefix argument */
+  if (!strncmp(mo->name, "vpfx", 4) && *s == '[') {
+    struct mips_operand_token pfxtoken[4];
+    unsigned int valid = 0;
+    char *s2 = s + 1;
+    for (unsigned i = 0; i < 4; i++) {
+      unsigned int vchan = 0;
+      s2 = mips_parse_vfpu_prefix (s2, &vchan);
+      if (!s2)
+        break;
+
+      pfxtoken[i].u.channels = vchan;
+
+      // Check that we have a separator or EOF
+      SKIP_SPACE_TABS (s2);
+
+      // We expect a colon here if i<3
+      if (i < 3 && *s2++ != ',')
+        break;
+      if (i == 3 && *s2++ != ']')
+        break;
+      valid++;
+    }
+    if (valid == 4) {
+      token.u.ch = '[';
+      mips_add_token (&token, OT_CHAR);
+      for (unsigned i = 0; i < 4; i++) {
+        mips_add_token (&pfxtoken[i], OT_CHANNELS);
+        token.u.ch = i < 3 ? ',' : ']';
+        mips_add_token (&token, OT_CHAR);
+      }
+      return s2;
+    }
+  }
+
+  /* Attempt to parse vrot constants */
+  if (!strncmp(mo->name, "vrot", 4) && *s == '[') {
+    char *endp = mips_parse_vfpu_vrotarg(s+1, &regno1);
+    if (endp) {
+      token.u.regno = regno1;
+      mips_add_token (&token, OT_REG);
+      return endp;
+    }
+  }
+
   /* Treat everything else as an integer expression.  */
   token.u.integer.relocs[0] = BFD_RELOC_UNUSED;
   token.u.integer.relocs[1] = BFD_RELOC_UNUSED;
   token.u.integer.relocs[2] = BFD_RELOC_UNUSED;
   my_getSmallExpression (&token.u.integer.value, token.u.integer.relocs, s);
-  s = expr_end;
+  s = expr_parse_end;
   mips_add_token (&token, OT_INTEGER);
   return s;
 }
@@ -3358,14 +3909,14 @@ mips_parse_argument_token (char *s, char float_format)
    must obstack_free the list after use.  */
 
 static struct mips_operand_token *
-mips_parse_arguments (char *s, char float_format)
+mips_parse_arguments (char *s, char float_format, const struct mips_opcode *mo)
 {
   struct mips_operand_token token;
 
   SKIP_SPACE_TABS (s);
   while (*s)
     {
-      s = mips_parse_argument_token (s, float_format);
+      s = mips_parse_argument_token (s, float_format, mo);
       if (!s)
 	{
 	  obstack_free (&mips_operand_tokens,
@@ -3583,10 +4134,19 @@ validate_mips_insn (const struct mips_opcode *opcode,
 	       operand field that cannot be fully described with LSB/SIZE.  */
 	    if (operand->type == OP_SAVE_RESTORE_LIST && operand->lsb == 6)
 	      used_bits &= ~0x6000;
+	    if (operand->type == OP_VFPU_OPERAND) {
+	      const struct mips_vfpu_operand *opvfpu = (struct mips_vfpu_operand*)operand;
+              used_bits |= ((1 << opvfpu->size2) - 1) << opvfpu->lsb2;
+	    }
 	  }
 	/* Skip prefix characters.  */
 	if (decode_operand && (*s == '+' || *s == 'm' || *s == '-'))
 	  ++s;
+	if (*s == '?') {
+	  while (s[1] != 0 && s[1] != '?' && s[1] != ',' &&
+	         s[1] != '(' && s[1] != '[' && s[1] != ')' && s[1] != ']')
+	    s++;
+	}
 	opno += 1;
 	break;
       }
@@ -4143,15 +4703,16 @@ file_mips_check_options (void)
 
   /* End of GCC-shared inference code.  */
 
+  /* R5900 and ALLEGREX only support single hardware mode */
+  if (mips_opts.arch == CPU_ALLEGREX || mips_opts.arch == CPU_R5900)
+    file_mips_opts.single_float = true;
+
   /* This flag is set when we have a 64-bit capable CPU but use only
      32-bit wide registers.  Note that EABI does not use it.  */
   if (ISA_HAS_64BIT_REGS (file_mips_opts.isa)
       && ((mips_abi == NO_ABI && file_mips_opts.gp == 32)
 	  || mips_abi == O32_ABI))
     mips_32bitmode = 1;
-
-  if (file_mips_opts.isa == ISA_MIPS1 && mips_trap)
-    as_bad (_("trap exception not supported at ISA 1"));
 
   /* If the selected architecture includes support for ASEs, enable
      generation of code for them.  */
@@ -4643,6 +5204,7 @@ operand_reg_mask (const struct mips_cl_insn *insn,
     case OP_VU0_SUFFIX:
     case OP_VU0_MATCH_SUFFIX:
     case OP_IMM_INDEX:
+    case OP_VFPU_OPERAND:
       abort ();
 
     case OP_REG28:
@@ -5081,6 +5643,13 @@ convert_reg_type (const struct mips_opcode *opcode,
 
     case OP_REG_MSA_CTRL:
       return RTYPE_NUM;
+
+    case OP_REG_VFPU:
+      return RTYPE_VFPU;
+
+    case OP_REG_VFPU_CTR:
+      return RTYPE_VFPU_CTR;
+ 
     }
   abort ();
 }
@@ -5096,6 +5665,7 @@ check_regno (struct mips_arg_info *arg,
 
   if (type == OP_REG_FP
       && (regno & 1) != 0
+      && !(mips_opts.arch == CPU_ALLEGREX)
       && !mips_oddfpreg_ok (arg->insn->insn_mo, arg->opnum))
     {
       /* This was a warning prior to introducing O32 FPXX and FP64 support
@@ -6189,6 +6759,508 @@ match_float_constant (struct mips_arg_info *arg, expressionS *imm,
   subseg_set (seg, subseg);
   return true;
 }
+/* Parses the source prefix operand, into a prefix opcode */
+static unsigned int parse_vfpu_spfx_channel(unsigned chval, unsigned chn)
+{
+  unsigned int uval = 0;
+
+  /* If no value, it means empty arg, so use the natural swizzle */
+  if (!chval)
+    chval = PFX_SWZ | chn;
+
+  if (chval & PFX_NEG)
+    uval |= (1 << (16 + chn));
+
+  if (chval & PFX_CONST) {
+    uval |= (0x1000 << chn);
+    if (chval & 0x4)
+      uval |= (0x100 << chn);
+  } else {
+    /* Variable, fill abs field too */
+    if (chval & PFX_ABS)
+      uval |= (0x100 << chn);
+  }
+  uval |= (chval & 0x3) << (chn * 2);
+  return uval;
+}
+
+/* Parses the destination prefix operand, into a prefix opcode */
+static unsigned int parse_vfpu_dpfx_channel(unsigned chval, unsigned chn)
+{
+  unsigned int uval = 0;
+
+  if (chval & PFX_MSK)
+    uval |= (0x100 << chn);
+  else
+    uval |= (chval & 0x3) << (chn * 2);
+  return uval;
+}
+
+static const unsigned short vreg_usage[8][16] = {
+  { 0x0001, 0x0010, 0x0100, 0x1000,
+    0x0002, 0x0020, 0x0200, 0x2000,
+    0x0004, 0x0040, 0x0400, 0x4000,
+    0x0008, 0x0080, 0x0800, 0x8000 },
+  { 0x0003, 0x0030, 0x0300, 0x3000,
+    0x0011, 0x0022, 0x0044, 0x0088,
+    0x000c, 0x00c0, 0x0c00, 0xc000,
+    0x1100, 0x2200, 0x4400, 0x8800 },
+  { 0x0007, 0x0070, 0x0700, 0x7000,
+    0x0111, 0x0222, 0x0444, 0x0888,
+    0x000e, 0x00e0, 0x0e00, 0xe000,
+    0x1110, 0x2220, 0x4440, 0x8880 },
+  { 0x000f, 0x00f0, 0x0f00, 0xf000,
+    0x1111, 0x2222, 0x4444, 0x8888,
+    0x000f, 0x00f0, 0x0f00, 0xf000,
+    0x1111, 0x2222, 0x4444, 0x8888 },
+  { 0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000 },
+  { 0x0033, 0x0033, 0x3300, 0x3300,
+    0x0033, 0x0033, 0x00cc, 0x00cc,
+    0x00cc, 0x00cc, 0xcc00, 0xcc00,
+    0x3300, 0x3300, 0xcc00, 0xcc00 },
+  { 0x0777, 0x7770, 0x0777, 0x7770,
+    0x0777, 0x0eee, 0x0777, 0x0eee,
+    0x0eee, 0xeee0, 0x0eee, 0xeee0,
+    0x7770, 0xeee0, 0x7770, 0xeee0 },
+  { 0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff, 0xffff, 0xffff, 0xffff,
+    0xffff, 0xffff, 0xffff, 0xffff },
+};
+
+#define INVALID_REG(msg) \
+{ \
+  set_insn_error (arg->argnum, _(msg)); \
+  return false; \
+}
+
+#define INVALID_REG_EX(msg, ...) \
+{ \
+  char errmsg[1024]; \
+  snprintf(errmsg, sizeof(errmsg), _(msg), __VA_ARGS__); \
+  set_insn_error_ss(arg->argnum, "%s%s", errmsg, ""); \
+  return false; \
+}
+
+/* Matches VFPU operands and their subtypes */
+static bfd_boolean
+match_vfpu_operand (struct mips_arg_info *arg,
+		    const struct mips_operand *operand)
+{
+  const struct mips_vfpu_operand *vfpuop = (struct mips_vfpu_operand*)operand;
+  unsigned int uval = 0;
+
+  switch (vfpuop->op_type) {
+  case OP_VFPU_REGS:
+  case OP_VFPU_REGT:
+  case OP_VFPU_REGD:
+  case OP_VFPU_REGX:
+  case OP_VFPU_REGV:
+  {
+    unsigned isdest = (vfpuop->op_type == OP_VFPU_REGD ||
+                       vfpuop->op_type == OP_VFPU_REGX ||
+                       vfpuop->op_type == OP_VFPU_REGV);
+    unsigned regtype;
+    if (!match_reg (arg, OP_REG_VFPU, &uval))
+      return false;
+
+    /* Validate register type for this operation */
+    regtype = uval & (~127);
+
+    /* Validate register type, to ensure we use the right register prefix */
+    switch (vfpuop->extra) {
+    case 0:
+      if (regtype != VFPU_RSINGLE)
+        INVALID_REG("register type mismatch: a single register is required");
+      break;
+    case 1:
+      if (regtype != VFPU_VECTOR_ANY && regtype != VFPU_VECTOR_PAIR)
+        INVALID_REG("register type mismatch: a vector pair register is required");
+      break;
+    case 2:
+      if (regtype != VFPU_VECTOR_ANY && regtype != VFPU_VECTOR_TRIPLE)
+        INVALID_REG("register type mismatch: a vector triple register is required");
+      break;
+    case 3:
+      if (regtype != VFPU_VECTOR_ANY && regtype != VFPU_VECTOR_QUAD)
+        INVALID_REG("register type mismatch: a quad vector register is required");
+      break;
+    case 5:
+      if (regtype != VFPU_MATRIX_ANY && regtype != VFPU_MATRIX_PAIR)
+        INVALID_REG("register type mismatch: a 2x2 matrix register is required");
+      break;
+    case 6:
+      if (regtype != VFPU_MATRIX_ANY && regtype != VFPU_MATRIX_TRIPLE)
+        INVALID_REG("register type mismatch: a 3x3 matrix register is required");
+      break;
+    case 7:
+      if (regtype != VFPU_MATRIX_ANY && regtype != VFPU_MATRIX_QUAD)
+        INVALID_REG("register type mismatch: a 4x4 matrix register is required");
+      break;
+    };
+
+    /* Validate that source registers do not overlap with the destination reg */
+    switch (vfpuop->op_type) {
+    case OP_VFPU_REGD:
+      arg->dest_regno = ILLEGAL_REG;  /* No possible collisions */
+      break;
+    case OP_VFPU_REGX:
+      /* Annotate dest reg and type of conflict for further validation */
+      arg->dest_regno = (uval & 127) | (vfpuop->extra << 7);
+      break;
+    case OP_VFPU_REGV:
+      arg->dest_regno = (uval & 127) | (vfpuop->extra << 7) | 0x8000;
+      break;
+    case OP_VFPU_REGS:
+    case OP_VFPU_REGT:
+      if (arg->dest_regno != ILLEGAL_REG) {
+        unsigned dreg = arg->dest_regno;
+        /* There are no collisions across different matrices */
+        unsigned dmtx = (dreg >> VF_SH_MR_MTX) & VF_MASK_MR_MTX;
+        unsigned smtx = (uval >> VF_SH_MR_MTX) & VF_MASK_MR_MTX;
+        if (dmtx == smtx) {
+          /* Whether it's an X type (no collision allowed at all) */
+          unsigned dstexcl = dreg >> 15;
+          unsigned dstsize = (dreg >> 7) & 7;
+          unsigned srcsize = vfpuop->extra;
+          /* Decode the row/col indices, ignoring matrix id */
+          unsigned dfsl = (dreg >> VF_SH_MR_FSL) & VF_MASK_MR_FSL;
+          unsigned didx = (dreg >> VF_SH_MR_IDX) & VF_MASK_MR_IDX;
+          unsigned drxc = (dreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+          unsigned sfsl = (uval >> VF_SH_MR_FSL) & VF_MASK_MR_FSL;
+          unsigned sidx = (uval >> VF_SH_MR_IDX) & VF_MASK_MR_IDX;
+          unsigned srxc = (uval >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+
+          /* These hold a 16 bit boolean mask with the used registers */
+          unsigned dstregs = vreg_usage[dstsize][(dfsl << 2) | didx];
+          unsigned srcregs = vreg_usage[srcsize][(sfsl << 2) | sidx];
+          unsigned comregs = (srcregs & dstregs);
+
+          /* If there's register overlap we need to notify the user if
+             the destination is type V (strict overlap) or if it's X type
+             but the register overlap is not "compatible", that is, if the
+             area and direction do not match */
+
+          if (comregs && (dstexcl || (dstregs != srcregs) || (drxc != srxc))) {
+            /* Produce some user meaningful error code */
+            unsigned dvfsl = (dreg >> VF_SH_MR_VFSL) & VF_MASK_MR_VFSL;
+            switch (dstsize) {
+            case 1:
+              dvfsl <<= 1;
+              /* fallthrough */
+            case 2:
+            case 3:
+              if (drxc)
+                INVALID_REG_EX("destination register conflict (R%u%u%u)", dmtx, dvfsl, didx)
+              else
+                INVALID_REG_EX("destination register conflict (C%u%u%u)", dmtx, didx, dvfsl)
+
+            case 5:
+              dvfsl <<= 1;
+              /* fallthrough */
+            case 6:
+            case 7:
+              if (drxc)
+                INVALID_REG_EX("destination register conflict (E%u%u%u)", dmtx, dvfsl, didx)
+              else
+                INVALID_REG_EX("destination register conflict (M%u%u%u)", dmtx, didx, dvfsl)
+            };
+          }
+        }
+      }
+      break;
+    default:
+      abort ();
+    };
+
+    /* vmmul is special for VS register, this must be done *after* register conflict */
+    if (vfpuop->op_type == OP_VFPU_REGS && !strncmp(arg->insn->insn_mo->name, "vmmul", 5))
+      uval ^= 0x20;
+
+    insn_insert_operand (arg->insn, operand, uval);
+
+    /* Now try to parse any prefix that might be there */
+    if (arg->token->type == OT_CHANNELS) {
+      unsigned int opcode = 0;
+      bfd_reloc_code_real_type unused_reloc[3]
+        = {BFD_RELOC_UNUSED, BFD_RELOC_UNUSED, BFD_RELOC_UNUSED};
+      struct mips_cl_insn pins;
+      struct mips_opcode *pop = (struct mips_opcode *) str_hash_find (
+        op_hash, vfpuop->op_type == OP_VFPU_REGS ? "vpfxs" :
+                 vfpuop->op_type == OP_VFPU_REGT ? "vpfxt" : "vpfxd");
+
+      /* Check whether the prefixes are allowed */
+      if (vfpuop->op_type == OP_VFPU_REGS && vfpuop->pfxcompat == 'f') {
+        set_insn_error (arg->argnum, _("source reg does not support prefixes"));
+        return false;
+      }
+      if (vfpuop->op_type == OP_VFPU_REGT && vfpuop->pfxcompat == 'f') {
+        set_insn_error (arg->argnum, _("target reg does not support prefixes"));
+        return false;
+      }
+      if (isdest && vfpuop->pfxcompat == 'f') {
+        set_insn_error (arg->argnum, _("destination reg does not support prefixes"));
+        return false;
+      }
+
+      /* Fill all elements, even if they are not needed (binary compat) */
+      for (unsigned i = 0; i < 4; i++) {
+        /* Mantains a default that's binary compatible, should not matter */
+        unsigned int chnv = isdest ? PFX_MSK : 0;
+        if (i <= vfpuop->extra) {
+          /* Only if this is required, otherwise will fill chnv=0 */
+          chnv = arg->token->u.channels;
+          if (arg->token->type != OT_CHANNELS) {
+            set_insn_error (arg->argnum, _("mismatched prefix size, too few elements"));
+            return false;
+          }
+          ++arg->token;
+
+          if (isdest && vfpuop->pfxcompat == 'm' && !(chnv & PFX_MSK) && chnv != 0) {
+            set_insn_error (arg->argnum, _("instruction can only do masking in destination prefix"));
+            return false;
+          }
+          if (!isdest && vfpuop->pfxcompat == 'w' && (chnv & (PFX_CONST|PFX_NEG|PFX_ABS))) {
+            set_insn_error (arg->argnum, _("instruction can only perform swizzle in source prefix"));
+            return false;
+          }
+        }
+
+        if (isdest) {
+          if (chnv & (PFX_CONST|PFX_SWZ|PFX_NEG|PFX_ABS)) {
+            set_insn_error (arg->argnum, _("destination prefix cannot contain swizzle, "
+                            "negation, constants or absolute value operations"));
+            return false;
+          }
+
+          opcode |= parse_vfpu_dpfx_channel(chnv, i);
+        } else {
+          if (chnv & PFX_DEST) {
+            set_insn_error (arg->argnum, _("source prefix cannot contain masking or saturation operations"));
+            return false;
+          }
+
+          /* Check whether this channel is even allowed */
+          if (!(chnv & PFX_CONST) && ((chnv & 3) > vfpuop->extra)) {
+            set_insn_error (arg->argnum, _("swizzle operand is out of range"));
+            return false;
+          }
+          opcode |= parse_vfpu_spfx_channel(chnv, i);
+        }
+      }
+
+      if (arg->token->type == OT_CHANNELS)
+        set_insn_error (arg->argnum, _("mismatched prefix size, too many elements"));
+
+      /* Emit prefix instruction right here */
+      create_insn (&pins, pop);
+      pins.insn_opcode |= opcode;
+      append_insn (&pins, NULL, unused_reloc, false);
+    }
+
+    return true;
+
+  }
+  case OP_VFPU_REG2:
+    if (!match_reg (arg, OP_REG_VFPU, &uval))
+      return false;
+
+    // This takes care of the two-part register encoding
+    insn_insert_operand (arg->insn, operand, uval);
+    return true;
+
+  case OP_VFPU_CREG:
+    if (!match_reg (arg, OP_REG_VFPU_CTR, &uval))
+      return false;
+
+    if (!(uval >= VF_MIN_VCR && uval <= VF_MAX_VCR)) {
+      set_insn_error (arg->argnum, _("invalid coprocessor register"));
+      return false;
+    }
+
+    insn_insert_operand (arg->insn, operand, uval);
+    return true;
+
+  case OP_VFPU_NCNT:
+    if (arg->token->type == OT_INTEGER &&
+      arg->token->u.integer.value.X_op == O_symbol) {
+
+      static const char *cnt_names[] = {
+        "VFPU_HUGE", "VFPU_SQRT2", "VFPU_SQRT1_2", "VFPU_2_SQRTPI",
+        "VFPU_2_PI", "VFPU_1_PI", "VFPU_PI_4", "VFPU_PI_2",
+        "VFPU_PI", "VFPU_E", "VFPU_LOG2E", "VFPU_LOG10E",
+        "VFPU_LN2", "VFPU_LN10", "VFPU_2PI", "VFPU_PI_6",
+        "VFPU_LOG10TWO", "VFPU_LOG2TEN", "VFPU_SQRT3_2"
+      };
+
+      const char *cc = S_GET_NAME(arg->token->u.integer.value.X_add_symbol);
+      for (unsigned i = 0; i < 19; i++) {
+        if (!strcmp(cc, cnt_names[i])) {
+          ++arg->token;
+          insn_insert_operand (arg->insn, operand, i + 1);
+          return true;
+        }
+      }
+    }
+
+    set_insn_error (arg->argnum, _("invalid constant code"));
+    return false;
+
+  case OP_VFPU_COND:
+    if (!match_reg (arg, OP_REG_VFPU_CTR, &uval))
+      return false;
+
+    if (uval > 16) {
+      set_insn_error (arg->argnum, _("invalid condition code"));
+      return false;
+    }
+
+    // Validate number of operands and operation
+    switch (vfpuop->extra) {
+    case 1:
+      // Unary operations only work for some codes
+      if (uval < 8) {
+        set_insn_error (arg->argnum, _("invalid condition code for unary operation"));
+        return false;
+      }
+      break;
+    case 0:
+      if (uval != VFPU_CONDCODE_FL && uval != VFPU_CONDCODE_TR) {
+        set_insn_error (arg->argnum, _("invalid condition code: must be FL or TR"));
+        return false;
+      }
+      break;
+    };
+
+    insn_insert_operand (arg->insn, operand, uval);
+    return true;
+
+  case OP_VFPU_HFLOAT:
+    if (arg->token->type != OT_FLOAT)
+      return false;
+
+    if (arg->token->u.flt.length == 4) {
+      unsigned int f32 = bfd_getl32 (arg->token->u.flt.data);
+      unsigned int sign = (f32 >> VF_SH_F32_SIGN) & VF_MASK_F32_SIGN;
+      unsigned int mantissa = (f32 >> VF_SH_F32_FRA) & VF_MASK_F32_FRA;
+      unsigned int exponent = (f32 >> VF_SH_F32_EXP) & VF_MASK_F32_EXP;
+
+      if (exponent == VF_MAX_F32_EXP) {
+        if (mantissa)
+          // Infinite (max exponent, non-zero mantissa, picked 1 arbitrarily)
+          uval = (sign << VF_SH_F16_SIGN) | (VF_MAX_F16_EXP << VF_SH_F16_EXP) | 1;
+        else
+          // Infinite (max exponent, zero mantissa)
+          uval = (sign << VF_SH_F16_SIGN) | (VF_MAX_F16_EXP << VF_SH_F16_EXP);
+      }
+      else {
+        // Convert exponent from 0..254 (-127..127) to 0..31 (-15..15). 
+        // This just converts exponents around its biases.
+        int sexp = (signed)exponent - VF_BIAS_F32_EXP;
+        if (sexp > VF_BIAS_F16_EXP)
+          sexp = VF_BIAS_F16_EXP;
+        else if (sexp < -VF_BIAS_F16_EXP)
+          sexp = -VF_BIAS_F16_EXP;
+        exponent = sexp + VF_BIAS_F16_EXP;
+
+        // Reduce mantissa precision
+        mantissa = mantissa >> (VF_SH_F32_EXP - VF_SH_F16_EXP);
+
+        uval = (sign << VF_SH_F16_SIGN) | (exponent << VF_SH_F16_EXP) | mantissa;
+      }
+
+      insn_insert_operand (arg->insn, operand, uval);
+      ++arg->token;
+    }
+    return true;
+
+  case OP_VFPU_DECORATOR:
+    ++arg->token;
+    return true;
+
+  case OP_VFPU_SPREFIX:
+  {
+    if (arg->token->type != OT_CHANNELS)
+      return false;
+
+    if (arg->token->u.channels & PFX_DEST) {
+      set_insn_error (arg->argnum, _("source prefix cannot contain masking or saturation operations"));
+      return false;
+    }
+
+    arg->insn->insn_opcode |= parse_vfpu_spfx_channel(arg->token->u.channels, vfpuop->extra);
+    ++arg->token;
+    return true;
+  }
+
+  case OP_VFPU_DPREFIX:
+  {
+    if (arg->token->type != OT_CHANNELS)
+      return false;
+
+    if (arg->token->u.channels & (PFX_CONST|PFX_SWZ|PFX_NEG|PFX_ABS)) {
+      set_insn_error (arg->argnum, _("destination prefix cannot contain swizzle, negation, constants or absolute value operations"));
+      return false;
+    }
+
+    arg->insn->insn_opcode |= parse_vfpu_dpfx_channel(arg->token->u.channels, vfpuop->extra);
+    ++arg->token;
+    return true;
+  }
+
+  case OP_VFPU_WRAPCNT:
+  {
+    offsetT val;
+    if (!match_const_int (arg, &val))
+      return false;
+
+    insn_insert_operand (arg->insn, operand, val);
+    return true;
+  }
+
+  case OP_VFPU_ROTCNT:
+    if (arg->token->type == OT_REG) {
+      unsigned int regidx = arg->token->u.regno & 0xff;
+      unsigned int regsze = (arg->token->u.regno >> 8) & 0x3;
+      bool neg = arg->token->u.regno & 0x800;
+
+      /* Pick the first match, there might be more than one encoding */
+      for (unsigned i = 0; i < 16; i++) {
+        if (vrot_enct[i].encoded_expr[regsze] == regidx) {
+          unsigned immval = vrot_enct[i].imm5 | (neg ? 16 : 0);
+          insn_insert_operand (arg->insn, operand, immval);
+          ++arg->token;
+          return true;
+        }
+      }
+    }
+    return false;
+
+  case OP_VFPU_WRB_BOOL:
+    if (arg->token->type == OT_INTEGER &&
+        arg->token->u.integer.value.X_op == O_symbol) {
+
+      const char *cc = S_GET_NAME(arg->token->u.integer.value.X_add_symbol);
+      if (!strcmp(cc, "wb") || !strcmp(cc, "WB")) {
+        ++arg->token;
+        insn_insert_operand (arg->insn, operand, 1);
+        return true;
+      }
+      else if (!strcmp(cc, "wt") || !strcmp(cc, "WT")) {
+        ++arg->token;
+        insn_insert_operand (arg->insn, operand, 0);
+        return true;
+      }
+    }
+
+    set_insn_error (arg->argnum, _("invalid sv.q suffix, only 'wb' and 'wt' suffixes are allowed"));
+    return false;
+  };
+  return false;
+}
 
 /* OP_VU0_SUFFIX and OP_VU0_MATCH_SUFFIX matcher; MATCH_P selects between
    them.  */
@@ -6292,6 +7364,9 @@ match_operand (struct mips_arg_info *arg,
 
     case OP_VU0_MATCH_SUFFIX:
       return match_vu0_suffix_operand (arg, operand, true);
+
+    case OP_VFPU_OPERAND:
+      return match_vfpu_operand (arg, operand);
 
     case OP_IMM_INDEX:
       return match_imm_index_operand (arg, operand);
@@ -6942,10 +8017,6 @@ fix_loongson3_llsc (struct mips_cl_insn * ip)
       unsigned long lookback = ARRAY_SIZE (history);
       for (i = 0; i < lookback; i++)
 	{
-	  if (streq (history[i].insn_mo->name, "ll")
-	      || streq (history[i].insn_mo->name, "lld"))
-	    break;
-
 	  if (streq (history[i].insn_mo->name, "sc")
 	      || streq (history[i].insn_mo->name, "scd"))
 	    {
@@ -6953,8 +8024,8 @@ fix_loongson3_llsc (struct mips_cl_insn * ip)
 
 	      for (j = i + 1; j < lookback; j++)
 		{
-		  if (streq (history[i].insn_mo->name, "ll")
-		      || streq (history[i].insn_mo->name, "lld"))
+		  if (streq (history[j].insn_mo->name, "ll")
+		      || streq (history[j].insn_mo->name, "lld"))
 		    break;
 
 		  if (delayed_branch_p (&history[j]))
@@ -6993,7 +8064,7 @@ fix_loongson3_llsc (struct mips_cl_insn * ip)
 	      for (j = i + 1; j < lookback; j++)
 		{
 		  if (streq (history[j].insn_mo->name, "ll")
-		      || streq (history[i].insn_mo->name, "lld"))
+		      || streq (history[j].insn_mo->name, "lld"))
 		    break;
 		}
 
@@ -7919,7 +8990,7 @@ append_insn (struct mips_cl_insn *ip, expressionS *address_expr,
 	      || reloc_type[0] == BFD_RELOC_MIPS_HIGHEST
 	      || reloc_type[0] == BFD_RELOC_MIPS_HIGHER
 	      || reloc_type[0] == BFD_RELOC_MIPS_SCN_DISP
-	      || reloc_type[0] == BFD_RELOC_MIPS_REL16
+	      || reloc_type[0] == BFD_RELOC_MIPS_16
 	      || reloc_type[0] == BFD_RELOC_MIPS_RELGOT
 	      || reloc_type[0] == BFD_RELOC_MIPS16_GPREL
 	      || hi16_reloc_p (reloc_type[0])
@@ -8455,6 +9526,11 @@ match_insn (struct mips_cl_insn *insn, const struct mips_opcode *opcode,
       /* Skip prefixes.  */
       if (*args == '+' || *args == 'm' || *args == '-')
 	args++;
+      if (*args == '?') {
+        while (args[1] != 0 && args[1] != '?' && args[1] != ',' &&
+               args[1] != '(' && args[1] != '[' && args[1] != ')' && args[1] != ']')
+          args++;
+      }
 
       if (mips_optional_operand_p (operand)
 	  && args[1] == ','
@@ -9083,7 +10159,7 @@ macro_build (expressionS *ep, const char *name, const char *fmt, ...)
 		      || *r == BFD_RELOC_LO16
 		      || *r == BFD_RELOC_MIPS_GOT_OFST
 		      || (mips_opts.micromips
-			  && (*r == BFD_RELOC_16
+			  && (*r == BFD_RELOC_MIPS_16
 			      || *r == BFD_RELOC_MIPS_GOT16
 			      || *r == BFD_RELOC_MIPS_CALL16
 			      || *r == BFD_RELOC_MIPS_GOT_HI16
@@ -9153,6 +10229,56 @@ macro_build (expressionS *ep, const char *name, const char *fmt, ...)
 	  gas_assert (ep != NULL);
 	  *r = BFD_RELOC_MIPS_JMP;
 	  break;
+
+   /* VFPU fields */
+   case '?':
+     switch (*(++fmt))
+       {
+       case 'o':
+         macro_read_relocs (&args, r);
+         gas_assert (*r == BFD_RELOC_GPREL16
+             || *r == BFD_RELOC_MIPS_LITERAL
+             || *r == BFD_RELOC_MIPS_HIGHER
+             || *r == BFD_RELOC_HI16_S
+             || *r == BFD_RELOC_LO16
+             || *r == BFD_RELOC_MIPS_GOT16
+             || *r == BFD_RELOC_MIPS_CALL16
+             || *r == BFD_RELOC_MIPS_GOT_DISP
+             || *r == BFD_RELOC_MIPS_GOT_PAGE
+             || *r == BFD_RELOC_MIPS_GOT_OFST
+             || *r == BFD_RELOC_MIPS_GOT_LO16
+             || *r == BFD_RELOC_MIPS_CALL_LO16);
+         break;
+       case 'd':
+         insn.insn_opcode |= va_arg (args, int) << VF_SH_VD;
+         fmt += 2;
+         break;
+       case 's':
+         insn.insn_opcode |= va_arg (args, int) << VF_SH_VS;
+         fmt += 2;
+         break;
+       case 'm':
+       {
+         int vtreg = va_arg (args, int);
+         insn.insn_opcode |= (vtreg & VF_MASK_VML) << VF_SH_VML;
+         insn.insn_opcode |= ((vtreg >> 5) & VF_MASK_VMH) << VF_SH_VMH;
+         fmt += 2;
+         break;
+       }
+       case 'n':
+       {
+         int vtreg = va_arg (args, int);
+         insn.insn_opcode |= (vtreg & VF_MASK_VNL) << VF_SH_VNL;
+         insn.insn_opcode |= ((vtreg >> 5) & VF_MASK_VNH) << VF_SH_VNH;
+         fmt += 2;
+         break;
+       }
+       case 'e':
+         insn.insn_opcode |= va_arg (args, int) << VF_SH_MCOND;
+         break;
+       }
+     continue;
+
 
 	default:
 	  operand = (mips_opts.micromips
@@ -9501,10 +10627,8 @@ load_register (int reg, expressionS *ep, int dbl)
 
   if (!dbl || GPR_SIZE == 32)
     {
-      char value[32];
-
-      sprintf_vma (value, ep->X_add_number);
-      as_bad (_("number (0x%s) larger than 32 bits"), value);
+      as_bad (_("number (0x%" PRIx64 ") larger than 32 bits"),
+	      ep->X_add_number);
       macro_build (ep, "addiu", "t,r,j", reg, 0, BFD_RELOC_LO16);
       return;
     }
@@ -10272,6 +11396,16 @@ small_offset_p (unsigned int range, unsigned int align, unsigned int offbits)
   return false;
 }
 
+/* Return true if the ISA, CPU, and --trap settings imply using trap
+   rather than breakpoint instructions in the expansion of multiply
+   and divide macros.  */
+
+static bool
+mips_use_trap (void)
+{
+  return ISA_HAS_TRAPS (mips_opts.isa, mips_opts.arch) && mips_trap;
+}
+
 /*
  *			Build macros
  *   This routine implements the seemingly endless macro or synthesized
@@ -10296,6 +11430,7 @@ macro (struct mips_cl_insn *ip, char *str)
   const struct mips_operand_array *operands;
   unsigned int breg, i;
   unsigned int tempreg;
+  int vsreg, vtreg, vdreg, vmreg, vwb;
   int mask;
   int used_at = 0;
   expressionS label_expr;
@@ -10331,6 +11466,12 @@ macro (struct mips_cl_insn *ip, char *str)
 
   mask = ip->insn_mo->mask;
 
+  vmreg = ((ip->insn_opcode >> 16) & 0x1f)
+   | ((ip->insn_opcode <<  5) & 0x60);
+  vtreg = (ip->insn_opcode >> 16) & 0x7f;
+  vsreg = (ip->insn_opcode >> 8) & 0x7f;
+  vdreg = (ip->insn_opcode >> 0) & 0x7f;
+  vwb = (ip->insn_opcode >> 1) & 0x1;
   label_expr.X_op = O_constant;
   label_expr.X_op_symbol = NULL;
   label_expr.X_add_symbol = NULL;
@@ -10790,7 +11931,7 @@ macro (struct mips_cl_insn *ip, char *str)
       if (op[2] == 0)
 	{
 	  as_warn (_("divide by zero"));
-	  if (mips_trap)
+	  if (mips_use_trap ())
 	    macro_build (NULL, "teq", TRAP_FMT, ZERO, ZERO, 7);
 	  else
 	    macro_build (NULL, "break", BRK_FMT, 7);
@@ -10798,7 +11939,7 @@ macro (struct mips_cl_insn *ip, char *str)
 	}
 
       start_noreorder ();
-      if (mips_trap)
+      if (mips_use_trap ())
 	{
 	  macro_build (NULL, "teq", TRAP_FMT, op[2], ZERO, 7);
 	  macro_build (NULL, dbl ? "ddiv" : "div", "z,s,t", op[1], op[2]);
@@ -10821,7 +11962,8 @@ macro (struct mips_cl_insn *ip, char *str)
       if (mips_opts.micromips)
 	micromips_label_expr (&label_expr);
       else
-	label_expr.X_add_number = mips_trap ? (dbl ? 12 : 8) : (dbl ? 20 : 16);
+	label_expr.X_add_number = (mips_use_trap ()
+				   ? (dbl ? 12 : 8) : (dbl ? 20 : 16));
       macro_build (&label_expr, "bne", "s,t,p", op[2], AT);
       if (dbl)
 	{
@@ -10834,7 +11976,7 @@ macro (struct mips_cl_insn *ip, char *str)
 	  expr1.X_add_number = 0x80000000;
 	  macro_build (&expr1, "lui", LUI_FMT, AT, BFD_RELOC_HI16);
 	}
-      if (mips_trap)
+      if (mips_use_trap ())
 	{
 	  macro_build (NULL, "teq", TRAP_FMT, op[1], AT, 6);
 	  /* We want to close the noreorder block as soon as possible, so
@@ -10900,7 +12042,7 @@ macro (struct mips_cl_insn *ip, char *str)
       if (imm_expr.X_add_number == 0)
 	{
 	  as_warn (_("divide by zero"));
-	  if (mips_trap)
+	  if (mips_use_trap ())
 	    macro_build (NULL, "teq", TRAP_FMT, ZERO, ZERO, 7);
 	  else
 	    macro_build (NULL, "break", BRK_FMT, 7);
@@ -10946,7 +12088,7 @@ macro (struct mips_cl_insn *ip, char *str)
       s2 = "mfhi";
     do_divu3:
       start_noreorder ();
-      if (mips_trap)
+      if (mips_use_trap ())
 	{
 	  macro_build (NULL, "teq", TRAP_FMT, op[2], ZERO, 7);
 	  macro_build (NULL, s, "z,s,t", op[1], op[2]);
@@ -11973,6 +13115,34 @@ macro (struct mips_cl_insn *ip, char *str)
       /* Itbl support may require additional care here.  */
       coproc = 1;
       goto ld_st;
+    case M_LV_S_AB:
+      s = "lv.s";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?m0f,?o(b)";
+      op[0] = vmreg;
+      goto ld;
+    case M_LV_Q_AB:
+      s = "lv.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld;
+    case M_LVL_Q_AB:
+      s = "lvl.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld;
+    case M_LVR_Q_AB:
+      s = "lvr.q";
+      /* Itbl support may require additional care here.  */                                                                                  
+      coproc = 1;                                                                                                                            
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld;
     case M_LWL_AB:
       s = "lwl";
       fmt = MEM12_FMT;
@@ -11988,6 +13158,37 @@ macro (struct mips_cl_insn *ip, char *str)
       fmt = "T,o(b)";
       /* Itbl support may require additional care here.  */
       coproc = 1;
+      goto ld_st;
+    case M_SV_S_AB:
+      s = "sv.s";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?m0f,?o(b)";
+      op[0] = vmreg;
+      goto ld_st;
+    case M_SV_Q_AB:
+      if (vwb)
+   s = "vwb.q";
+      else
+   s = "sv.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld_st;
+    case M_SVL_Q_AB:
+      s = "svl.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
+      goto ld_st;
+    case M_SVR_Q_AB:
+      s = "svr.q";
+      /* Itbl support may require additional care here.  */
+      coproc = 1;
+      fmt = "?n3f,?o(b)";
+      op[0] = vmreg;
       goto ld_st;
     case M_LDC2_AB:
       s = "ldc2";
@@ -12318,10 +13519,8 @@ macro (struct mips_cl_insn *ip, char *str)
       if (HAVE_32BIT_ADDRESSES
 	  && !IS_SEXT_32BIT_NUM (offset_expr.X_add_number))
 	{
-	  char value [32];
-
-	  sprintf_vma (value, offset_expr.X_add_number);
-	  as_bad (_("number (0x%s) larger than 32 bits"), value);
+	  as_bad (_("number (0x%" PRIx64 ") larger than 32 bits"),
+		  offset_expr.X_add_number);
 	}
 
       /* A constant expression in PIC code can be handled just as it
@@ -12718,6 +13917,135 @@ macro (struct mips_cl_insn *ip, char *str)
 		       BFD_RELOC_MIPS_LITERAL, mips_gp_register);
 	  break;
 	}
+    case M_LVI_S_SS:
+    case M_LVI_P_SS:
+    case M_LVI_T_SS:
+    case M_LVI_Q_SS:
+      {
+   int mtx = (vtreg >> VF_SH_MR_MTX) & VF_MASK_MR_MTX;
+   int idx = (vtreg >> VF_SH_MR_IDX) & VF_MASK_MR_IDX;
+   int fsl = 0;
+   int rxc = 0;
+   int vtreg_s = 0;
+   unsigned vnum = 0;
+   int vat = 0;
+
+   switch (mask)
+     {
+     case M_LVI_S_SS:
+       vnum = 1;
+       fsl = (vtreg >> VF_SH_MR_FSL) & VF_MASK_MR_FSL;
+       rxc = 0;
+       break;
+     case M_LVI_P_SS:
+       vnum = 2;
+       fsl = ((vtreg >> VF_SH_MR_VFSL) & VF_MASK_MR_VFSL) << 1;
+       rxc = (vtreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+       break;
+     case M_LVI_T_SS:
+       vnum = 3;
+       fsl = (vtreg >> VF_SH_MR_VFSL) & VF_MASK_MR_VFSL;
+       rxc = (vtreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+       break;
+     case M_LVI_Q_SS:
+       vnum = 4;
+       fsl = 0;
+       rxc = (vtreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+       break;
+     }
+   if (rxc)
+     vtreg_s = (mtx << VF_SH_MR_MTX) | (idx << VF_SH_MR_FSL)
+         | (fsl << VF_SH_MR_IDX);
+   else
+     vtreg_s = (mtx << VF_SH_MR_MTX) | (idx << VF_SH_MR_IDX)
+         | (fsl << VF_SH_MR_FSL);
+
+   for (i = 0; i < vnum; i++) {
+     imm_expr = vimm_expr[i];
+     offset_expr = voffset_expr[i];
+
+     if (imm_expr.X_op == O_constant)
+       {
+         load_register (AT, &imm_expr, 0);
+         macro_build ((expressionS *) NULL,
+              "mtv", "t,?d0f", AT, vtreg_s);
+         vat = 1;
+       }
+     else
+       {
+         gas_assert (offset_expr.X_op == O_symbol
+             && strcmp (segment_name (S_GET_SEGMENT
+                          (offset_expr.X_add_symbol)),
+                ".lit4") == 0
+             && offset_expr.X_add_number == 0);
+         macro_build (&offset_expr,
+              "lv.s", "?m0f,?o(b)", vtreg_s,
+              (int) BFD_RELOC_MIPS_LITERAL, mips_gp_register);
+       }
+
+     if (rxc)
+       vtreg_s += (1 << VF_SH_MR_IDX);
+     else
+       vtreg_s += (1 << VF_SH_MR_FSL);
+   }
+
+   if (vat)
+     break;
+   else
+     return;
+      }
+
+    case M_LVHI_S_SS:
+    case M_LVHI_P_SS:
+      {
+   int mtx = (vtreg >> VF_SH_MR_MTX) & VF_MASK_MR_MTX;
+   int idx = (vtreg >> VF_SH_MR_IDX) & VF_MASK_MR_IDX;
+   int fsl = 0;
+   unsigned rxc = 0;
+   unsigned vtreg_s = 0;
+   unsigned vnum = 0;
+   unsigned int f16v;
+   char f16v_str[16];
+
+   switch (mask)
+     {
+     case M_LVHI_S_SS:
+       vnum = 2;
+       fsl = (vtreg >> VF_SH_MR_FSL) & VF_MASK_MR_FSL;
+       rxc = 0;
+       break;
+     case M_LVHI_P_SS:
+       vnum = 4;
+       fsl = ((vtreg >> VF_SH_MR_VFSL) & VF_MASK_MR_VFSL) << 1;
+       rxc = (vtreg >> VF_SH_MR_RXC) & VF_MASK_MR_RXC;
+       break;
+     }
+   if (rxc)
+     vtreg_s = (mtx << VF_SH_MR_MTX) | (idx << VF_SH_MR_FSL)
+         | (fsl << VF_SH_MR_IDX);
+   else
+     vtreg_s = (mtx << VF_SH_MR_MTX) | (idx << VF_SH_MR_IDX)
+         | (fsl << VF_SH_MR_FSL);
+
+
+   for (i = 0; i < vnum; i += 2) {
+     f16v = ((vimm_expr[i + 1].X_add_number & 0xffff) << 16)
+          | (vimm_expr[i].X_add_number & 0xffff);
+     sprintf(f16v_str, "0x%08x", f16v);
+     my_getExpression (&imm_expr, f16v_str);
+
+     load_register (AT, &imm_expr, 0);
+     macro_build ((expressionS *) NULL,
+              "mtv", "t,?d0f", AT, vtreg_s);
+
+     if (rxc)
+       vtreg_s += (1 << VF_SH_MR_IDX);
+     else
+       vtreg_s += (1 << VF_SH_MR_FSL);
+   }
+
+   break;
+      }
 
     case M_LI_D:
       /* Check if we have a constant in IMM_EXPR.  If the GPRs are 64 bits
@@ -13001,10 +14329,8 @@ macro (struct mips_cl_insn *ip, char *str)
       if (HAVE_32BIT_ADDRESSES
 	  && !IS_SEXT_32BIT_NUM (offset_expr.X_add_number))
 	{
-	  char value [32];
-
-	  sprintf_vma (value, offset_expr.X_add_number);
-	  as_bad (_("number (0x%s) larger than 32 bits"), value);
+	  as_bad (_("number (0x%" PRIx64 ") larger than 32 bits"),
+		  offset_expr.X_add_number);
 	}
 
       if (mips_pic == NO_PIC || offset_expr.X_op == O_constant)
@@ -13267,6 +14593,27 @@ macro (struct mips_cl_insn *ip, char *str)
 		     micromips_to_32_reg_n_map[op[2]]);
       break;
 
+    case M_VCMOV_S:
+      s = "vcmovt.s";
+      fmt = "?d0a,?s0a,?e";
+      goto vcmov;
+    case M_VCMOV_P:
+      s = "vcmovt.p";
+      fmt = "?d1a,?s1a,?e";
+      goto vcmov;
+    case M_VCMOV_T:
+      s = "vcmovt.t";
+      fmt = "?d2a,?s2a,?e";
+      goto vcmov;
+    case M_VCMOV_Q:
+      s = "vcmovt.q";
+      fmt = "?d3a,?s3a,?e";
+    vcmov:
+      macro_build ((expressionS *) NULL, s, fmt,
+          vdreg, vsreg,
+          (ip->insn_opcode >> VF_SH_MCOND) & VF_MASK_MCOND);
+      return;
+
     case M_DMUL:
       dbl = 1;
       /* Fall through.  */
@@ -13315,7 +14662,7 @@ macro (struct mips_cl_insn *ip, char *str)
       macro_build (NULL, "mflo", MFHL_FMT, op[0]);
       macro_build (NULL, dbl ? "dsra32" : "sra", SHFT_FMT, op[0], op[0], 31);
       macro_build (NULL, "mfhi", MFHL_FMT, AT);
-      if (mips_trap)
+      if (mips_use_trap ())
 	macro_build (NULL, "tne", TRAP_FMT, op[0], AT, 6);
       else
 	{
@@ -13353,7 +14700,7 @@ macro (struct mips_cl_insn *ip, char *str)
 		   op[1], imm ? AT : op[2]);
       macro_build (NULL, "mfhi", MFHL_FMT, AT);
       macro_build (NULL, "mflo", MFHL_FMT, op[0]);
-      if (mips_trap)
+      if (mips_use_trap ())
 	macro_build (NULL, "tne", TRAP_FMT, AT, ZERO, 6);
       else
 	{
@@ -13870,6 +15217,19 @@ macro (struct mips_cl_insn *ip, char *str)
       offbits = (mips_opts.micromips ? 12 : 16);
       off = 3;
       goto uld_st;
+
+    case M_ULV_Q_AB:
+      off = 12;
+      if (offset_expr.X_add_number >= 0x8000 - off)
+        as_bad (_("operand overflow"));
+      offset_expr.X_add_number += off;
+      macro_build (&offset_expr, "lvl.q", "?n3f,?o(b)",
+                   vmreg, (int) BFD_RELOC_LO16, op[2]);
+      offset_expr.X_add_number -= off;
+      macro_build (&offset_expr, "lvr.q", "?n3f,?o(b)",
+                   vmreg, (int) BFD_RELOC_LO16, op[2]);
+      return;
+
     case M_ULD_AB:
       s = "ldl";
       s2 = "ldr";
@@ -13889,6 +15249,18 @@ macro (struct mips_cl_insn *ip, char *str)
       off = 3;
       ust = 1;
       goto uld_st;
+    case M_USV_Q_AB:
+      off = 12;
+      if (offset_expr.X_add_number >= 0x8000 - off)
+        as_bad (_("operand overflow"));
+      offset_expr.X_add_number += off;
+      macro_build (&offset_expr, "svl.q", "?n3f,?o(b)",
+          vmreg, (int) BFD_RELOC_LO16, op[2]);
+      offset_expr.X_add_number -= off;
+      macro_build (&offset_expr, "svr.q", "?n3f,?o(b)",
+          vmreg, (int) BFD_RELOC_LO16, op[2]);
+      return;
+
     case M_USD_AB:
       s = "sdl";
       s2 = "sdr";
@@ -14359,9 +15731,11 @@ mips_ip (char *str, struct mips_cl_insn *insn)
     format = 'f';
   else if (strcmp (first->name, "li.d") == 0)
     format = 'd';
+  else if (!strncmp(first->name, "lvhi", 4) || !strncmp(first->name, "vfim", 4))
+    format = 'f';
   else
     format = 0;
-  tokens = mips_parse_arguments (str + end, format);
+  tokens = mips_parse_arguments (str + end, format, first);
   if (!tokens)
     return;
 
@@ -14430,7 +15804,7 @@ mips16_ip (char *str, struct mips_cl_insn *insn)
       return;
     }
 
-  tokens = mips_parse_arguments (s, 0);
+  tokens = mips_parse_arguments (s, 0, first);
   if (!tokens)
     return;
 
@@ -14577,7 +15951,7 @@ static const struct percent_op_match mips_percent_op[] =
   {"%got", BFD_RELOC_MIPS_GOT16},
   {"%gp_rel", BFD_RELOC_GPREL16},
   {"%gprel", BFD_RELOC_GPREL16},
-  {"%half", BFD_RELOC_16},
+  {"%half", BFD_RELOC_MIPS_16},
   {"%highest", BFD_RELOC_MIPS_HIGHEST},
   {"%higher", BFD_RELOC_MIPS_HIGHER},
   {"%neg", BFD_RELOC_MIPS_SUB},
@@ -14661,7 +16035,8 @@ parse_relocation (char **str, bfd_reloc_code_real_type *reloc)
    expression in *EP and the relocations in the array starting
    at RELOC.  Return the number of relocation operators used.
 
-   On exit, EXPR_END points to the first character after the expression.  */
+   On exit, EXPR_PARSE_END points to the first character after the
+   expression.  */
 
 static size_t
 my_getSmallExpression (expressionS *ep, bfd_reloc_code_real_type *reloc,
@@ -14695,7 +16070,7 @@ my_getSmallExpression (expressionS *ep, bfd_reloc_code_real_type *reloc,
 	 && parse_relocation (&str, &reversed_reloc[reloc_index]));
 
   my_getExpression (ep, crux);
-  str = expr_end;
+  str = expr_parse_end;
 
   /* Match every open bracket.  */
   while (crux_depth > 0 && (*str == ')' || *str == ' ' || *str == '\t'))
@@ -14705,7 +16080,7 @@ my_getSmallExpression (expressionS *ep, bfd_reloc_code_real_type *reloc,
   if (crux_depth > 0)
     as_bad (_("unclosed '('"));
 
-  expr_end = str;
+  expr_parse_end = str;
 
   for (i = 0; i < reloc_index; i++)
     reloc[i] = reversed_reloc[reloc_index - 1 - i];
@@ -14721,7 +16096,7 @@ my_getExpression (expressionS *ep, char *str)
   save_in = input_line_pointer;
   input_line_pointer = str;
   expression (ep);
-  expr_end = input_line_pointer;
+  expr_parse_end = input_line_pointer;
   input_line_pointer = save_in;
 }
 
@@ -15293,7 +16668,9 @@ mips_after_parse_args (void)
   if (arch_info == 0)
     {
       arch_info = mips_parse_cpu ("default CPU", MIPS_CPU_STRING_DEFAULT);
-      gas_assert (arch_info);
+      if (!arch_info)
+	as_fatal  (_("gas doesn't understand your configure target %s"),
+		   TARGET_ALIAS);
     }
 
   if (ABI_NEEDS_64BIT_REGS (mips_abi) && !ISA_HAS_64BIT_REGS (arch_info->isa))
@@ -15458,8 +16835,7 @@ mips_frob_file (void)
 	 there isn't supposed to be a matching LO.  Ignore %gots against
 	 constants; we'll report an error for those later.  */
       if (got16_reloc_p (l->fixp->fx_r_type)
-	  && !(l->fixp->fx_addsy
-	       && pic_need_relax (l->fixp->fx_addsy)))
+	  && !pic_need_relax (l->fixp->fx_addsy))
 	continue;
 
       /* Check quickly whether the next fixup happens to be a matching %lo.  */
@@ -15841,9 +17217,10 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
 	break;
       }
 
-  /* Handle BFD_RELOC_8, since it's easy.  Punt on other bfd relocations
-     that have no MIPS ELF equivalent.  */
-  if (fixP->fx_r_type != BFD_RELOC_8)
+  /* Handle BFD_RELOC_8 and BFD_RELOC_16.  Punt on other bfd
+     relocations that have no MIPS ELF equivalent.  */
+  if (fixP->fx_r_type != BFD_RELOC_8
+      && fixP->fx_r_type != BFD_RELOC_16)
     {
       howto = bfd_reloc_type_lookup (stdoutput, fixP->fx_r_type);
       if (!howto)
@@ -15853,7 +17230,6 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
   gas_assert (fixP->fx_size == 2
 	      || fixP->fx_size == 4
 	      || fixP->fx_r_type == BFD_RELOC_8
-	      || fixP->fx_r_type == BFD_RELOC_16
 	      || fixP->fx_r_type == BFD_RELOC_64
 	      || fixP->fx_r_type == BFD_RELOC_CTOR
 	      || fixP->fx_r_type == BFD_RELOC_MIPS_SUB
@@ -15958,7 +17334,6 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
     case BFD_RELOC_MIPS_HIGHEST:
     case BFD_RELOC_MIPS_HIGHER:
     case BFD_RELOC_MIPS_SCN_DISP:
-    case BFD_RELOC_MIPS_REL16:
     case BFD_RELOC_MIPS_RELGOT:
     case BFD_RELOC_MIPS_JALR:
     case BFD_RELOC_HI16:
@@ -16044,6 +17419,7 @@ md_apply_fix (fixS *fixP, valueT *valP, segT seg ATTRIBUTE_UNUSED)
     case BFD_RELOC_RVA:
     case BFD_RELOC_32:
     case BFD_RELOC_32_PCREL:
+    case BFD_RELOC_MIPS_16:
     case BFD_RELOC_16:
     case BFD_RELOC_8:
       /* If we are deleting this reloc entry, we must fill in the
@@ -16268,6 +17644,8 @@ s_align (int x ATTRIBUTE_UNUSED)
   int temp, fill_value, *fill_ptr;
   long max_alignment = 28;
 
+  file_mips_check_options ();
+
   /* o Note that the assembler pulls down any immediately preceding label
        to the aligned address.
      o It's not documented but auto alignment is reinstated by
@@ -16292,6 +17670,9 @@ s_align (int x ATTRIBUTE_UNUSED)
     }
   else
     fill_ptr = 0;
+
+  mips_mark_labels ();
+
   if (temp)
     {
       segment_info_type *si = seg_info (now_seg);
@@ -16371,32 +17752,28 @@ void
 s_change_section (int ignore ATTRIBUTE_UNUSED)
 {
   char *saved_ilp;
-  char *section_name;
-  char c, endc;
-  char next_c = 0;
+  const char *section_name;
+  char c, next_c = 0;
   int section_type;
   int section_flag;
   int section_entry_size;
   int section_alignment;
 
   saved_ilp = input_line_pointer;
-  endc = get_symbol_name (&section_name);
-  c = (endc == '"' ? input_line_pointer[1] : endc);
+  section_name = obj_elf_section_name ();
+  if (section_name == NULL)
+    return;
+  c = input_line_pointer[0];
   if (c)
-    next_c = input_line_pointer [(endc == '"' ? 2 : 1)];
+    next_c = input_line_pointer[1];
 
   /* Do we have .section Name<,"flags">?  */
   if (c != ',' || (c == ',' && next_c == '"'))
     {
-      /* Just after name is now '\0'.  */
-      (void) restore_line_pointer (endc);
       input_line_pointer = saved_ilp;
       obj_elf_section (ignore);
       return;
     }
-
-  section_name = xstrdup (section_name);
-  c = restore_line_pointer (endc);
 
   input_line_pointer++;
 
@@ -16441,10 +17818,7 @@ s_change_section (int ignore ATTRIBUTE_UNUSED)
     section_type = SHT_PROGBITS;
 
   obj_elf_change_section (section_name, section_type, section_flag,
-			  section_entry_size, 0, 0, 0);
-
-  if (now_seg->name != section_name)
-    free (section_name);
+			  section_entry_size, 0, false);
 }
 
 void
@@ -17715,6 +19089,9 @@ static bool
 pic_need_relax (symbolS *sym)
 {
   asection *symsec;
+
+  if (!sym)
+    return false;
 
   /* Handle the case of a symbol equated to another symbol.  */
   while (symbol_equated_reloc_p (sym))
@@ -19540,16 +20917,16 @@ mips_elf_final_processing (void)
     elf_elfheader (stdoutput)->e_flags |= EF_MIPS_ARCH_ASE_MDMX;
 
   /* Set the MIPS ELF ABI flags.  */
-  if (mips_abi == O32_ABI && USE_E_MIPS_ABI_O32)
-    elf_elfheader (stdoutput)->e_flags |= E_MIPS_ABI_O32;
+  if (mips_abi == O32_ABI && USE_EF_MIPS_ABI_O32)
+    elf_elfheader (stdoutput)->e_flags |= EF_MIPS_ABI_O32;
   else if (mips_abi == O64_ABI)
-    elf_elfheader (stdoutput)->e_flags |= E_MIPS_ABI_O64;
+    elf_elfheader (stdoutput)->e_flags |= EF_MIPS_ABI_O64;
   else if (mips_abi == EABI_ABI)
     {
       if (file_mips_opts.gp == 64)
-	elf_elfheader (stdoutput)->e_flags |= E_MIPS_ABI_EABI64;
+	elf_elfheader (stdoutput)->e_flags |= EF_MIPS_ABI_EABI64;
       else
-	elf_elfheader (stdoutput)->e_flags |= E_MIPS_ABI_EABI32;
+	elf_elfheader (stdoutput)->e_flags |= EF_MIPS_ABI_EABI32;
     }
 
   /* Nothing to do for N32_ABI or N64_ABI.  */
@@ -19730,7 +21107,7 @@ s_mips_file (int x ATTRIBUTE_UNUSED)
   if (ECOFF_DEBUGGING)
     {
       get_number ();
-      s_app_file (0);
+      s_file (0);
     }
   else
     {
@@ -19744,8 +21121,8 @@ s_mips_file (int x ATTRIBUTE_UNUSED)
          after 3.1 in order to support DWARF-2 on MIPS.  */
       if (filename != NULL && ! first_file_directive)
 	{
-	  (void) new_logical_line (filename, -1);
-	  s_app_file_string (filename, 0);
+	  new_logical_line (filename, -1);
+	  s_file_string (filename);
 	}
       first_file_directive = 1;
     }
@@ -20017,6 +21394,7 @@ static const struct mips_cpu_info mips_cpu_info_table[] =
 
   /* MIPS II */
   { "r6000",          0, 0,			ISA_MIPS2,    CPU_R6000 },
+  { "allegrex",       0, 0,			ISA_MIPS2,    CPU_ALLEGREX },
 
   /* MIPS III */
   { "r4000",          0, 0,			ISA_MIPS3,    CPU_R4000 },
@@ -20580,7 +21958,7 @@ mips_convert_symbolic_attribute (const char *name)
 }
 
 void
-md_mips_end (void)
+mips_md_finish (void)
 {
   int fpabi = Val_GNU_MIPS_ABI_FP_ANY;
 
@@ -20631,8 +22009,10 @@ md_mips_end (void)
 	    }
 	}
 
-      bfd_elf_add_obj_attr_int (stdoutput, OBJ_ATTR_GNU,
-				Tag_GNU_MIPS_ABI_FP, fpabi);
+      if (!bfd_elf_add_obj_attr_int (stdoutput, OBJ_ATTR_GNU,
+				     Tag_GNU_MIPS_ABI_FP, fpabi))
+	as_fatal (_("error adding attribute: %s"),
+		  bfd_errmsg (bfd_get_error ()));
     }
 }
 

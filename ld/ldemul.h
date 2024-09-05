@@ -1,5 +1,5 @@
 /* ld-emul.h - Linker emulation header file
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -31,6 +31,8 @@ extern void ldemul_syslib
 extern void ldemul_after_parse
   (void);
 extern void ldemul_before_parse
+  (void);
+extern void ldemul_before_plugin_all_symbols_read
   (void);
 extern void ldemul_after_open
   (void);
@@ -130,6 +132,9 @@ typedef struct ld_emulation_xfer_struct {
 
   /* Run after parsing the command line and script file.  */
   void   (*after_parse) (void);
+
+  /* Run before calling plugin 'all symbols read' hook.  */
+  void   (*before_plugin_all_symbols_read)  (void);
 
   /* Run after opening all input files, and loading the symbols.  */
   void   (*after_open) (void);

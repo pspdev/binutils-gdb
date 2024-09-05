@@ -1,5 +1,5 @@
 /* MIPS-specific support for 64-bit ELF
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2024 Free Software Foundation, Inc.
    Ian Lance Taylor, Cygnus Support
    Linker support added by Mark Mitchell, CodeSourcery, LLC.
    <mark@codesourcery.com>
@@ -135,7 +135,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* No relocation.  */
   HOWTO (R_MIPS_NONE,		/* type */
 	 0,			/* rightshift */
-	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -150,7 +150,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 16 bit relocation.  */
   HOWTO (R_MIPS_16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -165,7 +165,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 32 bit relocation.  */
   HOWTO (R_MIPS_32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -180,7 +180,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 32 bit symbol relative relocation.  */
   HOWTO (R_MIPS_REL32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -195,7 +195,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 26 bit jump address.  */
   HOWTO (R_MIPS_26,		/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -216,7 +216,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* High 16 bits of symbol value.  */
   HOWTO (R_MIPS_HI16,		/* type */
 	 16,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -231,7 +231,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Low 16 bits of symbol value.  */
   HOWTO (R_MIPS_LO16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -246,7 +246,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* GP relative reference.  */
   HOWTO (R_MIPS_GPREL16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -261,7 +261,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Reference to literal section.  */
   HOWTO (R_MIPS_LITERAL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -276,7 +276,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Reference to global offset table.  */
   HOWTO (R_MIPS_GOT16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -293,7 +293,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
      We do the right thing here.  */
   HOWTO (R_MIPS_PC16,		/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -308,7 +308,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 16 bit call through global offset table.  */
   HOWTO (R_MIPS_CALL16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -323,7 +323,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 32 bit GP relative reference.  */
   HOWTO (R_MIPS_GPREL32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -342,7 +342,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* A 5 bit shift field.  */
   HOWTO (R_MIPS_SHIFT5,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 5,			/* bitsize */
 	 false,			/* pc_relative */
 	 6,			/* bitpos */
@@ -357,7 +357,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* A 6 bit shift field.  */
   HOWTO (R_MIPS_SHIFT6,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 6,			/* bitsize */
 	 false,			/* pc_relative */
 	 6,			/* bitpos */
@@ -372,7 +372,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 64 bit relocation.  */
   HOWTO (R_MIPS_64,		/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -387,7 +387,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Displacement in the global offset table.  */
   HOWTO (R_MIPS_GOT_DISP,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -402,7 +402,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Displacement to page pointer in the global offset table.  */
   HOWTO (R_MIPS_GOT_PAGE,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -417,7 +417,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Offset from page pointer in the global offset table.  */
   HOWTO (R_MIPS_GOT_OFST,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -431,8 +431,8 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   /* High 16 bits of displacement in global offset table.  */
   HOWTO (R_MIPS_GOT_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -447,7 +447,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_MIPS_GOT_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -462,7 +462,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 64 bit subtraction.  */
   HOWTO (R_MIPS_SUB,		/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -478,7 +478,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* FIXME: Not handled correctly.  */
   HOWTO (R_MIPS_INSERT_A,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -495,7 +495,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* FIXME: Not handled correctly.  */
   HOWTO (R_MIPS_INSERT_B,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -511,7 +511,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* FIXME: Not handled correctly.  */
   HOWTO (R_MIPS_DELETE,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -534,8 +534,8 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   /* High 16 bits of displacement in global offset table.  */
   HOWTO (R_MIPS_CALL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -550,7 +550,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_MIPS_CALL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -565,7 +565,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* Section displacement, used by an associated event location section.  */
   HOWTO (R_MIPS_SCN_DISP,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -579,7 +579,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_REL16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -599,7 +599,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
      It must be used for multigot GOT's (and only there).  */
   HOWTO (R_MIPS_RELGOT,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -615,7 +615,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
      relocation is required for correctness.  */
   HOWTO (R_MIPS_JALR,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -633,7 +633,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_TLS_DTPMOD64,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -647,7 +647,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_TLS_DTPREL64,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -662,7 +662,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* TLS general dynamic variable reference.  */
   HOWTO (R_MIPS_TLS_GD,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -677,7 +677,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* TLS local dynamic variable reference.  */
   HOWTO (R_MIPS_TLS_LDM,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -691,8 +691,8 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   /* TLS local dynamic offset.  */
   HOWTO (R_MIPS_TLS_DTPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -707,11 +707,11 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* TLS local dynamic offset.  */
   HOWTO (R_MIPS_TLS_DTPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MIPS_TLS_DTPREL_LO16",	/* name */
 	 true,			/* partial_inplace */
@@ -722,7 +722,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* TLS thread pointer offset.  */
   HOWTO (R_MIPS_TLS_GOTTPREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -739,7 +739,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_TLS_TPREL64,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -753,8 +753,8 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   /* TLS thread pointer offset.  */
   HOWTO (R_MIPS_TLS_TPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -769,11 +769,11 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* TLS thread pointer offset.  */
   HOWTO (R_MIPS_TLS_TPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MIPS_TLS_TPREL_LO16", /* name */
 	 true,			/* partial_inplace */
@@ -784,7 +784,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
   /* 32 bit relocation with no addend.  */
   HOWTO (R_MIPS_GLOB_DAT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -807,7 +807,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_PC21_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 21,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -821,7 +821,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_PC26_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -835,7 +835,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_PC18_S3,	/* type */
 	 3,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 18,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -849,7 +849,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_PC19_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 19,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -863,7 +863,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_PCHI16,		/* type */
 	 16,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -877,7 +877,7 @@ static reloc_howto_type mips_elf64_howto_table_rel[] =
 
   HOWTO (R_MIPS_PCLO16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -898,7 +898,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* No relocation.  */
   HOWTO (R_MIPS_NONE,		/* type */
 	 0,			/* rightshift */
-	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -913,7 +913,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 16 bit relocation.  */
   HOWTO (R_MIPS_16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -928,7 +928,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 32 bit relocation.  */
   HOWTO (R_MIPS_32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -943,7 +943,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 32 bit symbol relative relocation.  */
   HOWTO (R_MIPS_REL32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -958,7 +958,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 26 bit jump address.  */
   HOWTO (R_MIPS_26,		/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -975,8 +975,8 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   /* High 16 bits of symbol value.  */
   HOWTO (R_MIPS_HI16,		/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -991,7 +991,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Low 16 bits of symbol value.  */
   HOWTO (R_MIPS_LO16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1006,7 +1006,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* GP relative reference.  */
   HOWTO (R_MIPS_GPREL16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1021,7 +1021,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Reference to literal section.  */
   HOWTO (R_MIPS_LITERAL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1036,7 +1036,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Reference to global offset table.  */
   HOWTO (R_MIPS_GOT16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1053,7 +1053,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
      We do the right thing here.  */
   HOWTO (R_MIPS_PC16,		/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1068,7 +1068,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 16 bit call through global offset table.  */
   HOWTO (R_MIPS_CALL16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1083,7 +1083,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 32 bit GP relative reference.  */
   HOWTO (R_MIPS_GPREL32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1102,7 +1102,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* A 5 bit shift field.  */
   HOWTO (R_MIPS_SHIFT5,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 5,			/* bitsize */
 	 false,			/* pc_relative */
 	 6,			/* bitpos */
@@ -1117,7 +1117,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* A 6 bit shift field.  */
   HOWTO (R_MIPS_SHIFT6,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 6,			/* bitsize */
 	 false,			/* pc_relative */
 	 6,			/* bitpos */
@@ -1132,7 +1132,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 64 bit relocation.  */
   HOWTO (R_MIPS_64,		/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1147,7 +1147,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Displacement in the global offset table.  */
   HOWTO (R_MIPS_GOT_DISP,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1162,7 +1162,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Displacement to page pointer in the global offset table.  */
   HOWTO (R_MIPS_GOT_PAGE,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1177,7 +1177,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Offset from page pointer in the global offset table.  */
   HOWTO (R_MIPS_GOT_OFST,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1191,8 +1191,8 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   /* High 16 bits of displacement in global offset table.  */
   HOWTO (R_MIPS_GOT_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1207,7 +1207,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_MIPS_GOT_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1222,7 +1222,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 64 bit subtraction.  */
   HOWTO (R_MIPS_SUB,		/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1238,7 +1238,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* FIXME: Not handled correctly.  */
   HOWTO (R_MIPS_INSERT_A,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1255,7 +1255,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* FIXME: Not handled correctly.  */
   HOWTO (R_MIPS_INSERT_B,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1271,7 +1271,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* FIXME: Not handled correctly.  */
   HOWTO (R_MIPS_DELETE,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1285,8 +1285,8 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   /* Get the higher value of a 64 bit addend.  */
   HOWTO (R_MIPS_HIGHER,		/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1300,8 +1300,8 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   /* Get the highest value of a 64 bit addend.  */
   HOWTO (R_MIPS_HIGHEST,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 48,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1315,8 +1315,8 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   /* High 16 bits of displacement in global offset table.  */
   HOWTO (R_MIPS_CALL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1331,7 +1331,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_MIPS_CALL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1346,7 +1346,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* Section displacement, used by an associated event location section.  */
   HOWTO (R_MIPS_SCN_DISP,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1360,7 +1360,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_REL16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1380,7 +1380,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
      It must be used for multigot GOT's (and only there).  */
   HOWTO (R_MIPS_RELGOT,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1396,7 +1396,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
      relocation is required for correctness.  */
   HOWTO (R_MIPS_JALR,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1414,7 +1414,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_TLS_DTPMOD64,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1428,7 +1428,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_TLS_DTPREL64,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1443,7 +1443,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* TLS general dynamic variable reference.  */
   HOWTO (R_MIPS_TLS_GD,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1458,7 +1458,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* TLS local dynamic variable reference.  */
   HOWTO (R_MIPS_TLS_LDM,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1472,8 +1472,8 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   /* TLS local dynamic offset.  */
   HOWTO (R_MIPS_TLS_DTPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1488,11 +1488,11 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* TLS local dynamic offset.  */
   HOWTO (R_MIPS_TLS_DTPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MIPS_TLS_DTPREL_LO16",	/* name */
 	 false,			/* partial_inplace */
@@ -1503,7 +1503,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* TLS thread pointer offset.  */
   HOWTO (R_MIPS_TLS_GOTTPREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1520,7 +1520,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_TLS_TPREL64,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1534,8 +1534,8 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   /* TLS thread pointer offset.  */
   HOWTO (R_MIPS_TLS_TPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1550,11 +1550,11 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* TLS thread pointer offset.  */
   HOWTO (R_MIPS_TLS_TPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MIPS_TLS_TPREL_LO16", /* name */
 	 false,			/* partial_inplace */
@@ -1565,7 +1565,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
   /* 32 bit relocation with no addend.  */
   HOWTO (R_MIPS_GLOB_DAT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1588,7 +1588,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_PC21_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 21,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1602,7 +1602,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_PC26_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1616,7 +1616,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_PC18_S3,	/* type */
 	 3,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 18,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1630,7 +1630,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_PC19_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 19,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1644,7 +1644,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_PCHI16,		/* type */
 	 16,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1658,7 +1658,7 @@ static reloc_howto_type mips_elf64_howto_table_rela[] =
 
   HOWTO (R_MIPS_PCLO16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1677,7 +1677,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* The reloc used for the mips16 jump instruction.  */
   HOWTO (R_MIPS16_26,		/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1695,7 +1695,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* The reloc used for the mips16 gprel instruction.  */
   HOWTO (R_MIPS16_GPREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1710,7 +1710,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* A MIPS16 reference to the global offset table.  */
   HOWTO (R_MIPS16_GOT16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1725,7 +1725,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* A MIPS16 call through the global offset table.  */
   HOWTO (R_MIPS16_CALL16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1740,7 +1740,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* MIPS16 high 16 bits of symbol value.  */
   HOWTO (R_MIPS16_HI16,		/* type */
 	 16,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1755,7 +1755,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* MIPS16 low 16 bits of symbol value.  */
   HOWTO (R_MIPS16_LO16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1770,7 +1770,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* MIPS16 TLS general dynamic variable reference.  */
   HOWTO (R_MIPS16_TLS_GD,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1785,7 +1785,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* MIPS16 TLS local dynamic variable reference.  */
   HOWTO (R_MIPS16_TLS_LDM,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1799,8 +1799,8 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
 
   /* MIPS16 TLS local dynamic offset.  */
   HOWTO (R_MIPS16_TLS_DTPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1815,11 +1815,11 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* MIPS16 TLS local dynamic offset.  */
   HOWTO (R_MIPS16_TLS_DTPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MIPS16_TLS_DTPREL_LO16",	/* name */
 	 true,			/* partial_inplace */
@@ -1830,7 +1830,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* MIPS16 TLS thread pointer offset.  */
   HOWTO (R_MIPS16_TLS_GOTTPREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1844,8 +1844,8 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
 
   /* MIPS16 TLS thread pointer offset.  */
   HOWTO (R_MIPS16_TLS_TPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1860,11 +1860,11 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* MIPS16 TLS thread pointer offset.  */
   HOWTO (R_MIPS16_TLS_TPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MIPS16_TLS_TPREL_LO16", /* name */
 	 true,			/* partial_inplace */
@@ -1875,7 +1875,7 @@ static reloc_howto_type mips16_elf64_howto_table_rel[] =
   /* MIPS16 16-bit PC-relative branch offset.  */
   HOWTO (R_MIPS16_PC16_S1,	/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1893,7 +1893,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* The reloc used for the mips16 jump instruction.  */
   HOWTO (R_MIPS16_26,		/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1911,7 +1911,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* The reloc used for the mips16 gprel instruction.  */
   HOWTO (R_MIPS16_GPREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1926,7 +1926,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* A MIPS16 reference to the global offset table.  */
   HOWTO (R_MIPS16_GOT16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1941,7 +1941,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* A MIPS16 call through the global offset table.  */
   HOWTO (R_MIPS16_CALL16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1956,7 +1956,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* MIPS16 high 16 bits of symbol value.  */
   HOWTO (R_MIPS16_HI16,		/* type */
 	 16,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1971,7 +1971,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* MIPS16 low 16 bits of symbol value.  */
   HOWTO (R_MIPS16_LO16,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1986,7 +1986,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* MIPS16 TLS general dynamic variable reference.  */
   HOWTO (R_MIPS16_TLS_GD,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2001,7 +2001,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* MIPS16 TLS local dynamic variable reference.  */
   HOWTO (R_MIPS16_TLS_LDM,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2015,8 +2015,8 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
 
   /* MIPS16 TLS local dynamic offset.  */
   HOWTO (R_MIPS16_TLS_DTPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2031,11 +2031,11 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* MIPS16 TLS local dynamic offset.  */
   HOWTO (R_MIPS16_TLS_DTPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MIPS16_TLS_DTPREL_LO16",	/* name */
 	 false,			/* partial_inplace */
@@ -2046,7 +2046,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* MIPS16 TLS thread pointer offset.  */
   HOWTO (R_MIPS16_TLS_GOTTPREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2060,8 +2060,8 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
 
   /* MIPS16 TLS thread pointer offset.  */
   HOWTO (R_MIPS16_TLS_TPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2076,11 +2076,11 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* MIPS16 TLS thread pointer offset.  */
   HOWTO (R_MIPS16_TLS_TPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MIPS16_TLS_TPREL_LO16", /* name */
 	 false,			/* partial_inplace */
@@ -2091,7 +2091,7 @@ static reloc_howto_type mips16_elf64_howto_table_rela[] =
   /* MIPS16 16-bit PC-relative branch offset.  */
   HOWTO (R_MIPS16_PC16_S1,	/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2113,7 +2113,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* 26 bit jump address.  */
   HOWTO (R_MICROMIPS_26_S1,	/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2131,7 +2131,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* High 16 bits of symbol value.  */
   HOWTO (R_MICROMIPS_HI16,	/* type */
 	 16,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2146,7 +2146,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Low 16 bits of symbol value.  */
   HOWTO (R_MICROMIPS_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2161,7 +2161,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* GP relative reference.  */
   HOWTO (R_MICROMIPS_GPREL16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2176,7 +2176,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Reference to literal section.  */
   HOWTO (R_MICROMIPS_LITERAL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2191,7 +2191,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Reference to global offset table.  */
   HOWTO (R_MICROMIPS_GOT16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2206,7 +2206,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* This is for microMIPS branches.  */
   HOWTO (R_MICROMIPS_PC7_S1,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 7,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2220,7 +2220,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
 
   HOWTO (R_MICROMIPS_PC10_S1,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 10,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2234,7 +2234,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
 
   HOWTO (R_MICROMIPS_PC16_S1,	/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2249,7 +2249,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* 16 bit call through global offset table.  */
   HOWTO (R_MICROMIPS_CALL16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2267,7 +2267,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Displacement in the global offset table.  */
   HOWTO (R_MICROMIPS_GOT_DISP,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2282,7 +2282,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Displacement to page pointer in the global offset table.  */
   HOWTO (R_MICROMIPS_GOT_PAGE,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2297,7 +2297,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Offset from page pointer in the global offset table.  */
   HOWTO (R_MICROMIPS_GOT_OFST,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2311,8 +2311,8 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
 
   /* High 16 bits of displacement in global offset table.  */
   HOWTO (R_MICROMIPS_GOT_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2327,7 +2327,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_MICROMIPS_GOT_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2342,7 +2342,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* 64 bit subtraction.  Used in the N32 ABI.  */
   HOWTO (R_MICROMIPS_SUB,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2363,8 +2363,8 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
 
   /* High 16 bits of displacement in global offset table.  */
   HOWTO (R_MICROMIPS_CALL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2379,7 +2379,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_MICROMIPS_CALL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2394,7 +2394,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* Section displacement.  */
   HOWTO (R_MICROMIPS_SCN_DISP,  /* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2410,7 +2410,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
      relocation is required for correctness.  */
   HOWTO (R_MICROMIPS_JALR,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2426,7 +2426,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
      must be zero.  This is used for relaxation.  */
   HOWTO (R_MICROMIPS_HI0_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2446,7 +2446,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* TLS general dynamic variable reference.  */
   HOWTO (R_MICROMIPS_TLS_GD,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2461,7 +2461,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* TLS local dynamic variable reference.  */
   HOWTO (R_MICROMIPS_TLS_LDM,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2475,8 +2475,8 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
 
   /* TLS local dynamic offset.  */
   HOWTO (R_MICROMIPS_TLS_DTPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2491,11 +2491,11 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* TLS local dynamic offset.  */
   HOWTO (R_MICROMIPS_TLS_DTPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MICROMIPS_TLS_DTPREL_LO16",	/* name */
 	 true,			/* partial_inplace */
@@ -2506,7 +2506,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* TLS thread pointer offset.  */
   HOWTO (R_MICROMIPS_TLS_GOTTPREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2523,8 +2523,8 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
 
   /* TLS thread pointer offset.  */
   HOWTO (R_MICROMIPS_TLS_TPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2539,11 +2539,11 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* TLS thread pointer offset.  */
   HOWTO (R_MICROMIPS_TLS_TPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MICROMIPS_TLS_TPREL_LO16", /* name */
 	 true,			/* partial_inplace */
@@ -2556,7 +2556,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
   /* GP- and PC-relative relocations.  */
   HOWTO (R_MICROMIPS_GPREL7_S2,	/* type */
 	 2,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 7,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2570,7 +2570,7 @@ static reloc_howto_type micromips_elf64_howto_table_rel[] =
 
   HOWTO (R_MICROMIPS_PC23_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 23,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2592,7 +2592,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* 26 bit jump address.  */
   HOWTO (R_MICROMIPS_26_S1,	/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2610,7 +2610,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* High 16 bits of symbol value.  */
   HOWTO (R_MICROMIPS_HI16,	/* type */
 	 16,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2625,7 +2625,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Low 16 bits of symbol value.  */
   HOWTO (R_MICROMIPS_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2640,7 +2640,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* GP relative reference.  */
   HOWTO (R_MICROMIPS_GPREL16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2655,7 +2655,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Reference to literal section.  */
   HOWTO (R_MICROMIPS_LITERAL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2670,7 +2670,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Reference to global offset table.  */
   HOWTO (R_MICROMIPS_GOT16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2685,7 +2685,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* This is for microMIPS branches.  */
   HOWTO (R_MICROMIPS_PC7_S1,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 7,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2699,7 +2699,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   HOWTO (R_MICROMIPS_PC10_S1,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 10,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2713,7 +2713,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   HOWTO (R_MICROMIPS_PC16_S1,	/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2728,7 +2728,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* 16 bit call through global offset table.  */
   HOWTO (R_MICROMIPS_CALL16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2746,7 +2746,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Displacement in the global offset table.  */
   HOWTO (R_MICROMIPS_GOT_DISP,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2761,7 +2761,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Displacement to page pointer in the global offset table.  */
   HOWTO (R_MICROMIPS_GOT_PAGE,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2776,7 +2776,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Offset from page pointer in the global offset table.  */
   HOWTO (R_MICROMIPS_GOT_OFST,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2790,8 +2790,8 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   /* High 16 bits of displacement in global offset table.  */
   HOWTO (R_MICROMIPS_GOT_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2806,7 +2806,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_MICROMIPS_GOT_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2821,7 +2821,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* 64 bit subtraction.  Used in the N32 ABI.  */
   HOWTO (R_MICROMIPS_SUB,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2835,8 +2835,8 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   /* Get the higher value of a 64 bit addend.  */
   HOWTO (R_MICROMIPS_HIGHER,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2850,8 +2850,8 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   /* Get the highest value of a 64 bit addend.  */
   HOWTO (R_MICROMIPS_HIGHEST,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 48,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2865,8 +2865,8 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   /* High 16 bits of displacement in global offset table.  */
   HOWTO (R_MICROMIPS_CALL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2881,7 +2881,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Low 16 bits of displacement in global offset table.  */
   HOWTO (R_MICROMIPS_CALL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2896,7 +2896,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* Section displacement.  */
   HOWTO (R_MICROMIPS_SCN_DISP,  /* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2912,7 +2912,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
      relocation is required for correctness.  */
   HOWTO (R_MICROMIPS_JALR,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2928,7 +2928,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
      must be zero.  This is used for relaxation.  */
   HOWTO (R_MICROMIPS_HI0_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2948,7 +2948,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* TLS general dynamic variable reference.  */
   HOWTO (R_MICROMIPS_TLS_GD,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2963,7 +2963,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* TLS local dynamic variable reference.  */
   HOWTO (R_MICROMIPS_TLS_LDM,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2977,8 +2977,8 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   /* TLS local dynamic offset.  */
   HOWTO (R_MICROMIPS_TLS_DTPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2993,11 +2993,11 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* TLS local dynamic offset.  */
   HOWTO (R_MICROMIPS_TLS_DTPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MICROMIPS_TLS_DTPREL_LO16",	/* name */
 	 false,			/* partial_inplace */
@@ -3008,7 +3008,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* TLS thread pointer offset.  */
   HOWTO (R_MICROMIPS_TLS_GOTTPREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3025,8 +3025,8 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   /* TLS thread pointer offset.  */
   HOWTO (R_MICROMIPS_TLS_TPREL_HI16,	/* type */
-	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* rightshift */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3041,11 +3041,11 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* TLS thread pointer offset.  */
   HOWTO (R_MICROMIPS_TLS_TPREL_LO16,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
-	 complain_overflow_signed, /* complain_on_overflow */
+	 complain_overflow_dont, /* complain_on_overflow */
 	 _bfd_mips_elf_generic_reloc, /* special_function */
 	 "R_MICROMIPS_TLS_TPREL_LO16", /* name */
 	 false,			/* partial_inplace */
@@ -3058,7 +3058,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
   /* GP- and PC-relative relocations.  */
   HOWTO (R_MICROMIPS_GPREL7_S2,	/* type */
 	 2,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 7,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3072,7 +3072,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 
   HOWTO (R_MICROMIPS_PC23_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 23,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3089,7 +3089,7 @@ static reloc_howto_type micromips_elf64_howto_table_rela[] =
 static reloc_howto_type elf_mips_gnu_vtinherit_howto =
   HOWTO (R_MIPS_GNU_VTINHERIT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3105,7 +3105,7 @@ static reloc_howto_type elf_mips_gnu_vtinherit_howto =
 static reloc_howto_type elf_mips_gnu_vtentry_howto =
   HOWTO (R_MIPS_GNU_VTENTRY,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3121,7 +3121,7 @@ static reloc_howto_type elf_mips_gnu_vtentry_howto =
 static reloc_howto_type elf_mips_gnu_rel16_s2 =
   HOWTO (R_MIPS_GNU_REL16_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3137,7 +3137,7 @@ static reloc_howto_type elf_mips_gnu_rel16_s2 =
 static reloc_howto_type elf_mips_gnu_rela16_s2 =
   HOWTO (R_MIPS_GNU_REL16_S2,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3153,7 +3153,7 @@ static reloc_howto_type elf_mips_gnu_rela16_s2 =
 static reloc_howto_type elf_mips_gnu_pcrel32 =
   HOWTO (R_MIPS_PC32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3186,7 +3186,7 @@ static reloc_howto_type elf_mips_copy_howto =
 static reloc_howto_type elf_mips_jump_slot_howto =
   HOWTO (R_MIPS_JUMP_SLOT,	/* type */
 	 0,			/* rightshift */
-	 4,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* size */
 	 64,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3202,7 +3202,7 @@ static reloc_howto_type elf_mips_jump_slot_howto =
 static reloc_howto_type elf_mips_eh_howto =
   HOWTO (R_MIPS_EH,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -3427,8 +3427,7 @@ static bfd_reloc_status_type
 mips_elf64_final_gp (bfd *output_bfd, asymbol *symbol, bool relocatable,
 		     char **error_message, bfd_vma *pgp)
 {
-  if (bfd_is_und_section (symbol->section)
-      && ! relocatable)
+  if (output_bfd == NULL)
     {
       *pgp = 0;
       return bfd_reloc_undefined;
@@ -3483,7 +3482,7 @@ mips_elf64_gprel16_reloc (bfd *abfd, arelent *reloc_entry, asymbol *symbol,
   else
     {
       relocatable = false;
-      output_bfd = symbol->section->output_section->owner;
+      output_bfd = input_section->output_section->owner;
     }
 
   ret = mips_elf64_final_gp (output_bfd, symbol, relocatable, error_message,
@@ -3523,7 +3522,7 @@ mips_elf64_literal_reloc (bfd *abfd, arelent *reloc_entry, asymbol *symbol,
   else
     {
       relocatable = false;
-      output_bfd = symbol->section->output_section->owner;
+      output_bfd = input_section->output_section->owner;
     }
 
   ret = mips_elf64_final_gp (output_bfd, symbol, relocatable, error_message,
@@ -3565,7 +3564,7 @@ mips_elf64_gprel32_reloc (bfd *abfd, arelent *reloc_entry, asymbol *symbol,
   else
     {
       relocatable = false;
-      output_bfd = symbol->section->output_section->owner;
+      output_bfd = input_section->output_section->owner;
     }
 
   ret = mips_elf64_final_gp (output_bfd, symbol, relocatable,
@@ -3578,10 +3577,14 @@ mips_elf64_gprel32_reloc (bfd *abfd, arelent *reloc_entry, asymbol *symbol,
   else
     relocation = symbol->value;
 
-  relocation += symbol->section->output_section->vma;
-  relocation += symbol->section->output_offset;
+  if (symbol->section->output_section != NULL)
+    {
+      relocation += symbol->section->output_section->vma;
+      relocation += symbol->section->output_offset;
+    }
 
-  if (reloc_entry->address > bfd_get_section_limit (abfd, input_section))
+  if (!_bfd_mips_reloc_offset_in_range (abfd, input_section, reloc_entry,
+					check_inplace))
     return bfd_reloc_outofrange;
 
   /* Set val to the offset into the section or symbol.  */
@@ -3654,13 +3657,17 @@ mips16_gprel_reloc (bfd *abfd, arelent *reloc_entry, asymbol *symbol,
   else
     {
       relocatable = false;
-      output_bfd = symbol->section->output_section->owner;
+      output_bfd = input_section->output_section->owner;
     }
 
   ret = mips_elf64_final_gp (output_bfd, symbol, relocatable, error_message,
 			     &gp);
   if (ret != bfd_reloc_ok)
     return ret;
+
+  if (!_bfd_mips_reloc_offset_in_range (abfd, input_section, reloc_entry,
+					check_shuffle))
+    return bfd_reloc_outofrange;
 
   location = (bfd_byte *) data + reloc_entry->address;
   _bfd_mips_elf_reloc_unshuffle (abfd, reloc_entry->howto->type, false,
@@ -3684,7 +3691,8 @@ struct elf_reloc_map {
 static const struct elf_reloc_map mips_reloc_map[] =
 {
   { BFD_RELOC_NONE, R_MIPS_NONE },
-  { BFD_RELOC_16, R_MIPS_16 },
+  { BFD_RELOC_MIPS_16, R_MIPS_16 },
+  { BFD_RELOC_16, R_MIPS_REL16 },
   { BFD_RELOC_32, R_MIPS_32 },
   /* There is no BFD reloc for R_MIPS_REL32.  */
   { BFD_RELOC_64, R_MIPS_64 },
@@ -3714,7 +3722,6 @@ static const struct elf_reloc_map mips_reloc_map[] =
   { BFD_RELOC_MIPS_CALL_HI16, R_MIPS_CALL_HI16 },
   { BFD_RELOC_MIPS_CALL_LO16, R_MIPS_CALL_LO16 },
   { BFD_RELOC_MIPS_SCN_DISP, R_MIPS_SCN_DISP },
-  { BFD_RELOC_MIPS_REL16, R_MIPS_REL16 },
   /* Use of R_MIPS_ADD_IMMEDIATE and R_MIPS_PJUMP is deprecated.  */
   { BFD_RELOC_MIPS_RELGOT, R_MIPS_RELGOT },
   { BFD_RELOC_MIPS_JALR, R_MIPS_JALR },
@@ -4073,6 +4080,7 @@ mips_elf64_slurp_one_reloc_table (bfd *abfd, asection *asect,
 	    }
 
 	  /* Some types require symbols, whereas some do not.  */
+	  relent->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
 	  switch (type)
 	    {
 	    case R_MIPS_NONE:
@@ -4080,14 +4088,13 @@ mips_elf64_slurp_one_reloc_table (bfd *abfd, asection *asect,
 	    case R_MIPS_INSERT_A:
 	    case R_MIPS_INSERT_B:
 	    case R_MIPS_DELETE:
-	      relent->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
 	      break;
 
 	    default:
 	      if (! used_sym)
 		{
 		  if (rela.r_sym == STN_UNDEF)
-		    relent->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
+		    ;
 		  else if (rela.r_sym > symcount)
 		    {
 		      _bfd_error_handler
@@ -4096,8 +4103,6 @@ mips_elf64_slurp_one_reloc_table (bfd *abfd, asection *asect,
 			   " has invalid symbol index %ld"),
 			 abfd, asect, (uint64_t) i, rela.r_sym);
 		      bfd_set_error (bfd_error_bad_value);
-		      relent->sym_ptr_ptr
-			= bfd_abs_section_ptr->symbol_ptr_ptr;
 		    }
 		  else
 		    {
@@ -4118,8 +4123,6 @@ mips_elf64_slurp_one_reloc_table (bfd *abfd, asection *asect,
 		  switch (rela.r_ssym)
 		    {
 		    case RSS_UNDEF:
-		      relent->sym_ptr_ptr =
-			bfd_abs_section_ptr->symbol_ptr_ptr;
 		      break;
 
 		    case RSS_GP:
@@ -4137,9 +4140,6 @@ mips_elf64_slurp_one_reloc_table (bfd *abfd, asection *asect,
 
 		  used_ssym = true;
 		}
-	      else
-		relent->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
-
 	      break;
 	    }
 
@@ -4748,10 +4748,8 @@ const struct elf_size_info mips_elf64_size_info =
 #define elf_backend_get_target_dtag	_bfd_mips_elf_get_target_dtag
 #define elf_backend_adjust_dynamic_symbol \
 				_bfd_mips_elf_adjust_dynamic_symbol
-#define elf_backend_always_size_sections \
-				_bfd_mips_elf_always_size_sections
-#define elf_backend_size_dynamic_sections \
-				_bfd_mips_elf_size_dynamic_sections
+#define elf_backend_late_size_sections \
+				_bfd_mips_elf_late_size_sections
 #define elf_backend_init_index_section	_bfd_elf_init_1_index_section
 #define elf_backend_relocate_section    _bfd_mips_elf_relocate_section
 #define elf_backend_finish_dynamic_symbol \
@@ -4800,6 +4798,8 @@ const struct elf_size_info mips_elf64_size_info =
 #define bfd_elf64_bfd_is_target_special_symbol \
 					_bfd_mips_elf_is_target_special_symbol
 #define bfd_elf64_find_nearest_line	_bfd_mips_elf_find_nearest_line
+#define bfd_elf64_find_nearest_line_with_alt \
+				_bfd_mips_elf_find_nearest_line_with_alt
 #define bfd_elf64_find_inliner_info	_bfd_mips_elf_find_inliner_info
 #define bfd_elf64_new_section_hook	_bfd_mips_elf_new_section_hook
 #define bfd_elf64_set_section_contents	_bfd_mips_elf_set_section_contents
@@ -4816,6 +4816,7 @@ const struct elf_size_info mips_elf64_size_info =
 
 #define bfd_elf64_get_dynamic_reloc_upper_bound mips_elf64_get_dynamic_reloc_upper_bound
 #define bfd_elf64_mkobject		_bfd_mips_elf_mkobject
+#define bfd_elf64_bfd_free_cached_info	_bfd_mips_elf_free_cached_info
 
 /* The SGI style (n)64 NewABI.  */
 #define TARGET_LITTLE_SYM		mips_elf64_le_vec

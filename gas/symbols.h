@@ -1,5 +1,5 @@
 /* symbols.h -
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -35,6 +35,13 @@ extern int symbol_table_frozen;
    default.  */
 extern int symbols_case_sensitive;
 
+extern void *notes_alloc (size_t);
+extern void *notes_calloc (size_t, size_t);
+extern void *notes_memdup (const void *, size_t, size_t);
+extern char *notes_strdup (const char *);
+extern char *notes_concat (const char *, ...);
+extern void notes_free (void *);
+
 char * symbol_relc_make_expr  (expressionS *);
 char * symbol_relc_make_sym   (symbolS *);
 char * symbol_relc_make_value (offsetT);
@@ -60,6 +67,7 @@ symbolS *symbol_temp_make (void);
 symbolS *colon (const char *sym_name);
 void local_colon (int n);
 void symbol_begin (void);
+void symbol_end (void);
 void dot_symbol_init (void);
 void symbol_print_statistics (FILE *);
 void symbol_table_insert (symbolS * symbolP);
@@ -72,36 +80,37 @@ void print_expr (expressionS *);
 void print_expr_1 (FILE *, expressionS *);
 void print_symbol_value_1 (FILE *, symbolS *);
 
-int dollar_label_defined (long l);
+int dollar_label_defined (unsigned int);
 void dollar_label_clear (void);
-void define_dollar_label (long l);
-char *dollar_label_name (long l, int augend);
+void define_dollar_label (unsigned int);
+char *dollar_label_name (unsigned int, unsigned int);
 
-void fb_label_instance_inc (long label);
-char *fb_label_name (long n, long augend);
+void fb_label_instance_inc (unsigned int);
+char *fb_label_name (unsigned int, unsigned int);
 
 extern void copy_symbol_attributes (symbolS *, symbolS *);
 
 /* Get and set the values of symbols.  These used to be macros.  */
 extern valueT S_GET_VALUE (symbolS *);
+extern valueT S_GET_VALUE_WHERE (symbolS *, const char *, unsigned int);
 extern void S_SET_VALUE (symbolS *, valueT);
 
-extern int S_IS_FUNCTION (symbolS *);
-extern int S_IS_EXTERNAL (symbolS *);
-extern int S_IS_WEAK (symbolS *);
-extern int S_IS_WEAKREFR (symbolS *);
-extern int S_IS_WEAKREFD (symbolS *);
-extern int S_IS_COMMON (symbolS *);
-extern int S_IS_DEFINED (symbolS *);
-extern int S_FORCE_RELOC (symbolS *, int);
-extern int S_IS_DEBUG (symbolS *);
-extern int S_IS_LOCAL (symbolS *);
-extern int S_IS_STABD (symbolS *);
+extern int S_IS_FUNCTION (const symbolS *);
+extern int S_IS_EXTERNAL (const symbolS *);
+extern int S_IS_WEAK (const symbolS *);
+extern int S_IS_WEAKREFR (const symbolS *);
+extern int S_IS_WEAKREFD (const symbolS *);
+extern int S_IS_COMMON (const symbolS *);
+extern int S_IS_DEFINED (const symbolS *);
+extern int S_FORCE_RELOC (const symbolS *, int);
+extern int S_IS_DEBUG (const symbolS *);
+extern int S_IS_LOCAL (const symbolS *);
+extern int S_IS_STABD (const symbolS *);
 extern int S_CAN_BE_REDEFINED (const symbolS *);
 extern int S_IS_VOLATILE (const symbolS *);
 extern int S_IS_FORWARD_REF (const symbolS *);
-extern const char *S_GET_NAME (symbolS *);
-extern segT S_GET_SEGMENT (symbolS *);
+extern const char *S_GET_NAME (const symbolS *);
+extern segT S_GET_SEGMENT (const symbolS *);
 extern void S_SET_SEGMENT (symbolS *, segT);
 extern void S_SET_EXTERNAL (symbolS *);
 extern void S_SET_NAME (symbolS *, const char *);
@@ -164,8 +173,6 @@ void symbol_insert (symbolS * addme, symbolS * target,
 void symbol_remove (symbolS * symbolP, symbolS ** rootP,
 		    symbolS ** lastP);
 
-extern symbolS *symbol_previous (symbolS *);
-
 extern int symbol_on_chain (symbolS *s, symbolS *rootPP, symbolS *lastPP);
 
 void verify_symbol_chain (symbolS * rootP, symbolS * lastP);
@@ -173,37 +180,43 @@ void verify_symbol_chain (symbolS * rootP, symbolS * lastP);
 void symbol_append (symbolS * addme, symbolS * target,
 		    symbolS ** rootP, symbolS ** lastP);
 
-extern symbolS *symbol_next (symbolS *);
+extern symbolS *symbol_previous (const symbolS *);
+extern symbolS *symbol_next (const symbolS *);
 
 extern expressionS *symbol_get_value_expression (symbolS *);
 extern void symbol_set_value_expression (symbolS *, const expressionS *);
-extern offsetT *symbol_X_add_number (symbolS *);
+extern offsetT *symbol_X_add_number (const symbolS *);
 extern void symbol_set_value_now (symbolS *);
 extern void symbol_set_frag (symbolS *, fragS *);
-extern fragS *symbol_get_frag (symbolS *);
+extern fragS *symbol_get_frag (const symbolS *);
 extern void symbol_mark_used (symbolS *);
 extern void symbol_clear_used (symbolS *);
-extern int symbol_used_p (symbolS *);
+extern int symbol_used_p (const symbolS *);
 extern void symbol_mark_used_in_reloc (symbolS *);
 extern void symbol_clear_used_in_reloc (symbolS *);
-extern int symbol_used_in_reloc_p (symbolS *);
+extern int symbol_used_in_reloc_p (const symbolS *);
 extern void symbol_mark_mri_common (symbolS *);
 extern void symbol_clear_mri_common (symbolS *);
-extern int symbol_mri_common_p (symbolS *);
+extern int symbol_mri_common_p (const symbolS *);
 extern void symbol_mark_written (symbolS *);
 extern void symbol_clear_written (symbolS *);
-extern int symbol_written_p (symbolS *);
+extern int symbol_written_p (const symbolS *);
+extern void symbol_mark_removed (symbolS *);
+extern int symbol_removed_p (const symbolS *);
 extern void symbol_mark_resolved (symbolS *);
-extern int symbol_resolved_p (symbolS *);
-extern int symbol_section_p (symbolS *);
-extern int symbol_equated_p (symbolS *);
-extern int symbol_equated_reloc_p (symbolS *);
-extern int symbol_constant_p (symbolS *);
-extern int symbol_shadow_p (symbolS *);
+extern int symbol_resolved_p (const symbolS *);
+extern void symbol_mark_resolving (symbolS *);
+extern void symbol_clear_resolving (symbolS *);
+extern int symbol_resolving_p (const symbolS *);
+extern int symbol_section_p (const symbolS *);
+extern int symbol_equated_p (const symbolS *);
+extern int symbol_equated_reloc_p (const symbolS *);
+extern int symbol_constant_p (const symbolS *);
+extern int symbol_shadow_p (const symbolS *);
 extern symbolS *symbol_symbolS (symbolS *);
 extern asymbol *symbol_get_bfdsym (symbolS *);
 extern void symbol_set_bfdsym (symbolS *, asymbol *);
-extern int symbol_same_p (symbolS *, symbolS *);
+extern int symbol_same_p (const symbolS *, const symbolS *);
 
 #ifdef OBJ_SYMFIELD_TYPE
 OBJ_SYMFIELD_TYPE *symbol_get_obj (symbolS *);

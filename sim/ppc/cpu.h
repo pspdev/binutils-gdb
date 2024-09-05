@@ -100,42 +100,42 @@ INLINE_CPU\
 INLINE_CPU\
 (void) cpu_restart
 (cpu *processor,
- unsigned_word nia);
+ unsigned_word nia) ATTRIBUTE_NORETURN;
 
 INLINE_CPU\
 (void) cpu_halt
 (cpu *processor,
  unsigned_word nia,
  stop_reason reason,
- int signal);
+ int signal) ATTRIBUTE_NORETURN;
 
 EXTERN_CPU\
 (void) cpu_error
 (cpu *processor,
  unsigned_word cia,
  const char *fmt,
- ...) ATTRIBUTE_PRINTF_3;
+ ...) ATTRIBUTE_NORETURN ATTRIBUTE_PRINTF_3;
 
 
 /* The processors local concept of time */
 
 INLINE_CPU\
-(signed64) cpu_get_time_base
+(int64_t) cpu_get_time_base
 (cpu *processor);
 
 INLINE_CPU\
 (void) cpu_set_time_base
 (cpu *processor,
- signed64 time_base);
+ int64_t time_base);
 
 INLINE_CPU\
-(signed32) cpu_get_decrementer
+(int32_t) cpu_get_decrementer
 (cpu *processor);
 
 INLINE_CPU\
 (void) cpu_set_decrementer
 (cpu *processor,
- signed32 decrementer);
+ int32_t decrementer);
 
 
 #if WITH_IDECODE_CACHE_SIZE

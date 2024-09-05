@@ -1,5 +1,5 @@
 /* ldlang.h - linker command language support
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -76,6 +76,7 @@ enum statement_enum
   lang_fill_statement_enum,
   lang_group_statement_enum,
   lang_input_section_enum,
+  lang_input_matcher_enum,
   lang_input_statement_enum,
   lang_insert_statement_enum,
   lang_output_section_statement_enum,
@@ -122,7 +123,9 @@ enum section_type
   overlay_section,
   noload_section,
   noalloc_section,
-  readonly_section
+  type_section,
+  readonly_section,
+  typed_readonly_section
 };
 
 /* This structure holds a list of program headers describing
@@ -138,7 +141,12 @@ typedef struct lang_output_section_phdr_list
 typedef struct lang_output_section_statement_struct
 {
   lang_statement_header_type header;
+  /* Input sections to be mapped to this output section.  */
   lang_statement_list_type children;
+  /* Input sections to be mapped to the start of this output section.
+     These sections are provided by the --section-ordering file, if used.  */
+  lang_statement_list_type sort_children;
+
   struct lang_output_section_statement_struct *next;
   struct lang_output_section_statement_struct *prev;
   const char *name;
@@ -166,6 +174,7 @@ typedef struct lang_output_section_statement_struct
   int constraint;
   flagword flags;
   enum section_type sectype;
+  etree_type *sectype_value;
   unsigned int processed_vma : 1;
   unsigned int processed_lma : 1;
   unsigned int all_input_readonly : 1;
@@ -284,9 +293,6 @@ struct lang_input_statement_flags
 
   /* Set if the file was claimed from an archive.  */
   unsigned int claim_archive : 1;
-
-  /* Set if added by the lto plugin add_input_file callback.  */
-  unsigned int lto_output : 1;
 #endif /* BFD_SUPPORTS_PLUGINS */
 
   /* Head of list of pushed flags.  */
@@ -302,6 +308,8 @@ typedef struct lang_input_statement_struct
      Usually the same as filename, but for a file spec'd with
      -l this is the -l switch itself rather than the filename.  */
   const char *local_sym_name;
+  /* Name to use when sorting.  */
+  const char *sort_key;
   /* Extra search path. Used to find a file relative to the
      directory of the current linker script.  */
   const char *extra_search_path;
@@ -321,6 +329,11 @@ typedef struct lang_input_statement_struct
   const char *target;
 
   struct lang_input_statement_flags flags;
+
+#if BFD_SUPPORTS_PLUGINS
+  /* If non-NULL the plugin that added this file.  */
+  void * plugin;
+#endif  
 } lang_input_statement_type;
 
 typedef struct
@@ -329,6 +342,14 @@ typedef struct
   asection *section;
   void *pattern;
 } lang_input_section_type;
+
+typedef struct
+{
+  lang_statement_header_type header;
+  asection *section;
+  void *pattern;
+  lang_input_statement_type *input_stmt;
+} lang_input_matcher_type;
 
 struct map_symbol_def {
   struct bfd_link_hash_entry *entry;
@@ -376,18 +397,19 @@ typedef struct lang_section_bst
 
 struct lang_wild_statement_struct
 {
-  lang_statement_header_type header;
-  const char *filename;
-  bool filenames_sorted;
-  struct wildcard_list *section_list;
-  bool keep_sections;
-  lang_statement_list_type children;
-  struct name_list *exclude_name_list;
-
-  walk_wild_section_handler_t walk_wild_section_handler;
-  struct wildcard_list *handler_data[4];
-  lang_section_bst_type *tree;
-  struct flag_info *section_flag_list;
+  lang_statement_header_type  header;
+  lang_statement_list_type    children;
+  lang_statement_list_type    matching_sections;
+  lang_section_bst_type *     tree;
+  lang_section_bst_type **    rightmost;
+  struct wildcard_list *      section_list;
+  struct name_list *          exclude_name_list;
+  struct flag_info *          section_flag_list;
+  const char *                filename;
+  bool                        filenames_sorted;
+  bool                        filenames_reversed;
+  bool                        any_specs_sorted;
+  bool                        keep_sections;
 };
 
 typedef struct lang_address_statement_struct
@@ -434,6 +456,7 @@ typedef union lang_statement_union
   lang_fill_statement_type fill_statement;
   lang_group_statement_type group_statement;
   lang_input_section_type input_section;
+  lang_input_matcher_type input_matcher;
   lang_input_statement_type input_statement;
   lang_insert_statement_type insert_statement;
   lang_output_section_statement_type output_section_statement;
@@ -515,6 +538,7 @@ extern bool lang_has_input_file;
 extern lang_statement_list_type statement_list;
 extern lang_statement_list_type *stat_ptr;
 extern bool delete_output_file_on_failure;
+extern bool enable_linker_version;
 
 extern struct bfd_sym_chain entry_symbol;
 extern const char *entry_section;
@@ -545,7 +569,7 @@ extern void lang_add_output
   (const char *, int from_script);
 extern lang_output_section_statement_type *lang_enter_output_section_statement
   (const char *, etree_type *, enum section_type, etree_type *, etree_type *,
-   etree_type *, int, int);
+   etree_type *, etree_type *, int, int);
 extern void lang_final
   (void);
 extern void lang_relax_sections
@@ -630,7 +654,9 @@ extern void push_stat_ptr
 extern void pop_stat_ptr
   (void);
 extern void lang_add_data
-  (int type, union etree_union *);
+  (int, union etree_union *);
+extern void lang_add_string
+  (const char *);
 extern void lang_add_reloc
   (bfd_reloc_code_real_type, reloc_howto_type *, asection *, const char *,
    union etree_union *);
@@ -718,6 +744,8 @@ extern void
 lang_add_gc_name (const char *);
 
 extern bool
-print_one_symbol (struct bfd_link_hash_entry *hash_entry, void *ptr);
+print_one_symbol (struct bfd_link_hash_entry *, void *);
 
+extern void lang_add_version_string
+  (void);
 #endif

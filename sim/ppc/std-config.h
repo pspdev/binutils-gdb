@@ -79,9 +79,9 @@ extern enum bfd_endian current_target_byte_order;
 #endif
 
 
-/* Word size of host/target:
+/* Word size of target:
 
-   Set these according to your host and target requirements.  At this
+   Set these according to your target requirements.  At this
    point in time, I've only compiled (not run) for a 64bit and never
    built for a 64bit host.  This will always remain a compile time
    option */
@@ -90,8 +90,12 @@ extern enum bfd_endian current_target_byte_order;
 #define WITH_TARGET_WORD_BITSIZE        32 /* compiled only */
 #endif
 
-#ifndef WITH_HOST_WORD_BITSIZE
-#define WITH_HOST_WORD_BITSIZE		32 /* 64bit ready? */
+#ifndef WITH_TARGET_ADDRESS_BITSIZE
+#define WITH_TARGET_ADDRESS_BITSIZE	WITH_TARGET_WORD_BITSIZE
+#endif
+
+#ifndef WITH_TARGET_CELL_BITSIZE
+#define WITH_TARGET_CELL_BITSIZE	WITH_TARGET_WORD_BITSIZE
 #endif
 
 
@@ -183,7 +187,7 @@ extern int current_environment;
    This model.  Instead allows both little and big endian modes to
    either take exceptions or handle miss aligned transfers.
 
-   If 0 is specified then for big-endian mode miss alligned accesses
+   If 0 is specified then for big-endian mode miss aligned accesses
    are permitted (NONSTRICT_ALIGNMENT) while in little-endian mode the
    processor will fault on them (STRICT_ALIGNMENT). */
 

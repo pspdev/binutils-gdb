@@ -1,4 +1,4 @@
-#   Copyright 1998-2021 Free Software Foundation, Inc.
+#   Copyright 1998-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,26 +17,18 @@
 
 load_lib "trace-support.exp"
 
-
-gdb_exit
-gdb_start
 standard_testfile actions.c
-if ![gdb_trace_common_supports_arch] {
-    unsupported "no trace-common.h support for arch"
-    return -1
-}
+require gdb_trace_common_supports_arch
 if { [gdb_compile "$srcdir/$subdir/$srcfile" $binfile \
 	  executable {debug nowarnings}] != "" } {
     untested "failed to compile"
     return -1
 }
-gdb_load $binfile
-gdb_test "tstop"       ".*" ""
-gdb_test "tfind none"  ".*" ""
-runto_main
-gdb_reinitialize_dir $srcdir/$subdir
 
-if { ![gdb_target_supports_trace] } then {
+clean_restart $binfile
+runto_main
+
+if {![gdb_target_supports_trace]} {
     unsupported "current target does not support trace"
     return 1
 
@@ -52,7 +44,7 @@ if { ![gdb_target_supports_trace] } then {
 
 set baseline [gdb_find_recursion_test_baseline $srcfile]
 
-if { $baseline == -1 } then {
+if {$baseline == -1} {
     fail "could not find gdb_recursion_test function"
     return
 }
@@ -76,7 +68,7 @@ gdb_delete_tracepoints
 set tdp2 [gdb_gettpnum "$testline2"]
 set tdp3 [gdb_gettpnum "$testline3"]
 set tdp4 [gdb_gettpnum "$testline4"]
-if { $tdp2 <= 0 || $tdp3 <= 0 || $tdp4 <= 0 } then {
+if {$tdp2 <= 0 || $tdp3 <= 0 || $tdp4 <= 0} {
     fail "setting tracepoints"
     return
 }
@@ -96,40 +88,40 @@ gdb_test "continue" \
     "run trace experiment"
 gdb_test "tstop" ".*" ""
 
-gdb_test "tfind none" ".*" ""
-if [gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x -1 x" ""] {
-    untested "skipping further tests due to print failure"
-    return -1
+with_test_prefix "trace_frame -1" {
+    gdb_test "tfind none" ".*"
+    gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x -1 x" \
+	"print \$trace_frame"
 }
 
-gdb_test "tfind tracepoint $tdp2" ".*" ""
-if [gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 0 x" ""] {
-    untested "skipping further tests due to print failure"
-    return -1
+with_test_prefix "trace_frame 0" {
+    gdb_test "tfind tracepoint $tdp2" ".*"
+    gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 0 x" \
+	"print \$trace_frame"
 }
 
-gdb_test "tfind tracepoint $tdp3" ".*" ""
-if [gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 1 x" ""] {
-    untested "skipping further tests due to print failure"
-    return -1
+with_test_prefix "trace_frame 1" {
+    gdb_test "tfind tracepoint $tdp3" ".*"
+    gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 1 x" \
+	"print \$trace_frame"
 }
 
-gdb_test "tfind tracepoint $tdp4" ".*" ""
-if [gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 2 x" ""] {
-    untested "skipping further tests due to print failure"
-    return -1
+with_test_prefix "trace_frame 2" {
+    gdb_test "tfind tracepoint $tdp4" ".*"
+    gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 2 x" \
+	"print \$trace_frame"
 }
 
-gdb_test "tfind tracepoint $tdp2" ".*" ""
-if [gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 3 x" ""] {
-    untested "skipping further tests due to print failure"
-    return -1
+with_test_prefix "trace_frame 3" {
+    gdb_test "tfind tracepoint $tdp2" ".*"
+    gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 3 x" \
+	"print \$trace_frame"
 }
 
-gdb_test "tfind tracepoint $tdp3" ".*" ""
-if [gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 4 x" ""] {
-    untested "skipping further tests due to print failure"
-    return -1
+with_test_prefix "trace_frame 4" {
+    gdb_test "tfind tracepoint $tdp3" ".*"
+    gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 4 x" \
+	"print \$trace_frame"
 }
 
 ## We should now be at the last frame, because this frame's passcount
@@ -139,5 +131,5 @@ if [gdb_test "printf \"x \%d x\\n\", \$trace_frame" "x 4 x" ""] {
 gdb_test "tfind" "failed to find.*" "4.5: dynamic passcount test"
 
 # Finished!
-gdb_test "tfind none" ".*" ""
+gdb_test "tfind none" ".*"
 

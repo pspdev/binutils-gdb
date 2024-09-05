@@ -1,4 +1,4 @@
-# Copyright 2014-2021 Free Software Foundation, Inc.
+# Copyright 2014-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,9 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if {[skip_shlib_tests]} {
-    return 0
-}
+require allow_shlib_tests
 
 standard_testfile .c symtab-search-order-1.c symtab-search-order-shlib-1.c
 set srcfile  $srcdir/$subdir/$srcfile
@@ -25,10 +23,6 @@ set lib1     [standard_output_file symtab-search-order-1.sl]
 
 set lib_opts "debug"
 set exec_opts [list debug shlib=$lib1]
-
-if [get_compiler_info] {
-    return -1
-}
 
 if { [gdb_compile_shlib $lib1src $lib1 $lib_opts] != ""
      || [gdb_compile [list $srcfile $srcfile2] $binfile executable \
@@ -43,7 +37,6 @@ clean_restart $binfile
 gdb_load_shlib $lib1
 
 if ![runto_main] {
-    fail "can't run to main"
     return -1
 }
 

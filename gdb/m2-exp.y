@@ -1,5 +1,5 @@
 /* YACC grammar for Modula-2 expressions, for GDB.
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
    Generated from expread.y (now c-exp.y) and contributed by the Department
    of Computer Science at the State University of New York at Buffalo, 1991.
 
@@ -37,15 +37,11 @@
    
 %{
 
-#include "defs.h"
 #include "expression.h"
 #include "language.h"
 #include "value.h"
 #include "parser-defs.h"
 #include "m2-lang.h"
-#include "bfd.h" /* Required by objfiles.h.  */
-#include "symfile.h" /* Required by objfiles.h.  */
-#include "objfiles.h" /* For have_full_symbols and have_partial_symbols */
 #include "block.h"
 #include "m2-exp.h"
 
@@ -480,7 +476,7 @@ exp	:	SIZE '(' type ')'	%prec UNARY
 			{
 			  pstate->push_new<long_const_operation>
 			    (parse_m2_type (pstate)->builtin_int,
-			     TYPE_LENGTH ($3));
+			     $3->length ());
 			}
 	;
 
@@ -490,14 +486,14 @@ exp	:	STRING
 
 /* This will be used for extensions later.  Like adding modules.  */
 block	:	fblock	
-			{ $$ = SYMBOL_BLOCK_VALUE($1); }
+			{ $$ = $1->value_block (); }
 	;
 
 fblock	:	BLOCKNAME
 			{ struct symbol *sym
 			    = lookup_symbol (copy_name ($1).c_str (),
 					     pstate->expression_context_block,
-					     VAR_DOMAIN, 0).symbol;
+					     SEARCH_VFT, 0).symbol;
 			  $$ = sym;}
 	;
 			     
@@ -506,8 +502,8 @@ fblock	:	BLOCKNAME
 fblock	:	block COLONCOLON BLOCKNAME
 			{ struct symbol *tem
 			    = lookup_symbol (copy_name ($3).c_str (), $1,
-					     VAR_DOMAIN, 0).symbol;
-			  if (!tem || SYMBOL_CLASS (tem) != LOC_BLOCK)
+					     SEARCH_VFT, 0).symbol;
+			  if (!tem || tem->aclass () != LOC_BLOCK)
 			    error (_("No function \"%s\" in specified context."),
 				   copy_name ($3).c_str ());
 			  $$ = tem;
@@ -531,7 +527,7 @@ variable:	DOLLAR_VARIABLE
 variable:	block COLONCOLON NAME
 			{ struct block_symbol sym
 			    = lookup_symbol (copy_name ($3).c_str (), $1,
-					     VAR_DOMAIN, 0);
+					     SEARCH_VFT, 0);
 
 			  if (sym.symbol == 0)
 			    error (_("No symbol \"%s\" in specified context."),
@@ -552,7 +548,7 @@ variable:	NAME
 			  sym
 			    = lookup_symbol (name.c_str (),
 					     pstate->expression_context_block,
-					     VAR_DOMAIN,
+					     SEARCH_VFT,
 					     &is_a_field_of_this);
 
 			  pstate->push_symbol (name.c_str (), sym);
@@ -582,12 +578,11 @@ static int
 parse_number (int olen)
 {
   const char *p = pstate->lexptr;
-  LONGEST n = 0;
-  LONGEST prevn = 0;
+  ULONGEST n = 0;
+  ULONGEST prevn = 0;
   int c,i,ischar=0;
   int base = input_radix;
   int len = olen;
-  int unsigned_p = number_sign == 1 ? 1 : 0;
 
   if(p[len-1] == 'H')
   {
@@ -639,16 +634,11 @@ parse_number (int olen)
       n+=i;
       if(i >= base)
 	 return ERROR;
-      if(!unsigned_p && number_sign == 1 && (prevn >= n))
-	 unsigned_p=1;		/* Try something unsigned */
-      /* Don't do the range check if n==i and i==0, since that special
-	 case will give an overflow error.  */
-      if(RANGE_CHECK && n!=i && i)
-      {
-	 if((unsigned_p && (unsigned)prevn >= (unsigned)n) ||
-	    ((!unsigned_p && number_sign==-1) && -prevn <= -n))
-	    range_error (_("Overflow on numeric constant."));
-      }
+      if (n == 0 && prevn == 0)
+	;
+      else if (RANGE_CHECK && prevn >= n)
+	range_error (_("Overflow on numeric constant."));
+
 	 prevn=n;
     }
 
@@ -661,17 +651,22 @@ parse_number (int olen)
      yylval.ulval = n;
      return CHAR;
   }
-  else if ( unsigned_p && number_sign == 1)
-  {
-     yylval.ulval = n;
-     return UINT;
-  }
-  else if((unsigned_p && (n<0))) {
-     range_error (_("Overflow on numeric constant -- number too large."));
-     /* But, this can return if range_check == range_warn.  */
-  }
-  yylval.lval = n;
-  return INT;
+
+  int int_bits = gdbarch_int_bit (pstate->gdbarch ());
+  bool have_signed = number_sign == -1;
+  bool have_unsigned = number_sign == 1;
+  if (have_signed && fits_in_type (number_sign, n, int_bits, true))
+    {
+      yylval.lval = n;
+      return INT;
+    }
+  else if (have_unsigned && fits_in_type (number_sign, n, int_bits, false))
+    {
+      yylval.ulval = n;
+      return UINT;
+    }
+  else
+    error (_("Overflow on numeric constant."));
 }
 
 
@@ -874,13 +869,8 @@ yylex (void)
 	}
 	toktype = parse_number (p - tokstart);
 	if (toktype == ERROR)
-	  {
-	    char *err_copy = (char *) alloca (p - tokstart + 1);
-
-	    memcpy (err_copy, tokstart, p - tokstart);
-	    err_copy[p - tokstart] = 0;
-	    error (_("Invalid number \"%s\"."), err_copy);
-	  }
+	  error (_("Invalid number \"%.*s\"."), (int) (p - tokstart),
+		 tokstart);
 	pstate->lexptr = p;
 	return toktype;
     }
@@ -931,8 +921,8 @@ yylex (void)
     if (lookup_symtab (tmp.c_str ()))
       return BLOCKNAME;
     sym = lookup_symbol (tmp.c_str (), pstate->expression_context_block,
-			 VAR_DOMAIN, 0).symbol;
-    if (sym && SYMBOL_CLASS (sym) == LOC_BLOCK)
+			 SEARCH_VFT, 0).symbol;
+    if (sym && sym->aclass () == LOC_BLOCK)
       return BLOCKNAME;
     if (lookup_typename (pstate->language (),
 			 tmp.c_str (), pstate->expression_context_block, 1))
@@ -940,7 +930,7 @@ yylex (void)
 
     if(sym)
     {
-      switch(SYMBOL_CLASS (sym))
+      switch(sym->aclass ())
        {
        case LOC_STATIC:
        case LOC_REGISTER:
@@ -1010,8 +1000,5 @@ m2_language::parser (struct parser_state *par_state) const
 static void
 yyerror (const char *msg)
 {
-  if (pstate->prev_lexptr)
-    pstate->lexptr = pstate->prev_lexptr;
-
-  error (_("A %s in expression, near `%s'."), msg, pstate->lexptr);
+  pstate->parse_error (msg);
 }

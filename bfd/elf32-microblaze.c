@@ -1,6 +1,6 @@
 /* Xilinx MicroBlaze-specific support for 32-bit ELF
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -42,7 +42,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* This reloc does nothing.  */
    HOWTO (R_MICROBLAZE_NONE,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  3,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  0,			/* Size.  */
 	  0,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -57,7 +57,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A standard 32 bit relocation.  */
    HOWTO (R_MICROBLAZE_32,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  32,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -72,7 +72,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A standard PCREL 32 bit relocation.  */
    HOWTO (R_MICROBLAZE_32_PCREL,/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  32,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -87,7 +87,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A 64 bit PCREL relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_64_PCREL,/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -102,7 +102,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* The low half of a PCREL 32 bit relocation.  */
    HOWTO (R_MICROBLAZE_32_PCREL_LO,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -117,7 +117,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A 64 bit relocation.  Table entry not really used.  */
    HOWTO (R_MICROBLAZE_64,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -132,7 +132,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* The low half of a 32 bit relocation.  */
    HOWTO (R_MICROBLAZE_32_LO,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -147,7 +147,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* Read-only small data section relocation.  */
    HOWTO (R_MICROBLAZE_SRO32,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -162,7 +162,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* Read-write small data area relocation.  */
    HOWTO (R_MICROBLAZE_SRW32,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -175,9 +175,24 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
 	  false),		/* PC relative offset?  */
 
    /* This reloc does nothing.	Used for relaxation.  */
+   HOWTO (R_MICROBLAZE_32_NONE,	/* Type.  */
+	0,			/* Rightshift.  */
+	2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	32,			/* Bitsize.  */
+	true,			/* PC_relative.  */
+	0,			/* Bitpos.  */
+	complain_overflow_bitfield, /* Complain on overflow.  */
+	NULL,			/* Special Function.  */
+	"R_MICROBLAZE_32_NONE", /* Name.  */
+	false,			/* Partial Inplace.  */
+	0,			/* Source Mask.  */
+	0,			/* Dest Mask.  */
+	false),		/* PC relative offset?  */
+
+   /* This reloc does nothing.	Used for relaxation.  */
    HOWTO (R_MICROBLAZE_64_NONE,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  3,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  0,			/* Size.  */
 	  0,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -192,7 +207,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* Symbol Op Symbol relocation.  */
    HOWTO (R_MICROBLAZE_32_SYM_OP_SYM,		/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  32,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -207,7 +222,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* GNU extension to record C++ vtable hierarchy.  */
    HOWTO (R_MICROBLAZE_GNU_VTINHERIT, /* Type.  */
 	  0,			 /* Rightshift.  */
-	  2,			 /* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			 /* Size.  */
 	  0,			 /* Bitsize.  */
 	  false,		 /* PC_relative.  */
 	  0,			 /* Bitpos.  */
@@ -222,7 +237,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* GNU extension to record C++ vtable member usage.  */
    HOWTO (R_MICROBLAZE_GNU_VTENTRY,   /* Type.  */
 	  0,			 /* Rightshift.  */
-	  2,			 /* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			 /* Size.  */
 	  0,			 /* Bitsize.  */
 	  false,		 /* PC_relative.  */
 	  0,			 /* Bitpos.  */
@@ -237,7 +252,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A 64 bit GOTPC relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_GOTPC_64,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -252,7 +267,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
      /* A 64 bit TEXTPCREL relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_TEXTPCREL_64,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -267,7 +282,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A 64 bit GOT relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_GOT_64,  /* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -282,7 +297,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
     /* A 64 bit TEXTREL relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_TEXTREL_64,  /* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -297,7 +312,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A 64 bit PLT relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_PLT_64,  /* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -312,7 +327,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /*  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_REL,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -327,7 +342,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /*  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_JUMP_SLOT,/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -342,7 +357,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /*  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_GLOB_DAT,/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  true,			/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -357,7 +372,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A 64 bit GOT relative relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_GOTOFF_64,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -372,7 +387,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* A 32 bit GOT relative relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_GOTOFF_32,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -387,7 +402,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* COPY relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_COPY,	/* Type.  */
 	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
+	  4,			/* Size.  */
 	  16,			/* Bitsize.  */
 	  false,		/* PC_relative.  */
 	  0,			/* Bitpos.  */
@@ -402,7 +417,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
    /* Marker relocs for TLS.  */
    HOWTO (R_MICROBLAZE_TLS,
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -416,7 +431,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
 
    HOWTO (R_MICROBLAZE_TLSGD,
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -430,7 +445,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
 
    HOWTO (R_MICROBLAZE_TLSLD,
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -446,7 +461,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
       definition of its TLS sym.  */
    HOWTO (R_MICROBLAZE_TLSDTPMOD32,
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -463,7 +478,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
       contains the definition of sym, minus 0x8000.  Used for initializing GOT */
    HOWTO (R_MICROBLAZE_TLSDTPREL32,
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -480,7 +495,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
       contains the definition of sym, minus 0x8000.  */
    HOWTO (R_MICROBLAZE_TLSDTPREL64,
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -496,7 +511,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
       sym+add and the value of the thread pointer (r13).  */
    HOWTO (R_MICROBLAZE_TLSGOTTPREL32,
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -512,7 +527,7 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
       sym+add and the value of the thread pointer (r13).  */
    HOWTO (R_MICROBLAZE_TLSTPREL32,
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -559,6 +574,9 @@ microblaze_elf_reloc_type_lookup (bfd * abfd ATTRIBUTE_UNUSED,
     {
     case BFD_RELOC_NONE:
       microblaze_reloc = R_MICROBLAZE_NONE;
+      break;
+    case BFD_RELOC_MICROBLAZE_32_NONE:
+      microblaze_reloc = R_MICROBLAZE_32_NONE;
       break;
     case BFD_RELOC_MICROBLAZE_64_NONE:
       microblaze_reloc = R_MICROBLAZE_64_NONE;
@@ -695,6 +713,47 @@ microblaze_elf_info_to_howto (bfd * abfd,
 
   cache_ptr->howto = microblaze_elf_howto_table [r_type];
   return true;
+}
+
+/* Relax table contains information about instructions which can
+   be removed by relaxation -- replacing a long address with a
+   short address.  */
+struct relax_table
+{
+  /* Address where bytes may be deleted.  */
+  bfd_vma addr;
+
+  /* Number of bytes to be deleted.  */
+  size_t size;
+};
+
+struct _microblaze_elf_section_data
+{
+  struct bfd_elf_section_data elf;
+  /* Count of used relaxation table entries.  */
+  size_t relax_count;
+  /* Relaxation table.  */
+  struct relax_table *relax;
+};
+
+#define microblaze_elf_section_data(sec) \
+  ((struct _microblaze_elf_section_data *) elf_section_data (sec))
+
+static bool
+microblaze_elf_new_section_hook (bfd *abfd, asection *sec)
+{
+  if (!sec->used_by_bfd)
+    {
+      struct _microblaze_elf_section_data *sdata;
+      size_t amt = sizeof (*sdata);
+
+      sdata = bfd_zalloc (abfd, amt);
+      if (sdata == NULL)
+	return false;
+      sec->used_by_bfd = sdata;
+    }
+
+  return _bfd_elf_new_section_hook (abfd, sec);
 }
 
 /* Microblaze ELF local labels start with 'L.' or '$L', not '.L'.  */
@@ -1282,9 +1341,9 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 		/* Need to generate relocs ? */
 		if ((bfd_link_pic (info) || indx != 0)
 		    && (h == NULL
-		    || (ELF_ST_VISIBILITY (h->other) == STV_DEFAULT
-			&& !resolved_to_zero)
-		    || h->root.type != bfd_link_hash_undefweak))
+			|| (ELF_ST_VISIBILITY (h->other) == STV_DEFAULT
+			    && !resolved_to_zero)
+			|| h->root.type != bfd_link_hash_undefweak))
 		  need_relocs = true;
 
 		/* 2. Compute/Emit Static value of r-expression */
@@ -1426,9 +1485,9 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 	      relocation += addend;
 	      relocation -= dtprel_base(info);
 	      bfd_put_16 (input_bfd, (relocation >> 16) & 0xffff,
-			  contents + offset + 2);
+			  contents + offset + endian);
 	      bfd_put_16 (input_bfd, relocation & 0xffff,
-			  contents + offset + 2 + INST_WORD_SIZE);
+			  contents + offset + endian + INST_WORD_SIZE);
 	      break;
 	    case (int) R_MICROBLAZE_TEXTREL_64:
 	    case (int) R_MICROBLAZE_TEXTREL_32_LO:
@@ -1647,23 +1706,24 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 
 /* Calculate fixup value for reference.  */
 
-static int
+static size_t
 calc_fixup (bfd_vma start, bfd_vma size, asection *sec)
 {
   bfd_vma end = start + size;
-  int i, fixup = 0;
+  size_t i, fixup = 0;
+  struct _microblaze_elf_section_data *sdata;
 
-  if (sec == NULL || sec->relax == NULL)
+  if (sec == NULL || (sdata = microblaze_elf_section_data (sec)) == NULL)
     return 0;
 
   /* Look for addr in relax table, total fixup value.  */
-  for (i = 0; i < sec->relax_count; i++)
+  for (i = 0; i < sdata->relax_count; i++)
     {
-      if (end <= sec->relax[i].addr)
+      if (end <= sdata->relax[i].addr)
 	break;
-      if ((end != start) && (start > sec->relax[i].addr))
+      if (end != start && start > sdata->relax[i].addr)
 	continue;
-      fixup += sec->relax[i].size;
+      fixup += sdata->relax[i].size;
     }
   return fixup;
 }
@@ -1712,14 +1772,15 @@ microblaze_elf_relax_section (bfd *abfd,
   bfd_byte *free_contents = NULL;
   int rel_count;
   unsigned int shndx;
-  int i, sym_index;
+  size_t i, sym_index;
   asection *o;
   struct elf_link_hash_entry *sym_hash;
   Elf_Internal_Sym *isymbuf, *isymend;
   Elf_Internal_Sym *isym;
-  int symcount;
-  int offset;
+  size_t symcount;
+  size_t offset;
   bfd_vma src, dest;
+  struct _microblaze_elf_section_data *sdata;
 
   /* We only do this once per section.  We may be able to delete some code
      by running multiple passes, but it is not worth it.  */
@@ -1728,8 +1789,9 @@ microblaze_elf_relax_section (bfd *abfd,
   /* Only do this for a text section.  */
   if (bfd_link_relocatable (link_info)
       || (sec->flags & SEC_RELOC) == 0
-      || (sec->reloc_count == 0)
-      || (sec->flags & SEC_CODE) == 0)
+      || (sec->flags & SEC_CODE) == 0
+      || sec->reloc_count == 0
+      || (sdata = microblaze_elf_section_data (sec)) == NULL)
     return true;
 
   BFD_ASSERT ((sec->size > 0) || (sec->rawsize > 0));
@@ -1754,11 +1816,11 @@ microblaze_elf_relax_section (bfd *abfd,
   if (! link_info->keep_memory)
     free_relocs = internal_relocs;
 
-  sec->relax = (struct relax_table *) bfd_malloc ((sec->reloc_count + 1)
-						  * sizeof (struct relax_table));
-  if (sec->relax == NULL)
+  sdata->relax_count = 0;
+  sdata->relax = (struct relax_table *) bfd_malloc ((sec->reloc_count + 1)
+						    * sizeof (*sdata->relax));
+  if (sdata->relax == NULL)
     goto error_return;
-  sec->relax_count = 0;
 
   irelend = internal_relocs + sec->reloc_count;
   rel_count = 0;
@@ -1848,9 +1910,9 @@ microblaze_elf_relax_section (bfd *abfd,
 	  || (symval & 0xffff8000) == 0xffff8000)
 	{
 	  /* We can delete this instruction.  */
-	  sec->relax[sec->relax_count].addr = irel->r_offset;
-	  sec->relax[sec->relax_count].size = INST_WORD_SIZE;
-	  sec->relax_count++;
+	  sdata->relax[sdata->relax_count].addr = irel->r_offset;
+	  sdata->relax[sdata->relax_count].size = INST_WORD_SIZE;
+	  sdata->relax_count++;
 
 	  /* Rewrite relocation type.  */
 	  switch ((enum elf_microblaze_reloc_type) ELF32_R_TYPE (irel->r_info))
@@ -1875,11 +1937,11 @@ microblaze_elf_relax_section (bfd *abfd,
     } /* Loop through all relocations.  */
 
   /* Loop through the relocs again, and see if anything needs to change.  */
-  if (sec->relax_count > 0)
+  if (sdata->relax_count > 0)
     {
       shndx = _bfd_elf_section_from_bfd_section (abfd, sec);
       rel_count = 0;
-      sec->relax[sec->relax_count].addr = sec->size;
+      sdata->relax[sdata->relax_count].addr = sec->size;
 
       for (irel = internal_relocs; irel < irelend; irel++, rel_count++)
 	{
@@ -1910,10 +1972,11 @@ microblaze_elf_relax_section (bfd *abfd,
 		}
 	      break;
 	    case R_MICROBLAZE_NONE:
+	    case R_MICROBLAZE_32_NONE:
 	      {
 		/* This was a PC-relative instruction that was
 		   completely resolved.  */
-		int sfix, efix;
+		size_t sfix, efix;
 		bfd_vma target_address;
 		target_address = irel->r_addend + irel->r_offset;
 		sfix = calc_fixup (irel->r_offset, 0, sec);
@@ -1928,7 +1991,7 @@ microblaze_elf_relax_section (bfd *abfd,
 	      {
 		/* This was a PC-relative 64-bit instruction that was
 		   completely resolved.  */
-		int sfix, efix;
+		size_t sfix, efix;
 		bfd_vma target_address;
 		target_address = irel->r_addend + irel->r_offset + INST_WORD_SIZE;
 		sfix = calc_fixup (irel->r_offset + INST_WORD_SIZE, 0, sec);
@@ -1965,7 +2028,8 @@ microblaze_elf_relax_section (bfd *abfd,
 	  irelscanend = irelocs + o->reloc_count;
 	  for (irelscan = irelocs; irelscan < irelscanend; irelscan++)
 	    {
-	      if (ELF32_R_TYPE (irelscan->r_info) == (int) R_MICROBLAZE_32)
+	      if ((ELF32_R_TYPE (irelscan->r_info) == (int) R_MICROBLAZE_32)
+		  || (ELF32_R_TYPE (irelscan->r_info) == (int) R_MICROBLAZE_32_NONE))
 		{
 		  isym = isymbuf + ELF32_R_SYM (irelscan->r_info);
 
@@ -2024,7 +2088,7 @@ microblaze_elf_relax_section (bfd *abfd,
 			      elf_section_data (o)->this_hdr.contents = ocontents;
 			    }
 			}
-		      irelscan->r_addend -= calc_fixup (irel->r_addend
+		      irelscan->r_addend -= calc_fixup (irelscan->r_addend
 							+ isym->st_value,
 							0,
 							sec);
@@ -2032,9 +2096,9 @@ microblaze_elf_relax_section (bfd *abfd,
 		}
 	      else if ((ELF32_R_TYPE (irelscan->r_info) == (int) R_MICROBLAZE_32_PCREL_LO)
 		       || (ELF32_R_TYPE (irelscan->r_info)
-				   == (int) R_MICROBLAZE_32_LO)
+			   == (int) R_MICROBLAZE_32_LO)
 		       || (ELF32_R_TYPE (irelscan->r_info)
-				   == (int) R_MICROBLAZE_TEXTREL_32_LO))
+			   == (int) R_MICROBLAZE_TEXTREL_32_LO))
 		{
 		  isym = isymbuf + ELF32_R_SYM (irelscan->r_info);
 
@@ -2088,8 +2152,6 @@ microblaze_elf_relax_section (bfd *abfd,
 		  if (isym->st_shndx == shndx
 		      && (ELF32_ST_TYPE (isym->st_info) == STT_SECTION))
 		    {
-		      bfd_vma immediate;
-
 		      if (ocontents == NULL)
 			{
 			  if (elf_section_data (o)->this_hdr.contents != NULL)
@@ -2112,15 +2174,7 @@ microblaze_elf_relax_section (bfd *abfd,
 			      elf_section_data (o)->this_hdr.contents = ocontents;
 			    }
 			}
-	  unsigned long instr_hi =  bfd_get_32 (abfd, ocontents
-						+ irelscan->r_offset);
-	  unsigned long instr_lo =  bfd_get_32 (abfd, ocontents
-						+ irelscan->r_offset
-						+ INST_WORD_SIZE);
-	  immediate = (instr_hi & 0x0000ffff) << 16;
-	  immediate |= (instr_lo & 0x0000ffff);
 		      offset = calc_fixup (irelscan->r_addend, 0, sec);
-		      immediate -= offset;
 		      irelscan->r_addend -= offset;
 		    }
 		}
@@ -2205,15 +2259,16 @@ microblaze_elf_relax_section (bfd *abfd,
 	}
 
       /* Physically move the code and change the cooked size.  */
-      dest = sec->relax[0].addr;
-      for (i = 0; i < sec->relax_count; i++)
+      dest = sdata->relax[0].addr;
+      for (i = 0; i < sdata->relax_count; i++)
 	{
-	  int len;
-	  src = sec->relax[i].addr + sec->relax[i].size;
-	  len = sec->relax[i+1].addr - sec->relax[i].addr - sec->relax[i].size;
+	  size_t len;
+	  src = sdata->relax[i].addr + sdata->relax[i].size;
+	  len = (sdata->relax[i+1].addr - sdata->relax[i].addr
+		 - sdata->relax[i].size);
 
 	  memmove (contents + dest, contents + src, len);
-	  sec->size -= sec->relax[i].size;
+	  sec->size -= sdata->relax[i].size;
 	  dest += len;
 	}
 
@@ -2239,11 +2294,11 @@ microblaze_elf_relax_section (bfd *abfd,
       free_contents = NULL;
     }
 
-  if (sec->relax_count == 0)
+  if (sdata->relax_count == 0)
     {
       *again = false;
-      free (sec->relax);
-      sec->relax = NULL;
+      free (sdata->relax);
+      sdata->relax = NULL;
     }
   else
     *again = true;
@@ -2252,9 +2307,9 @@ microblaze_elf_relax_section (bfd *abfd,
  error_return:
   free (free_relocs);
   free (free_contents);
-  free (sec->relax);
-  sec->relax = NULL;
-  sec->relax_count = 0;
+  free (sdata->relax);
+  sdata->relax = NULL;
+  sdata->relax_count = 0;
   return false;
 }
 
@@ -2326,7 +2381,6 @@ microblaze_elf_check_relocs (bfd * abfd,
 {
   Elf_Internal_Shdr *		symtab_hdr;
   struct elf_link_hash_entry ** sym_hashes;
-  struct elf_link_hash_entry ** sym_hashes_end;
   const Elf_Internal_Rela *	rel;
   const Elf_Internal_Rela *	rel_end;
   struct elf32_mb_link_hash_table *htab;
@@ -2341,9 +2395,6 @@ microblaze_elf_check_relocs (bfd * abfd,
 
   symtab_hdr = & elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size / sizeof (Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   rel_end = relocs + sec->reloc_count;
 
@@ -2915,8 +2966,8 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void * dat)
 /* Set the sizes of the dynamic sections.  */
 
 static bool
-microblaze_elf_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
-				      struct bfd_link_info *info)
+microblaze_elf_late_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
+				   struct bfd_link_info *info)
 {
   struct elf32_mb_link_hash_table *htab;
   bfd *dynobj;
@@ -2928,7 +2979,8 @@ microblaze_elf_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
     return false;
 
   dynobj = htab->elf.dynobj;
-  BFD_ASSERT (dynobj != NULL);
+  if (dynobj == NULL)
+    return true;
 
   /* Set up .got offsets for local syms, and space for local dynamic
      relocs.  */
@@ -3117,8 +3169,6 @@ microblaze_elf_finish_dynamic_symbol (bfd *output_bfd,
   struct elf32_mb_link_hash_entry *eh = elf32_mb_hash_entry(h);
 
   htab = elf32_mb_hash_table (info);
-  if (htab == NULL)
-    return false;
 
   if (h->plt.offset != (bfd_vma) -1)
     {
@@ -3187,9 +3237,9 @@ microblaze_elf_finish_dynamic_symbol (bfd *output_bfd,
     }
 
   /* h->got.refcount to be checked ? */
-  if (h->got.offset != (bfd_vma) -1 &&
-      ! ((h->got.offset & 1) ||
-	  IS_TLS_LD(eh->tls_mask) || IS_TLS_GD(eh->tls_mask)))
+  if ((h->got.offset != (bfd_vma) -1)
+      && ! ((h->got.offset & 1)
+	    || IS_TLS_LD(eh->tls_mask) || IS_TLS_GD(eh->tls_mask)))
     {
       asection *sgot;
       asection *srela;
@@ -3423,6 +3473,7 @@ microblaze_elf_add_symbol_hook (bfd *abfd,
 
 #define bfd_elf32_bfd_reloc_type_lookup		microblaze_elf_reloc_type_lookup
 #define bfd_elf32_bfd_is_local_label_name	microblaze_elf_is_local_label_name
+#define bfd_elf32_new_section_hook		microblaze_elf_new_section_hook
 #define elf_backend_relocate_section		microblaze_elf_relocate_section
 #define bfd_elf32_bfd_relax_section		microblaze_elf_relax_section
 #define bfd_elf32_bfd_merge_private_bfd_data	_bfd_generic_verify_endian_match
@@ -3445,7 +3496,7 @@ microblaze_elf_add_symbol_hook (bfd *abfd,
 #define elf_backend_create_dynamic_sections	_bfd_elf_create_dynamic_sections
 #define elf_backend_finish_dynamic_sections	microblaze_elf_finish_dynamic_sections
 #define elf_backend_finish_dynamic_symbol	microblaze_elf_finish_dynamic_symbol
-#define elf_backend_size_dynamic_sections	microblaze_elf_size_dynamic_sections
+#define elf_backend_late_size_sections		microblaze_elf_late_size_sections
 #define elf_backend_add_symbol_hook		microblaze_elf_add_symbol_hook
 
 #include "elf32-target.h"

@@ -1,4 +1,4 @@
-# Copyright 1992-2021 Free Software Foundation, Inc.
+# Copyright 1992-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -90,7 +90,7 @@ gdb_test_no_output "set width 30"
 send_gdb "printf \"$str\"\n"
 gdb_expect_list "paged count for interrupt" \
     ".*$pagination_prompt" \
-    [list 1\r\n 2\r\n 3\r\n 444444444444444444444444444444]
+    [list 1\r\n 2\r\n 3\r\n [string repeat 4 30]]
 
 gdb_test "q" "Quit" "quit while paging"
 
@@ -121,6 +121,7 @@ foreach_with_prefix size {"0" "0x80000000" "unlimited"} {
 gdb_test "set width -1" "integer -1 out of range"
 gdb_test "set height -1" "integer -1 out of range"
 
-gdb_exit
-return 0
-
+# A height of 1 used to cause pathological behavior -- it would
+# endlessly prompt for paging without printing anything.
+gdb_test_no_output "set height 1"
+gdb_test "print 23" " = 23"

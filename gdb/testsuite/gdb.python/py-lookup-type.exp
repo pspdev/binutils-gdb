@@ -1,4 +1,4 @@
-# Copyright (C) 2015-2021 Free Software Foundation, Inc.
+# Copyright (C) 2015-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,17 +18,14 @@
 
 load_lib gdb-python.exp
 
+require allow_python_tests
+
 # Note that the purpose of this testcase is to test the behavior
 # of gdb.lookup_type searching for the primitive types internally
 # created by each language since GDB.  So, we must start GDB without
 # loading any symbol in.
 
-gdb_exit
-gdb_start
-gdb_reinitialize_dir $srcdir/$subdir
-
-# Skip all tests if Python scripting is not enabled.
-if { [skip_python_tests] } { continue }
+clean_restart
 
 proc test_lookup_type { lang type_name } {
     gdb_test_no_output "set language ${lang}"
@@ -54,3 +51,29 @@ test_lookup_type "opencl" "ushort"
 test_lookup_type "objective-c" "char"
 
 test_lookup_type "pascal" "char"
+
+gdb_test "show language" \
+    "The current source language is .pascal.." \
+    "show language before 'with'"
+gdb_test_multiline "look up type using set_parameter" \
+    "python" "" \
+    "with gdb.with_parameter('language', 'ada'):" "" \
+    "  print(gdb.lookup_type('character'))" "" \
+    "end" "character"
+gdb_test "show language" \
+    "The current source language is .pascal.." \
+    "show language after 'with'"
+
+
+# Ensure that the language can be changed from within Python and still
+# affect the results.
+gdb_test_multiline "look up ada type from another language" \
+    "python" "" \
+    "gdb.execute('set language ada')" "" \
+    "print(gdb.lookup_type('character'))" "" \
+    "end" "character"
+
+gdb_test_no_output "python gdb.set_parameter('language', 'rust')"
+gdb_test "show language" \
+    "The current source language is .rust.." \
+    "show language after 'set_parameter'"

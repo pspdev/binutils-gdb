@@ -1,11 +1,10 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: or1k.xml */
 
-#include "defs.h"
 #include "osabi.h"
 #include "target-descriptions.h"
 
-struct target_desc *tdesc_or1k;
+const struct target_desc *tdesc_or1k;
 static void
 initialize_tdesc_or1k (void)
 {

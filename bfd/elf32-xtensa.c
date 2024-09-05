@@ -1,5 +1,5 @@
 /* Xtensa-specific support for 32-bit ELF.
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -30,27 +30,15 @@
 #include "elf/xtensa.h"
 #include "splay-tree.h"
 #include "xtensa-isa.h"
-#include "xtensa-config.h"
+#include "xtensa-dynconfig.h"
 
 /* All users of this file have bfd_octets_per_byte (abfd, sec) == 1.  */
 #define OCTETS_PER_BYTE(ABFD, SEC) 1
 
 #define XTENSA_NO_NOP_REMOVAL 0
 
-#ifndef XSHAL_ABI
-#define XSHAL_ABI 0
-#endif
-
 #ifndef XTHAL_ABI_UNDEFINED
 #define XTHAL_ABI_UNDEFINED -1
-#endif
-
-#ifndef XTHAL_ABI_WINDOWED
-#define XTHAL_ABI_WINDOWED 0
-#endif
-
-#ifndef XTHAL_ABI_CALL0
-#define XTHAL_ABI_CALL0 1
 #endif
 
 /* Local helper functions.  */
@@ -191,10 +179,10 @@ int elf32xtensa_abi = XTHAL_ABI_UNDEFINED;
 
 static reloc_howto_type elf_howto_table[] =
 {
-  HOWTO (R_XTENSA_NONE, 0, 3, 0, false, 0, complain_overflow_dont,
+  HOWTO (R_XTENSA_NONE, 0, 0, 0, false, 0, complain_overflow_dont,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_NONE",
 	 false, 0, 0, false),
-  HOWTO (R_XTENSA_32, 0, 2, 32, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_32, 0, 4, 32, false, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_32",
 	 true, 0xffffffff, 0xffffffff, false),
 
@@ -203,19 +191,19 @@ static reloc_howto_type elf_howto_table[] =
      special: 1 means to substitute a pointer to the runtime linker's
      dynamic resolver function; 2 means to substitute the link map for
      the shared object.  */
-  HOWTO (R_XTENSA_RTLD, 0, 2, 32, false, 0, complain_overflow_dont,
+  HOWTO (R_XTENSA_RTLD, 0, 4, 32, false, 0, complain_overflow_dont,
 	 NULL, "R_XTENSA_RTLD", false, 0, 0, false),
 
-  HOWTO (R_XTENSA_GLOB_DAT, 0, 2, 32, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_GLOB_DAT, 0, 4, 32, false, 0, complain_overflow_bitfield,
 	 bfd_elf_generic_reloc, "R_XTENSA_GLOB_DAT",
 	 false, 0, 0xffffffff, false),
-  HOWTO (R_XTENSA_JMP_SLOT, 0, 2, 32, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_JMP_SLOT, 0, 4, 32, false, 0, complain_overflow_bitfield,
 	 bfd_elf_generic_reloc, "R_XTENSA_JMP_SLOT",
 	 false, 0, 0xffffffff, false),
-  HOWTO (R_XTENSA_RELATIVE, 0, 2, 32, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_RELATIVE, 0, 4, 32, false, 0, complain_overflow_bitfield,
 	 bfd_elf_generic_reloc, "R_XTENSA_RELATIVE",
 	 false, 0, 0xffffffff, false),
-  HOWTO (R_XTENSA_PLT, 0, 2, 32, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_PLT, 0, 4, 32, false, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_PLT",
 	 false, 0, 0xffffffff, false),
 
@@ -238,25 +226,25 @@ static reloc_howto_type elf_howto_table[] =
 
   EMPTY_HOWTO (13),
 
-  HOWTO (R_XTENSA_32_PCREL, 0, 2, 32, true, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_32_PCREL, 0, 4, 32, true, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_32_PCREL",
 	 false, 0, 0xffffffff, true),
 
   /* GNU extension to record C++ vtable hierarchy.  */
-  HOWTO (R_XTENSA_GNU_VTINHERIT, 0, 2, 0, false, 0, complain_overflow_dont,
+  HOWTO (R_XTENSA_GNU_VTINHERIT, 0, 4, 0, false, 0, complain_overflow_dont,
 	 NULL, "R_XTENSA_GNU_VTINHERIT",
 	 false, 0, 0, false),
   /* GNU extension to record C++ vtable member usage.  */
-  HOWTO (R_XTENSA_GNU_VTENTRY, 0, 2, 0, false, 0, complain_overflow_dont,
+  HOWTO (R_XTENSA_GNU_VTENTRY, 0, 4, 0, false, 0, complain_overflow_dont,
 	 _bfd_elf_rel_vtable_reloc_fn, "R_XTENSA_GNU_VTENTRY",
 	 false, 0, 0, false),
 
   /* Relocations for supporting difference of symbols.  */
-  HOWTO (R_XTENSA_DIFF8, 0, 0, 8, false, 0, complain_overflow_signed,
+  HOWTO (R_XTENSA_DIFF8, 0, 1, 8, false, 0, complain_overflow_signed,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_DIFF8", false, 0, 0xff, false),
-  HOWTO (R_XTENSA_DIFF16, 0, 1, 16, false, 0, complain_overflow_signed,
+  HOWTO (R_XTENSA_DIFF16, 0, 2, 16, false, 0, complain_overflow_signed,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_DIFF16", false, 0, 0xffff, false),
-  HOWTO (R_XTENSA_DIFF32, 0, 2, 32, false, 0, complain_overflow_signed,
+  HOWTO (R_XTENSA_DIFF32, 0, 4, 32, false, 0, complain_overflow_signed,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_DIFF32", false, 0, 0xffffffff, false),
 
   /* General immediate operand relocations.  */
@@ -324,16 +312,16 @@ static reloc_howto_type elf_howto_table[] =
 	 bfd_elf_xtensa_reloc, "R_XTENSA_SLOT14_ALT", false, 0, 0, true),
 
   /* TLS relocations.  */
-  HOWTO (R_XTENSA_TLSDESC_FN, 0, 2, 32, false, 0, complain_overflow_dont,
+  HOWTO (R_XTENSA_TLSDESC_FN, 0, 4, 32, false, 0, complain_overflow_dont,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_TLSDESC_FN",
 	 false, 0, 0xffffffff, false),
-  HOWTO (R_XTENSA_TLSDESC_ARG, 0, 2, 32, false, 0, complain_overflow_dont,
+  HOWTO (R_XTENSA_TLSDESC_ARG, 0, 4, 32, false, 0, complain_overflow_dont,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_TLSDESC_ARG",
 	 false, 0, 0xffffffff, false),
-  HOWTO (R_XTENSA_TLS_DTPOFF, 0, 2, 32, false, 0, complain_overflow_dont,
+  HOWTO (R_XTENSA_TLS_DTPOFF, 0, 4, 32, false, 0, complain_overflow_dont,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_TLS_DTPOFF",
 	 false, 0, 0xffffffff, false),
-  HOWTO (R_XTENSA_TLS_TPOFF, 0, 2, 32, false, 0, complain_overflow_dont,
+  HOWTO (R_XTENSA_TLS_TPOFF, 0, 4, 32, false, 0, complain_overflow_dont,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_TLS_TPOFF",
 	 false, 0, 0xffffffff, false),
   HOWTO (R_XTENSA_TLS_FUNC, 0, 0, 0, false, 0, complain_overflow_dont,
@@ -346,18 +334,18 @@ static reloc_howto_type elf_howto_table[] =
 	 bfd_elf_xtensa_reloc, "R_XTENSA_TLS_CALL",
 	 false, 0, 0, false),
 
-  HOWTO (R_XTENSA_PDIFF8, 0, 0, 8, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_PDIFF8, 0, 1, 8, false, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_PDIFF8", false, 0, 0xff, false),
-  HOWTO (R_XTENSA_PDIFF16, 0, 1, 16, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_PDIFF16, 0, 2, 16, false, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_PDIFF16", false, 0, 0xffff, false),
-  HOWTO (R_XTENSA_PDIFF32, 0, 2, 32, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_PDIFF32, 0, 4, 32, false, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_PDIFF32", false, 0, 0xffffffff, false),
 
-  HOWTO (R_XTENSA_NDIFF8, 0, 0, 8, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_NDIFF8, 0, 1, 8, false, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_NDIFF8", false, 0, 0xff, false),
-  HOWTO (R_XTENSA_NDIFF16, 0, 1, 16, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_NDIFF16, 0, 2, 16, false, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_NDIFF16", false, 0, 0xffff, false),
-  HOWTO (R_XTENSA_NDIFF32, 0, 2, 32, false, 0, complain_overflow_bitfield,
+  HOWTO (R_XTENSA_NDIFF32, 0, 4, 32, false, 0, complain_overflow_bitfield,
 	 bfd_elf_xtensa_reloc, "R_XTENSA_NDIFF32", false, 0, 0xffffffff, false),
 };
 
@@ -885,7 +873,8 @@ xtensa_read_table_entries (bfd *abfd,
   flagword predef_flags;
   bfd_size_type table_entry_size, section_limit;
 
-  if (!section
+  if (bfd_get_flavour (abfd) != bfd_target_elf_flavour
+      || !section
       || !(section->flags & SEC_ALLOC)
       || (section->flags & SEC_DEBUGGING))
     {
@@ -909,7 +898,14 @@ xtensa_read_table_entries (bfd *abfd,
     table_entry_size -= 4;
 
   num_records = table_size / table_entry_size;
+
   table_data = retrieve_contents (abfd, table_section, true);
+  if (table_data == NULL)
+    {
+      *table_p = NULL;
+      return 0;
+    }
+
   blocks = (property_table_entry *)
     bfd_malloc (num_records * sizeof (property_table_entry));
   block_count = 0;
@@ -1108,7 +1104,7 @@ elf_xtensa_check_relocs (bfd *abfd,
       switch (r_type)
 	{
 	case R_XTENSA_TLSDESC_FN:
-	  if (bfd_link_pic (info))
+	  if (bfd_link_dll (info))
 	    {
 	      tls_type = GOT_TLS_GD;
 	      is_got = true;
@@ -1119,7 +1115,7 @@ elf_xtensa_check_relocs (bfd *abfd,
 	  break;
 
 	case R_XTENSA_TLSDESC_ARG:
-	  if (bfd_link_pic (info))
+	  if (bfd_link_dll (info))
 	    {
 	      tls_type = GOT_TLS_GD;
 	      is_got = true;
@@ -1127,13 +1123,14 @@ elf_xtensa_check_relocs (bfd *abfd,
 	  else
 	    {
 	      tls_type = GOT_TLS_IE;
-	      if (h && elf_xtensa_hash_entry (h) != htab->tlsbase)
+	      if (h && elf_xtensa_hash_entry (h) != htab->tlsbase
+		  && elf_xtensa_dynamic_symbol_p (h, info))
 		is_got = true;
 	    }
 	  break;
 
 	case R_XTENSA_TLS_DTPOFF:
-	  if (bfd_link_pic (info))
+	  if (bfd_link_dll (info))
 	    tls_type = GOT_TLS_GD;
 	  else
 	    tls_type = GOT_TLS_IE;
@@ -1143,7 +1140,7 @@ elf_xtensa_check_relocs (bfd *abfd,
 	  tls_type = GOT_TLS_IE;
 	  if (bfd_link_pic (info))
 	    info->flags |= DF_STATIC_TLS;
-	  if (bfd_link_pic (info) || h)
+	  if (bfd_link_dll (info) || elf_xtensa_dynamic_symbol_p (h, info))
 	    is_got = true;
 	  break;
 
@@ -1560,8 +1557,8 @@ elf_xtensa_allocate_local_got_size (struct bfd_link_info *info)
 /* Set the sizes of the dynamic sections.  */
 
 static bool
-elf_xtensa_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
-				  struct bfd_link_info *info)
+elf_xtensa_late_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
+			       struct bfd_link_info *info)
 {
   struct elf_xtensa_link_hash_table *htab;
   bfd *dynobj, *abfd;
@@ -1578,7 +1575,7 @@ elf_xtensa_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
 
   dynobj = elf_hash_table (info)->dynobj;
   if (dynobj == NULL)
-    abort ();
+    return true;
   srelgot = htab->elf.srelgot;
   srelplt = htab->elf.srelplt;
 
@@ -1783,8 +1780,7 @@ elf_xtensa_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
 }
 
 static bool
-elf_xtensa_always_size_sections (bfd *output_bfd,
-				 struct bfd_link_info *info)
+elf_xtensa_early_size_sections (bfd *output_bfd, struct bfd_link_info *info)
 {
   struct elf_xtensa_link_hash_table *htab;
   asection *tls_sec;
@@ -1968,6 +1964,8 @@ elf_xtensa_do_reloc (reloc_howto_type *howto,
       return bfd_reloc_dangerous;
     }
 
+  if (input_size <= address)
+    return bfd_reloc_outofrange;
   /* Read the instruction into a buffer and decode the opcode.  */
   xtensa_insnbuf_from_chars (isa, ibuff, contents + address,
 			     input_size - address);
@@ -2874,7 +2872,7 @@ elf_xtensa_relocate_section (bfd *output_bfd,
 
 	case R_XTENSA_TLS_TPOFF:
 	  /* Switch to LE model for local symbols in an executable.  */
-	  if (! bfd_link_pic (info) && ! dynamic_symbol)
+	  if (! bfd_link_dll (info) && ! dynamic_symbol)
 	    {
 	      relocation = tpoff (info, relocation);
 	      break;
@@ -2886,12 +2884,12 @@ elf_xtensa_relocate_section (bfd *output_bfd,
 	  {
 	    if (r_type == R_XTENSA_TLSDESC_FN)
 	      {
-		if (! bfd_link_pic (info) || (tls_type & GOT_TLS_IE) != 0)
+		if (! bfd_link_dll (info) || (tls_type & GOT_TLS_IE) != 0)
 		  r_type = R_XTENSA_NONE;
 	      }
 	    else if (r_type == R_XTENSA_TLSDESC_ARG)
 	      {
-		if (bfd_link_pic (info))
+		if (bfd_link_dll (info))
 		  {
 		    if ((tls_type & GOT_TLS_IE) != 0)
 		      r_type = R_XTENSA_TLS_TPOFF;
@@ -2965,7 +2963,7 @@ elf_xtensa_relocate_section (bfd *output_bfd,
 	  break;
 
 	case R_XTENSA_TLS_DTPOFF:
-	  if (! bfd_link_pic (info))
+	  if (! bfd_link_dll (info))
 	    /* Switch from LD model to LE model.  */
 	    relocation = tpoff (info, relocation);
 	  else
@@ -5044,12 +5042,9 @@ print_r_reloc (FILE *fp, const r_reloc *r_rel)
   else
     fprintf (fp, " ?? + ");
 
-  fprintf_vma (fp, r_rel->target_offset);
+  fprintf (fp, "%" PRIx64, (uint64_t) r_rel->target_offset);
   if (r_rel->virtual_offset)
-    {
-      fprintf (fp, " + ");
-      fprintf_vma (fp, r_rel->virtual_offset);
-    }
+    fprintf (fp, " + %" PRIx64, (uint64_t) r_rel->virtual_offset);
 
   fprintf (fp, ")");
 }
@@ -5234,6 +5229,13 @@ literal_value_equal (const literal_value *src1,
      (if undefined or weak).  */
   h1 = r_reloc_get_hash_entry (&src1->r_rel);
   h2 = r_reloc_get_hash_entry (&src2->r_rel);
+
+  /* Keep start_stop literals always unique to avoid dropping it due to them
+     having late initialization.
+     Now they are equal because initialized with zeroed values.  */
+  if (h2 && h2->start_stop)
+      return false;
+
   if (r_reloc_is_defined (&src1->r_rel)
       && (final_static_link
 	  || ((!h1 || h1->root.type != bfd_link_hash_defweak)
@@ -11250,7 +11252,7 @@ xtensa_add_names (const char *base, const char *suffix)
 
 static int linkonce_len = sizeof (".gnu.linkonce.") - 1;
 
-static char *
+char *
 xtensa_property_section_name (asection *sec, const char *base_name,
 			      bool separate_sections)
 {
@@ -11328,38 +11330,6 @@ xtensa_get_property_section (asection *sec, const char *base_name)
   if (!prop_sec)
     prop_sec = xtensa_get_separate_property_section (sec, base_name, false);
 
-  return prop_sec;
-}
-
-
-asection *
-xtensa_make_property_section (asection *sec, const char *base_name)
-{
-  char *prop_sec_name;
-  asection *prop_sec;
-
-  /* Check if the section already exists.  */
-  prop_sec_name = xtensa_property_section_name (sec, base_name,
-						elf32xtensa_separate_props);
-  prop_sec = bfd_get_section_by_name_if (sec->owner, prop_sec_name,
-					 match_section_group,
-					 (void *) elf_group_name (sec));
-  /* If not, create it.  */
-  if (! prop_sec)
-    {
-      flagword flags = (SEC_RELOC | SEC_HAS_CONTENTS | SEC_READONLY);
-      flags |= (bfd_section_flags (sec)
-		& (SEC_LINK_ONCE | SEC_LINK_DUPLICATES));
-
-      prop_sec = bfd_make_section_anyway_with_flags
-	(sec->owner, strdup (prop_sec_name), flags);
-      if (! prop_sec)
-	return 0;
-
-      elf_group_name (prop_sec) = elf_group_name (sec);
-    }
-
-  free (prop_sec_name);
   return prop_sec;
 }
 
@@ -11541,8 +11511,8 @@ static const struct bfd_elf_special_section elf_xtensa_special_sections[] =
 #define elf_backend_object_p		     elf_xtensa_object_p
 #define elf_backend_reloc_type_class	     elf_xtensa_reloc_type_class
 #define elf_backend_relocate_section	     elf_xtensa_relocate_section
-#define elf_backend_size_dynamic_sections    elf_xtensa_size_dynamic_sections
-#define elf_backend_always_size_sections     elf_xtensa_always_size_sections
+#define elf_backend_late_size_sections	     elf_xtensa_late_size_sections
+#define elf_backend_early_size_sections	     elf_xtensa_early_size_sections
 #define elf_backend_omit_section_dynsym      _bfd_elf_omit_section_dynsym_all
 #define elf_backend_special_sections	     elf_xtensa_special_sections
 #define elf_backend_action_discarded	     elf_xtensa_action_discarded

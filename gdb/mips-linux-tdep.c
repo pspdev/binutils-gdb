@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux on MIPS processors.
 
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "extract-store-integer.h"
 #include "gdbcore.h"
 #include "target.h"
 #include "solib-svr4.h"
@@ -39,13 +39,14 @@
 #include "linux-tdep.h"
 #include "xml-syscall.h"
 #include "gdbsupport/gdb_signals.h"
+#include "inferior.h"
 
 #include "features/mips-linux.c"
 #include "features/mips-dsp-linux.c"
 #include "features/mips64-linux.c"
 #include "features/mips64-dsp-linux.c"
 
-static struct target_so_ops mips_svr4_so_ops;
+static solib_ops mips_svr4_so_ops;
 
 /* This enum represents the signals' numbers on the MIPS
    architecture.  It just contains the signal definitions which are
@@ -93,21 +94,22 @@ enum
 #define MIPS_LINUX_JB_PC 0
 
 static int
-mips_linux_get_longjmp_target (struct frame_info *frame, CORE_ADDR *pc)
+mips_linux_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 {
   CORE_ADDR jb_addr;
   struct gdbarch *gdbarch = get_frame_arch (frame);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  gdb_byte buf[gdbarch_ptr_bit (gdbarch) / TARGET_CHAR_BIT];
+  gdb::byte_vector buf (gdbarch_ptr_bit (gdbarch) / TARGET_CHAR_BIT);
 
   jb_addr = get_frame_register_unsigned (frame, MIPS_A0_REGNUM);
 
   if (target_read_memory ((jb_addr
 			   + MIPS_LINUX_JB_PC * MIPS_LINUX_JB_ELEMENT_SIZE),
-			  buf, gdbarch_ptr_bit (gdbarch) / TARGET_CHAR_BIT))
+			  buf.data (),
+			  gdbarch_ptr_bit (gdbarch) / TARGET_CHAR_BIT))
     return 0;
 
-  *pc = extract_unsigned_integer (buf,
+  *pc = extract_unsigned_integer (buf.data (),
 				  gdbarch_ptr_bit (gdbarch) / TARGET_CHAR_BIT,
 				  byte_order);
 
@@ -246,7 +248,7 @@ mips_fill_gregset_wrapper (const struct regset *regset,
 #define MIPS64_LINUX_JB_PC 0
 
 static int
-mips64_linux_get_longjmp_target (struct frame_info *frame, CORE_ADDR *pc)
+mips64_linux_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 {
   CORE_ADDR jb_addr;
   struct gdbarch *gdbarch = get_frame_arch (frame);
@@ -599,8 +601,8 @@ mips_linux_in_dynsym_stub (CORE_ADDR pc)
 {
   gdb_byte buf[28], *p;
   ULONGEST insn, insn1;
-  int n64 = (mips_abi (target_gdbarch ()) == MIPS_ABI_N64);
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  int n64 = (mips_abi (current_inferior ()->arch ()) == MIPS_ABI_N64);
+  bfd_endian byte_order = gdbarch_byte_order (current_inferior ()->arch ());
 
   if (in_mips_stubs_section (pc))
     return 1;
@@ -697,11 +699,10 @@ mips_linux_in_dynsym_resolve_code (CORE_ADDR pc)
 static CORE_ADDR
 mips_linux_skip_resolver (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
-  struct bound_minimal_symbol resolver;
+  bound_minimal_symbol resolver
+    = lookup_minimal_symbol (current_program_space, "__dl_runtime_resolve");
 
-  resolver = lookup_minimal_symbol ("__dl_runtime_resolve", NULL, NULL);
-
-  if (resolver.minsym && BMSYMBOL_VALUE_ADDRESS (resolver) == pc)
+  if (resolver.minsym && resolver.value_address () == pc)
     return frame_unwind_caller_pc (get_current_frame ());
 
   return glibc_skip_solib_resolver (gdbarch, pc);
@@ -713,21 +714,21 @@ mips_linux_skip_resolver (struct gdbarch *gdbarch, CORE_ADDR pc)
    efficient way, but simplest.  First, declare all the unwinders.  */
 
 static void mips_linux_o32_sigframe_init (const struct tramp_frame *self,
-					  struct frame_info *this_frame,
+					  const frame_info_ptr &this_frame,
 					  struct trad_frame_cache *this_cache,
 					  CORE_ADDR func);
 
 static void mips_linux_n32n64_sigframe_init (const struct tramp_frame *self,
-					     struct frame_info *this_frame,
+					     const frame_info_ptr &this_frame,
 					     struct trad_frame_cache *this_cache,
 					     CORE_ADDR func);
 
 static int mips_linux_sigframe_validate (const struct tramp_frame *self,
-					 struct frame_info *this_frame,
+					 const frame_info_ptr &this_frame,
 					 CORE_ADDR *pc);
 
 static int micromips_linux_sigframe_validate (const struct tramp_frame *self,
-					      struct frame_info *this_frame,
+					      const frame_info_ptr &this_frame,
 					      CORE_ADDR *pc);
 
 #define MIPS_NR_LINUX 4000
@@ -852,7 +853,6 @@ static const struct tramp_frame micromips_linux_n64_rt_sigframe = {
   micromips_linux_sigframe_validate
 };
 
-/* *INDENT-OFF* */
 /* The unwinder for o32 signal frames.  The legacy structures look
    like this:
 
@@ -927,7 +927,6 @@ static const struct tramp_frame micromips_linux_n64_rt_sigframe = {
      struct sigcontext uc_mcontext;
      sigset_t          uc_sigmask;
    };  */
-/* *INDENT-ON* */
 
 #define SIGFRAME_SIGCONTEXT_OFFSET   (6 * 4)
 
@@ -958,7 +957,7 @@ static const struct tramp_frame micromips_linux_n64_rt_sigframe = {
 
 static void
 mips_linux_o32_sigframe_init (const struct tramp_frame *self,
-			      struct frame_info *this_frame,
+			      const frame_info_ptr &this_frame,
 			      struct trad_frame_cache *this_cache,
 			      CORE_ADDR func)
 {
@@ -1066,7 +1065,6 @@ mips_linux_o32_sigframe_init (const struct tramp_frame *self,
   trad_frame_set_id (this_cache, frame_id_build (frame_sp, func));
 }
 
-/* *INDENT-OFF* */
 /* For N32/N64 things look different.  There is no non-rt signal frame.
 
   struct rt_sigframe_n32 {
@@ -1122,7 +1120,6 @@ mips_linux_o32_sigframe_init (const struct tramp_frame *self,
   That is the post-2.6.12 definition of the 64-bit sigcontext; before
   then, there were no hi1-hi3 or lo1-lo3.  Cause and badvaddr were
   included too.  */
-/* *INDENT-ON* */
 
 #define N32_STACK_T_SIZE		STACK_T_SIZE
 #define N64_STACK_T_SIZE		(2 * 8 + 4)
@@ -1153,7 +1150,7 @@ mips_linux_o32_sigframe_init (const struct tramp_frame *self,
 
 static void
 mips_linux_n32n64_sigframe_init (const struct tramp_frame *self,
-				 struct frame_info *this_frame,
+				 const frame_info_ptr &this_frame,
 				 struct trad_frame_cache *this_cache,
 				 CORE_ADDR func)
 {
@@ -1238,7 +1235,7 @@ mips_linux_n32n64_sigframe_init (const struct tramp_frame *self,
 
 static int
 mips_linux_sigframe_validate (const struct tramp_frame *self,
-			      struct frame_info *this_frame,
+			      const frame_info_ptr &this_frame,
 			      CORE_ADDR *pc)
 {
   return mips_pc_is_mips (*pc);
@@ -1248,7 +1245,7 @@ mips_linux_sigframe_validate (const struct tramp_frame *self,
 
 static int
 micromips_linux_sigframe_validate (const struct tramp_frame *self,
-				   struct frame_info *this_frame,
+				   const frame_info_ptr &this_frame,
 				   CORE_ADDR *pc)
 {
   if (mips_pc_is_micromips (get_frame_arch (this_frame), *pc))
@@ -1293,7 +1290,7 @@ mips_linux_restart_reg_p (struct gdbarch *gdbarch)
    instruction to be executed.  */
 
 static CORE_ADDR
-mips_linux_syscall_next_pc (struct frame_info *frame)
+mips_linux_syscall_next_pc (const frame_info_ptr &frame)
 {
   CORE_ADDR pc = get_frame_pc (frame);
   ULONGEST v0 = get_frame_register_unsigned (frame, MIPS_V0_REGNUM);
@@ -1317,7 +1314,7 @@ mips_linux_get_syscall_number (struct gdbarch *gdbarch,
 			       thread_info *thread)
 {
   struct regcache *regcache = get_thread_regcache (thread);
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  mips_gdbarch_tdep *tdep = gdbarch_tdep<mips_gdbarch_tdep> (gdbarch);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   int regsize = register_size (gdbarch, MIPS_V0_REGNUM);
   /* The content of a register */
@@ -1527,7 +1524,7 @@ static void
 mips_linux_init_abi (struct gdbarch_info info,
 		     struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  mips_gdbarch_tdep *tdep = gdbarch_tdep<mips_gdbarch_tdep> (gdbarch);
   enum mips_abi abi = mips_abi (gdbarch);
   struct tdesc_arch_data *tdesc_data = info.tdesc_data;
 
@@ -1542,7 +1539,7 @@ mips_linux_init_abi (struct gdbarch_info info,
 	set_gdbarch_get_longjmp_target (gdbarch,
 					mips_linux_get_longjmp_target);
 	set_solib_svr4_fetch_link_map_offsets
-	  (gdbarch, svr4_ilp32_fetch_link_map_offsets);
+	  (gdbarch, linux_ilp32_fetch_link_map_offsets);
 	tramp_frame_prepend_unwinder (gdbarch, &micromips_linux_o32_sigframe);
 	tramp_frame_prepend_unwinder (gdbarch,
 				      &micromips_linux_o32_rt_sigframe);
@@ -1554,13 +1551,9 @@ mips_linux_init_abi (struct gdbarch_info info,
 	set_gdbarch_get_longjmp_target (gdbarch,
 					mips_linux_get_longjmp_target);
 	set_solib_svr4_fetch_link_map_offsets
-	  (gdbarch, svr4_ilp32_fetch_link_map_offsets);
+	  (gdbarch, linux_ilp32_fetch_link_map_offsets);
 	set_gdbarch_long_double_bit (gdbarch, 128);
-	/* These floatformats should probably be renamed.  MIPS uses
-	   the same 128-bit IEEE floating point format that IA-64 uses,
-	   except that the quiet/signalling NaN bit is reversed (GDB
-	   does not distinguish between quiet and signalling NaNs).  */
-	set_gdbarch_long_double_format (gdbarch, floatformats_ia64_quad);
+	set_gdbarch_long_double_format (gdbarch, floatformats_ieee_quad);
 	tramp_frame_prepend_unwinder (gdbarch,
 				      &micromips_linux_n32_rt_sigframe);
 	tramp_frame_prepend_unwinder (gdbarch, &mips_linux_n32_rt_sigframe);
@@ -1570,13 +1563,9 @@ mips_linux_init_abi (struct gdbarch_info info,
 	set_gdbarch_get_longjmp_target (gdbarch,
 					mips64_linux_get_longjmp_target);
 	set_solib_svr4_fetch_link_map_offsets
-	  (gdbarch, svr4_lp64_fetch_link_map_offsets);
+	  (gdbarch, linux_lp64_fetch_link_map_offsets);
 	set_gdbarch_long_double_bit (gdbarch, 128);
-	/* These floatformats should probably be renamed.  MIPS uses
-	   the same 128-bit IEEE floating point format that IA-64 uses,
-	   except that the quiet/signalling NaN bit is reversed (GDB
-	   does not distinguish between quiet and signalling NaNs).  */
-	set_gdbarch_long_double_format (gdbarch, floatformats_ia64_quad);
+	set_gdbarch_long_double_format (gdbarch, floatformats_ieee_quad);
 	tramp_frame_prepend_unwinder (gdbarch,
 				      &micromips_linux_n64_rt_sigframe);
 	tramp_frame_prepend_unwinder (gdbarch, &mips_linux_n64_rt_sigframe);
@@ -1602,7 +1591,7 @@ mips_linux_init_abi (struct gdbarch_info info,
       mips_svr4_so_ops.in_dynsym_resolve_code
 	= mips_linux_in_dynsym_resolve_code;
     }
-  set_solib_ops (gdbarch, &mips_svr4_so_ops);
+  set_gdbarch_so_ops (gdbarch, &mips_svr4_so_ops);
 
   set_gdbarch_write_pc (gdbarch, mips_linux_write_pc);
 

@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 #
-# Copyright 2012-2021 Free Software Foundation, Inc.
+# Copyright 2012-2024 Free Software Foundation, Inc.
 #
 # Contributed by Intel Corporation.
 #
@@ -25,9 +25,7 @@ load_lib gdbserver-support.exp
 standard_testfile
 set unresolvable_thread_db_path "/foo/bar"
 
-if {[skip_gdbserver_tests]} {
-    return 0
-}
+require allow_gdbserver_tests
 
 if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
     return -1
@@ -59,5 +57,6 @@ gdb_breakpoint ${srcfile}:[gdb_get_line_number "after tls assignment"]
 gdb_continue_to_breakpoint "after tls assignment"
 
 # Printing a tls variable should fail gracefully without a libthread_db.
+set re_exec "\[^\r\n\]*[file tail $binfile]"
 gdb_test "print foo" \
-    "Cannot find thread-local storage for Thread \[^,\]+, executable file ${binfile}:\[\r\n\]+Remote target failed to process qGetTLSAddr request"
+    "Cannot find thread-local storage for Thread \[^,\]+, executable file $re_exec:\[\r\n\]+Remote target failed to process qGetTLSAddr request"

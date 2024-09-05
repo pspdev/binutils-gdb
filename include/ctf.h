@@ -1,5 +1,5 @@
 /* CTF format description.
-   Copyright (C) 2019-2021 Free Software Foundation, Inc.
+   Copyright (C) 2019-2024 Free Software Foundation, Inc.
 
    This file is part of libctf.
 
@@ -89,13 +89,13 @@ extern "C"
    entries and reorder them accordingly (dropping the indexes in the process).
 
    Variable records (as distinct from data objects) provide a modicum of support
-   for non-ELF systems, mapping a variable name to a CTF type ID.  The variable
-   names are sorted into ASCIIbetical order, permitting binary searching.  We do
-   not define how the consumer maps these variable names to addresses or
+   for non-ELF systems, mapping a variable or function name to a CTF type ID.
+   The names are sorted into ASCIIbetical order, permitting binary searching.
+   We do not define how the consumer maps these variable names to addresses or
    anything else, or indeed what these names represent: they might be names
    looked up at runtime via dlsym() or names extracted at runtime by a debugger
    or anything else the consumer likes.  Variable records with identically-
-   named entries in the data object section are removed.
+   named entries in the data object or function index section are removed.
 
    The data types section is a list of variable size records that represent each
    type, in order by their ID.  The types themselves form a directed graph,
@@ -599,13 +599,13 @@ struct ctf_archive
   /* Offset of the name table.  */
   uint64_t ctfa_names;
 
-  /* Offset of the CTF table.  Each element starts with a size (a uint64_t
-     in network byte order) then a ctf_dict_t of that size.  */
+  /* Offset of the CTF table.  Each element starts with a size (a little-
+     endian uint64_t) then a ctf_dict_t of that size.  */
   uint64_t ctfa_ctfs;
 };
 
-/* An array of ctfa_nnamed of this structure lies at
-   ctf_archive[ctf_archive->ctfa_modents] and gives the ctfa_ctfs or
+/* An array of ctfa_ndicts of this structure lies at
+   ctf_archive[sizeof(struct ctf_archive)] and gives the ctfa_ctfs or
    ctfa_names-relative offsets of each name or ctf_dict_t.  */
 
 typedef struct ctf_archive_modent

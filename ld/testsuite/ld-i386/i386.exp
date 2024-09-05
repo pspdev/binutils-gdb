@@ -1,5 +1,5 @@
 # Expect script for ld-i386 tests
-#   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+#   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -177,12 +177,6 @@ set i386tests {
      {{readelf -Ssrl tlsbindesc.rd} {objdump -drj.text tlsbindesc.dd}
       {objdump -sj.got tlsbindesc.sd} {objdump -sj.tdata tlsbindesc.td}}
       "tlsbindesc"}
-    {"TLS -fno-pic -shared"
-     "-shared -melf_i386 --no-ld-generated-unwind-info -z notext \
-      -z noseparate-code --hash-style=sysv" ""
-     "--32" {tlsnopic1.s tlsnopic2.s}
-     {{readelf -Ssrl tlsnopic.rd} {objdump -drj.text tlsnopic.dd}
-      {objdump -sj.got tlsnopic.sd}} "libtlsnopic.so"}
     {"TLS with global dynamic and descriptors"
      "-shared -melf_i386 --no-ld-generated-unwind-info \
       -z noseparate-code --hash-style=sysv" ""
@@ -197,7 +191,7 @@ set i386tests {
     {"Reloc section order"
      "-shared -melf_i386 -z nocombreloc -z notext" "" "--32"
      {reloc.s} {{objdump -hw reloc.d}} "reloc.so"}
-    {"Basic --emit-relocs support" "-shared -melf_i386 --emit-relocs" "" "--32"
+    {"Basic --emit-relocs support" "-shared -melf_i386 --emit-relocs --no-rosegment" "" "--32"
      {emit-relocs.s} {{readelf --relocs emit-relocs.rd}} "emit-relocs.so"}
     {"-z combreloc relocation sections" "-shared -melf_i386 -z combreloc" ""
      "--32" {combreloc.s} {{readelf -r combreloc.d}} "combreloc.so"}
@@ -230,7 +224,7 @@ set i386tests {
      "--32 -mx86-used-note=yes" {pr17709a.s} {} "libpr17709.so"}
     {"PR ld/17709 (2)" "-melf_i386 tmpdir/libpr17709.so" ""
      "--32 -mx86-used-note=yes"
-     {pr17709b.s} {{readelf -r pr17709.rd}} "pr17709"}
+     {pr17709b.s} {{ld "pr17709.err"}} "pr17709"}
     {"Build pr19827a.o" "" ""
      "--32 -mx86-used-note=yes" { pr19827a.S }}
     {"Build pr19827b.so" "-melf_i386 -shared" ""
@@ -246,12 +240,12 @@ set i386tests {
      "--32 -mx86-used-note=yes"
      { pr19827a.S }  {{readelf {-rW} pr19827.rd}} "pr19827.so"}
     {"Build pr27193a.so"
-     "-melf_i386 -shared" ""
+     "-melf_i386 -shared -z noexecstack" ""
      "--32"
      { pr27193a.o.bz2 pr27193b.s }
      {{objdump {-dw} pr27193.dd}} "pr27193a.so"}
     {"Build pr27193b.so"
-     "-melf_i386 -shared --reduce-memory-overheads" ""
+     "-melf_i386 -shared --reduce-memory-overheads -z noexecstack" ""
      "--32"
      { pr27193a.o.bz2 pr27193b.s }
      {{objdump {-dw} pr27193.dd}} "pr27193b.so"}
@@ -293,6 +287,20 @@ iamcu_tests
 
 run_ld_link_tests $i386tests
 
+run_ld_link_tests [list \
+    [list \
+	"TLS -fno-pic -shared" \
+	"-shared -melf_i386 --no-ld-generated-unwind-info -z notext \
+	 -z noseparate-code --hash-style=sysv $NO_DT_RELR_LDFLAGS" \
+	"" "--32" \
+	{tlsnopic1.s tlsnopic2.s} \
+	{{readelf -Ssrl tlsnopic.rd} \
+	 {objdump -drj.text tlsnopic.dd} \
+	 {objdump -sj.got tlsnopic.sd}} \
+	"libtlsnopic.so" \
+    ] \
+]
+
 run_dump_test "abs"
 run_dump_test "pcrel8"
 run_dump_test "pcrel16"
@@ -306,6 +314,7 @@ run_dump_test "tlsie2"
 run_dump_test "tlsie3"
 run_dump_test "tlsie4"
 run_dump_test "tlsie5"
+run_dump_test "tlsle1"
 run_dump_test "hidden1"
 run_dump_test "hidden2"
 run_dump_test "hidden3"
@@ -493,6 +502,18 @@ run_dump_test "property-x86-isa3"
 run_dump_test "property-x86-isa4"
 run_dump_test "pr26869"
 run_dump_test "code16"
+run_dump_test "pr27491-1a"
+run_dump_test "pr27491-1b"
+run_dump_test "pr27491-1c"
+run_dump_test "pr27491-2"
+run_dump_test "pr27491-3"
+run_dump_test "pr27491-4"
+run_dump_test "dt-relr-1a"
+run_dump_test "dt-relr-1b"
+run_dump_test "pr28870"
+run_dump_test "pr28894"
+run_dump_test "pr30787"
+run_dump_test "pr31047"
 
 if { !([istarget "i?86-*-linux*"]
        || [istarget "i?86-*-gnu*"]
@@ -521,6 +542,12 @@ run_dump_test "tlsdesc2"
 run_dump_test "report-reloc-1"
 run_dump_test "pr27998a"
 run_dump_test "pr27998b"
+run_dump_test "pr31868a"
+run_dump_test "pr31868b"
+run_dump_test "pr31868c"
+run_dump_test "tlsgdesc1"
+run_dump_test "tlsgdesc2"
+run_dump_test "tlsgdesc3"
 
 proc undefined_weak {cflags ldflags} {
     set testname "Undefined weak symbol"
@@ -530,9 +557,9 @@ proc undefined_weak {cflags ldflags} {
 
     if { [string match "*-fPIE*" $cflags]
 	 && ![string match "*-z nodynamic-undefined-weak*" $ldflags] } {
-	set weak_symbol "Weak defined"
+	set weak_symbol "Weak defined\n"
     } else {
-	set weak_symbol "Weak undefined"
+	set weak_symbol "Weak undefined\n"
     }
 
     run_cc_link_tests [list \
@@ -559,7 +586,8 @@ proc undefined_weak {cflags ldflags} {
     run_ld_link_exec_tests [list \
 	[list \
 	    "Run pr19704" \
-	    "$ldflags tmpdir/libpr19704.so -Wl,-R,tmpdir" \
+	    "$ldflags -Wl,--no-as-needed tmpdir/libpr19704.so \
+	     -Wl,-R,tmpdir" \
 	    "-Wa,-mrelax-relocations=yes" \
 	    { pr19704a.c } \
 	    "pr19704" \
@@ -795,7 +823,8 @@ if { [isnative]
 	] \
 	[list \
 	    "Build gotpc1" \
-	    "$NOPIE_LDFLAGS -Wl,--as-needed tmpdir/gotpc1.o tmpdir/got1d.so" \
+	    "$NOPIE_LDFLAGS -Wl,--as-needed,-z,noexecstack \
+	     tmpdir/gotpc1.o tmpdir/got1d.so" \
 	    "-Wa,-mx86-used-note=no" \
 	    { dummy.s } \
 	    {{objdump {-dw} got1.dd}} \
@@ -972,7 +1001,8 @@ if { [isnative]
 	] \
 	[list \
 	    "Build property-6" \
-	    "-Wl,--as-needed tmpdir/property-6.o tmpdir/property-6.so" \
+	    "-Wl,--as-needed,-z,noexecstack \
+	     tmpdir/property-6.o tmpdir/property-6.so" \
 	    "-Wa,-mx86-used-note=no" \
 	    { dummy.s } \
 	    {{readelf {-n} property-2.r}} \
@@ -1058,7 +1088,7 @@ if { [isnative]
 	] \
 	[list \
 	    "Run pr19031" \
-	    "$NOPIE_LDFLAGS tmpdir/pr19031.so" \
+	    "$NOPIE_LDFLAGS -Wl,--no-as-needed tmpdir/pr19031.so" \
 	    "-Wa,-mx86-used-note=yes" \
 	    { pr19031b.S pr19031c.c } \
 	    "pr19031" \
@@ -1067,7 +1097,7 @@ if { [isnative]
 	] \
 	[list \
 	    "Run got1" \
-	    "$NOPIE_LDFLAGS tmpdir/got1d.so" \
+	    "$NOPIE_LDFLAGS -Wl,--no-as-needed tmpdir/got1d.so" \
 	    "-Wa,-mx86-used-note=yes" \
 	    { got1a.S got1b.c got1c.c } \
 	    "got1" \
@@ -1271,7 +1301,54 @@ if { [isnative]
 	    {} \
 	    "pr22842.so" \
 	] \
+	[list \
+	    "Build pr28875.so" \
+	    "-shared -Wl,-z,indirect-extern-access" \
+	    "-fPIC" \
+	    { pr28875a.c } \
+	    {} \
+	    "pr28875.so" \
+	] \
+	[list \
+	    "Build pr28875" \
+	    "$NOPIE_LDFLAGS -Wl,--no-as-needed tmpdir/pr28875.so" \
+	    "$NOPIE_CFLAGS" \
+	    { pr28875b.c } \
+	    {{error_output "pr28875.err"}} \
+	    "pr28875" \
+	] \
+	[list \
+	    "Build pr21997-1" \
+	    "$NOPIE_LDFLAGS -Wl,--no-as-needed,-z,notext tmpdir/pr21997-1.so" \
+	    "$NOPIE_CFLAGS -Wa,-mx86-used-note=yes" \
+	    { pr21997-1b.c } \
+	    {{error_output "pr21997-1.err"}} \
+	    "pr21997-1" \
+	] \
+	[list \
+	    "Build pr32067" \
+	    "-Wl,--oformat,binary -nostdlib -nostartfiles" \
+	    "" \
+	    { start.s ../ld-x86-64/pr32067.s } \
+	    {} \
+	    "pr32067" \
+	] \
     ]
+
+    # The musl C library does not support TEXTRELs.
+    if { ![istarget i?86-*-musl] } {
+	run_ld_link_exec_tests [list \
+	    [list \
+		"Run pr22001-1" \
+		"$NOPIE_LDFLAGS -Wl,-z,nocopyreloc,--no-as-needed,-z,notext tmpdir/pr22001-1.so" \
+		"-Wa,-mx86-used-note=yes" \
+		{ pr22001-1b.c } \
+		"pr22001-1" \
+		"pass.out" \
+		"$NOPIE_CFLAGS" \
+	    ] \
+	]
+    }
 
     run_ld_link_exec_tests [list \
 	[list \
@@ -1283,16 +1360,7 @@ if { [isnative]
 	    "pass.out" \
 	    "$NOPIE_CFLAGS" \
 	] \
-	[list \
-	    "Run pr22001-1" \
-	    "$NOPIE_LDFLAGS -Wl,-z,nocopyreloc,--no-as-needed,-z,notext tmpdir/pr22001-1.so" \
-	    "-Wa,-mx86-used-note=yes" \
-	    { pr22001-1b.c } \
-	    "pr22001-1" \
-	    "pass.out" \
-	    "$NOPIE_CFLAGS" \
-	] \
-	[list \
+ 	[list \
 	    "Run pr22001-1 (PIE 1)" \
 	    "$NOPIE_LDFLAGS -Wl,-z,nocopyreloc,--no-as-needed tmpdir/pr22001-1.so" \
 	    "-Wa,-mx86-used-note=yes" \
@@ -1325,15 +1393,6 @@ if { [isnative]
 	    "pr22001-1-pic-2" \
 	    "pass.out" \
 	    "-fPIC" \
-	] \
-	[list \
-	    "Run pr21997-1" \
-	    "$NOPIE_LDFLAGS -Wl,--no-as-needed,-z,notext tmpdir/pr21997-1.so" \
-	    "-Wa,-mx86-used-note=yes" \
-	    { pr21997-1b.c } \
-	    "pr21997-1" \
-	    "pass.out" \
-	    "$NOPIE_CFLAGS" \
 	] \
 	[list \
 	    "Run pr21997-1 (PIC 1)" \

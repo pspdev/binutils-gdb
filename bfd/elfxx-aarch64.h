@@ -1,5 +1,5 @@
 /* AArch64-specific backend routines.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -94,6 +94,17 @@ extern bool elf32_aarch64_size_stubs
    struct bfd_section * (*) (const char *, struct bfd_section *),
    void (*) (void));
 extern bool elf32_aarch64_build_stubs
+  (struct bfd_link_info *);
+
+/* AArch64 relative relocation packing support for ELF64.  */
+extern bool elf64_aarch64_size_relative_relocs
+  (struct bfd_link_info *, bool *);
+extern bool elf64_aarch64_finish_relative_relocs
+  (struct bfd_link_info *);
+/* AArch64 relative relocation packing support for ELF32.  */
+extern bool elf32_aarch64_size_relative_relocs
+  (struct bfd_link_info *, bool *);
+extern bool elf32_aarch64_finish_relative_relocs
   (struct bfd_link_info *);
 
 /* Take the PAGE component of an address or offset.  */

@@ -11,12 +11,16 @@
 #include "sim-options.h"
 #include "sim-signal.h"
 
-#include "gdb/sim-d10v.h"
+#include "sim/sim-d10v.h"
 #include "gdb/signals.h"
 
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+
+#include "d10v-sim.h"
+
+#include "target-newlib-syscall.h"
 
 enum _leftright { LEFT_FIRST, RIGHT_FIRST };
 
@@ -30,23 +34,23 @@ int old_segment_mapping;
 
 unsigned long ins_type_counters[ (int)INS_MAX ];
 
-uint16 OP[4];
+uint16_t OP[4];
 
 static long hash (long insn, int format);
-static struct hash_entry *lookup_hash (SIM_DESC, SIM_CPU *, uint32 ins, int size);
-static void get_operands (struct simops *s, uint32 ins);
-static void do_long (SIM_DESC, SIM_CPU *, uint32 ins);
-static void do_2_short (SIM_DESC, SIM_CPU *, uint16 ins1, uint16 ins2, enum _leftright leftright);
-static void do_parallel (SIM_DESC, SIM_CPU *, uint16 ins1, uint16 ins2);
+static struct hash_entry *lookup_hash (SIM_DESC, SIM_CPU *, uint32_t ins, int size);
+static void get_operands (struct simops *s, uint32_t ins);
+static void do_long (SIM_DESC, SIM_CPU *, uint32_t ins);
+static void do_2_short (SIM_DESC, SIM_CPU *, uint16_t ins1, uint16_t ins2, enum _leftright leftright);
+static void do_parallel (SIM_DESC, SIM_CPU *, uint16_t ins1, uint16_t ins2);
 static char *add_commas (char *buf, int sizeof_buf, unsigned long value);
-static INLINE uint8 *map_memory (SIM_DESC, SIM_CPU *, unsigned phys_addr);
+static INLINE uint8_t *map_memory (SIM_DESC, SIM_CPU *, unsigned phys_addr);
 
 #define MAX_HASH  63
 struct hash_entry
 {
   struct hash_entry *next;
-  uint32 opcode;
-  uint32 mask;
+  uint32_t opcode;
+  uint32_t mask;
   int size;
   struct simops *ops;
 };
@@ -63,7 +67,7 @@ hash (long insn, int format)
 }
 
 INLINE static struct hash_entry *
-lookup_hash (SIM_DESC sd, SIM_CPU *cpu, uint32 ins, int size)
+lookup_hash (SIM_DESC sd, SIM_CPU *cpu, uint32_t ins, int size)
 {
   struct hash_entry *h;
 
@@ -82,15 +86,15 @@ lookup_hash (SIM_DESC sd, SIM_CPU *cpu, uint32 ins, int size)
 }
 
 INLINE static void
-get_operands (struct simops *s, uint32 ins)
+get_operands (struct simops *s, uint32_t ins)
 {
-  int i, shift, bits, flags;
-  uint32 mask;
+  int i, shift, bits;
+  uint32_t mask;
   for (i=0; i < s->numops; i++)
     {
       shift = s->operands[3*i];
       bits = s->operands[3*i+1];
-      flags = s->operands[3*i+2];
+      /* flags = s->operands[3*i+2]; */
       mask = 0x7FFFFFFF >> (31 - bits);
       OP[i] = (ins >> shift) & mask;
     }
@@ -100,7 +104,7 @@ get_operands (struct simops *s, uint32 ins)
 }
 
 static void
-do_long (SIM_DESC sd, SIM_CPU *cpu, uint32 ins)
+do_long (SIM_DESC sd, SIM_CPU *cpu, uint32_t ins)
 {
   struct hash_entry *h;
 #ifdef DEBUG
@@ -117,7 +121,7 @@ do_long (SIM_DESC sd, SIM_CPU *cpu, uint32 ins)
 }
 
 static void
-do_2_short (SIM_DESC sd, SIM_CPU *cpu, uint16 ins1, uint16 ins2, enum _leftright leftright)
+do_2_short (SIM_DESC sd, SIM_CPU *cpu, uint16_t ins1, uint16_t ins2, enum _leftright leftright)
 {
   struct hash_entry *h;
   enum _ins_type first, second;
@@ -169,7 +173,7 @@ do_2_short (SIM_DESC sd, SIM_CPU *cpu, uint16 ins1, uint16 ins2, enum _leftright
 }
 
 static void
-do_parallel (SIM_DESC sd, SIM_CPU *cpu, uint16 ins1, uint16 ins2)
+do_parallel (SIM_DESC sd, SIM_CPU *cpu, uint16_t ins1, uint16_t ins2)
 {
   struct hash_entry *h1, *h2;
 #ifdef DEBUG
@@ -291,7 +295,7 @@ enum
 static void
 set_dmap_register (SIM_DESC sd, int reg_nr, unsigned long value)
 {
-  uint8 *raw = map_memory (sd, NULL, SIM_D10V_MEMORY_DATA
+  uint8_t *raw = map_memory (sd, NULL, SIM_D10V_MEMORY_DATA
 			   + DMAP0_OFFSET + 2 * reg_nr);
   WRITE_16 (raw, value);
 #ifdef DEBUG
@@ -305,7 +309,7 @@ set_dmap_register (SIM_DESC sd, int reg_nr, unsigned long value)
 static unsigned long
 dmap_register (SIM_DESC sd, SIM_CPU *cpu, void *regcache, int reg_nr)
 {
-  uint8 *raw = map_memory (sd, cpu, SIM_D10V_MEMORY_DATA
+  uint8_t *raw = map_memory (sd, cpu, SIM_D10V_MEMORY_DATA
 			   + DMAP0_OFFSET + 2 * reg_nr);
   return READ_16 (raw);
 }
@@ -313,7 +317,7 @@ dmap_register (SIM_DESC sd, SIM_CPU *cpu, void *regcache, int reg_nr)
 static void
 set_imap_register (SIM_DESC sd, int reg_nr, unsigned long value)
 {
-  uint8 *raw = map_memory (sd, NULL, SIM_D10V_MEMORY_DATA
+  uint8_t *raw = map_memory (sd, NULL, SIM_D10V_MEMORY_DATA
 			   + IMAP0_OFFSET + 2 * reg_nr);
   WRITE_16 (raw, value);
 #ifdef DEBUG
@@ -327,7 +331,7 @@ set_imap_register (SIM_DESC sd, int reg_nr, unsigned long value)
 static unsigned long
 imap_register (SIM_DESC sd, SIM_CPU *cpu, void *regcache, int reg_nr)
 {
-  uint8 *raw = map_memory (sd, cpu, SIM_D10V_MEMORY_DATA
+  uint8_t *raw = map_memory (sd, cpu, SIM_D10V_MEMORY_DATA
 			   + IMAP0_OFFSET + 2 * reg_nr);
   return READ_16 (raw);
 }
@@ -595,11 +599,11 @@ sim_d10v_translate_addr (SIM_DESC sd,
    is assumed that the client has already ensured that the access
    isn't going to cross a segment boundary. */
 
-uint8 *
+uint8_t *
 map_memory (SIM_DESC sd, SIM_CPU *cpu, unsigned phys_addr)
 {
-  uint8 **memory;
-  uint8 *raw;
+  uint8_t **memory;
+  uint8_t *raw;
   unsigned offset;
   int segment = ((phys_addr >> 24) & 0xff);
   
@@ -662,12 +666,12 @@ map_memory (SIM_DESC sd, SIM_CPU *cpu, unsigned phys_addr)
 
 static int
 xfer_mem (SIM_DESC sd,
-	  SIM_ADDR virt,
+	  address_word virt,
 	  unsigned char *buffer,
-	  int size,
+	  uint64_t size,
 	  int write_p)
 {
-  uint8 *memory;
+  uint8_t *memory;
   unsigned long phys;
   int phys_size;
   phys_size = sim_d10v_translate_addr (sd, NULL, virt, size, &phys, NULL,
@@ -682,11 +686,11 @@ xfer_mem (SIM_DESC sd,
     {
       sim_io_printf
 	(sd,
-	 "sim_%s %d bytes: 0x%08" PRIxTA " (%s) -> 0x%08lx (%s) -> 0x%08lx (%s)\n",
+	 "sim_%s %d bytes: 0x%08" PRIxTA " (%s) -> 0x%08lx (%s) -> %p (%s)\n",
 	 write_p ? "write" : "read",
 	 phys_size, virt, last_from,
 	 phys, last_to,
-	 (long) memory, last_segname);
+	 memory, last_segname);
     }
 #endif
 
@@ -703,8 +707,8 @@ xfer_mem (SIM_DESC sd,
 }
 
 
-int
-sim_write (SIM_DESC sd, SIM_ADDR addr, const unsigned char *buffer, int size)
+uint64_t
+sim_write (SIM_DESC sd, uint64_t addr, const void *buffer, uint64_t size)
 {
   /* FIXME: this should be performing a virtual transfer */
   /* FIXME: We cast the const away, but it's safe because xfer_mem only reads
@@ -712,8 +716,8 @@ sim_write (SIM_DESC sd, SIM_ADDR addr, const unsigned char *buffer, int size)
   return xfer_mem (sd, addr, (void *) buffer, size, 1);
 }
 
-int
-sim_read (SIM_DESC sd, SIM_ADDR addr, unsigned char *buffer, int size)
+uint64_t
+sim_read (SIM_DESC sd, uint64_t addr, void *buffer, uint64_t size)
 {
   /* FIXME: this should be performing a virtual transfer */
   return xfer_mem (sd, addr, buffer, size, 0);
@@ -741,8 +745,8 @@ free_state (SIM_DESC sd)
   sim_state_free (sd);
 }
 
-static int d10v_reg_fetch (SIM_CPU *, int, unsigned char *, int);
-static int d10v_reg_store (SIM_CPU *, int, unsigned char *, int);
+static int d10v_reg_fetch (SIM_CPU *, int, void *, int);
+static int d10v_reg_store (SIM_CPU *, int, const void *, int);
 
 SIM_DESC
 sim_open (SIM_OPEN_KIND kind, host_callback *cb,
@@ -758,9 +762,10 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
 
   /* Set default options before parsing user options.  */
   current_alignment = STRICT_ALIGNMENT;
+  cb->syscall_map = cb_d10v_syscall_map;
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
-  if (sim_cpu_alloc_all (sd, 1) != SIM_RC_OK)
+  if (sim_cpu_alloc_all (sd, 0) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -780,10 +785,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
     }
 
   /* Check for/establish the a reference program image.  */
-  if (sim_analyze_program (sd,
-			   (STATE_PROG_ARGV (sd) != NULL
-			    ? *STATE_PROG_ARGV (sd)
-			    : NULL), abfd) != SIM_RC_OK)
+  if (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -866,16 +868,16 @@ sim_open (SIM_OPEN_KIND kind, host_callback *cb,
   return sd;
 }
 
-uint8 *
-dmem_addr (SIM_DESC sd, SIM_CPU *cpu, uint16 offset)
+uint8_t *
+dmem_addr (SIM_DESC sd, SIM_CPU *cpu, uint16_t offset)
 {
   unsigned long phys;
-  uint8 *mem;
+  uint8_t *mem;
   int phys_size;
 
   /* Note: DMEM address range is 0..0x10000. Calling code can compute
      things like ``0xfffe + 0x0e60 == 0x10e5d''.  Since offset's type
-     is uint16 this is modulo'ed onto 0x0e5d. */
+     is uint16_t this is modulo'ed onto 0x0e5d. */
 
   phys_size = sim_d10v_translate_dmap_addr (sd, cpu, offset, 1, &phys, NULL,
 					    dmap_register);
@@ -887,20 +889,20 @@ dmem_addr (SIM_DESC sd, SIM_CPU *cpu, uint16 offset)
     {
       sim_io_printf
 	(sd,
-	 "mem: 0x%08x (%s) -> 0x%08lx %d (%s) -> 0x%08lx (%s)\n",
+	 "mem: 0x%08x (%s) -> 0x%08lx %d (%s) -> %p (%s)\n",
 	 offset, last_from,
 	 phys, phys_size, last_to,
-	 (long) mem, last_segname);
+	 mem, last_segname);
     }
 #endif
   return mem;
 }
 
-uint8 *
-imem_addr (SIM_DESC sd, SIM_CPU *cpu, uint32 offset)
+uint8_t *
+imem_addr (SIM_DESC sd, SIM_CPU *cpu, uint32_t offset)
 {
   unsigned long phys;
-  uint8 *mem;
+  uint8_t *mem;
   int phys_size = sim_d10v_translate_imap_addr (sd, cpu, offset, 1, &phys, NULL,
 						imap_register);
   if (phys_size == 0)
@@ -911,10 +913,10 @@ imem_addr (SIM_DESC sd, SIM_CPU *cpu, uint32 offset)
     {
       sim_io_printf
 	(sd,
-	 "mem: 0x%08x (%s) -> 0x%08lx %d (%s) -> 0x%08lx (%s)\n",
+	 "mem: 0x%08x (%s) -> 0x%08lx %d (%s) -> %p (%s)\n",
 	 offset, last_from,
 	 phys, phys_size, last_to,
-	 (long) mem, last_segname);
+	 mem, last_segname);
     }
 #endif
   return mem;
@@ -923,12 +925,12 @@ imem_addr (SIM_DESC sd, SIM_CPU *cpu, uint32 offset)
 static void
 step_once (SIM_DESC sd, SIM_CPU *cpu)
 {
-  uint32 inst;
-  uint8 *iaddr;
+  uint32_t inst;
+  uint8_t *iaddr;
 
   /* TODO: Unindent this block.  */
     {
-      iaddr = imem_addr (sd, cpu, (uint32)PC << 2);
+      iaddr = imem_addr (sd, cpu, (uint32_t)PC << 2);
  
       inst = get_longword( iaddr ); 
  
@@ -1041,7 +1043,7 @@ sim_engine_run (SIM_DESC sd,
 }
 
 void
-sim_info (SIM_DESC sd, int verbose)
+sim_info (SIM_DESC sd, bool verbose)
 {
   char buf1[40];
   char buf2[40];
@@ -1171,8 +1173,8 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
     start_address = 0xffc0 << 2;
 #ifdef DEBUG
   if (d10v_debug)
-    sim_io_printf (sd, "sim_create_inferior:  PC=0x%" BFD_VMA_FMT "x\n",
-		   start_address);
+    sim_io_printf (sd, "sim_create_inferior:  PC=0x%" PRIx64 "\n",
+		   (uint64_t) start_address);
 #endif
   {
     SIM_CPU *cpu = STATE_CPU (sd, 0);
@@ -1209,7 +1211,7 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
 }
 
 static int
-d10v_reg_fetch (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
+d10v_reg_fetch (SIM_CPU *cpu, int rn, void *memory, int length)
 {
   SIM_DESC sd = CPU_STATE (cpu);
   int size;
@@ -1293,7 +1295,7 @@ d10v_reg_fetch (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
 }
  
 static int
-d10v_reg_store (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
+d10v_reg_store (SIM_CPU *cpu, int rn, const void *memory, int length)
 {
   SIM_DESC sd = CPU_STATE (cpu);
   int size;

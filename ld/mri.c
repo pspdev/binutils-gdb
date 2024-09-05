@@ -1,5 +1,5 @@
 /* mri.c -- handle MRI style linker scripts
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
    Contributed by Steve Chamberlain <sac@cygnus.com>.
 
    This file is part of the GNU Binutils.
@@ -210,8 +210,8 @@ mri_draw_tree (void)
 	    base = p->vma ? p->vma : exp_nameop (NAME, ".");
 
 	  lang_enter_output_section_statement (p->name, base,
-					       p->ok_to_load ? normal_section : noload_section,
-					       align, subalign, NULL, 0, 0);
+	    p->ok_to_load ? normal_section : noload_section, 0,
+	    align, subalign, NULL, 0, 0);
 	  base = 0;
 	  tmp = (struct wildcard_list *) xmalloc (sizeof *tmp);
 	  tmp->next = NULL;

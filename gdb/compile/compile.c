@@ -1,6 +1,6 @@
 /* General Compile and inject code
 
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,15 +17,15 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
-#include "top.h"
+#include "progspace.h"
+#include "ui.h"
 #include "ui-out.h"
 #include "command.h"
 #include "cli/cli-script.h"
 #include "cli/cli-utils.h"
 #include "cli/cli-option.h"
 #include "completer.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "compile.h"
 #include "compile-internal.h"
 #include "compile-object-load.h"
@@ -40,10 +40,11 @@
 #include "osabi.h"
 #include "gdbsupport/gdb_wait.h"
 #include "valprint.h"
-#include "gdbsupport/gdb_optional.h"
+#include <optional>
 #include "gdbsupport/gdb_unlinker.h"
 #include "gdbsupport/pathstuff.h"
 #include "gdbsupport/scoped_ignore_signal.h"
+#include "gdbsupport/buildargv.h"
 
 
 
@@ -71,6 +72,19 @@ struct symbol_error
      hash table.  */
 
   char *message;
+};
+
+/* An object that maps a gdb type to a gcc type.  */
+
+struct type_map_instance
+{
+  /* The gdb type.  */
+
+  struct type *type;
+
+  /* The corresponding gcc type handle.  */
+
+  gcc_type gcc_type_handle;
 };
 
 /* Hash a type_map_instance.  */
@@ -232,7 +246,7 @@ static void
 show_compile_debug (struct ui_file *file, int from_tty,
 		    struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Compile debugging is %s.\n"), value);
+  gdb_printf (file, _("Compile debugging is %s.\n"), value);
 }
 
 
@@ -296,8 +310,8 @@ compile_file_command (const char *args, int from_tty)
     error (_("You must provide a filename for this command."));
 
   args = skip_spaces (args);
-  gdb::unique_xmalloc_ptr<char> abspath = gdb_abspath (args);
-  std::string buffer = string_printf ("#include \"%s\"\n", abspath.get ());
+  std::string abspath = gdb_abspath (args);
+  std::string buffer = string_printf ("#include \"%s\"\n", abspath.c_str ());
   eval_compile_command (NULL, buffer.c_str (), scope, NULL);
 }
 
@@ -413,23 +427,6 @@ compile_print_command (const char *arg, int from_tty)
     }
 }
 
-/* A cleanup function to remove a directory and all its contents.  */
-
-static void
-do_rmdir (void *arg)
-{
-  const char *dir = (const char *) arg;
-  char *zap;
-  int wstat;
-
-  gdb_assert (startswith (dir, TMP_PREFIX));
-  zap = concat ("rm -rf ", dir, (char *) NULL);
-  wstat = system (zap);
-  if (wstat == -1 || !WIFEXITED (wstat) || WEXITSTATUS (wstat) != 0)
-    warning (_("Could not remove temporary directory %s"), dir);
-  XDELETEVEC (zap);
-}
-
 /* Return the name of the temporary directory to use for .o files, and
    arrange for the directory to be removed at shutdown.  */
 
@@ -451,7 +448,18 @@ get_compile_file_tempdir (void)
     perror_with_name (_("Could not make temporary directory"));
 
   tempdir_name = xstrdup (tempdir_name);
-  make_final_cleanup (do_rmdir, tempdir_name);
+  add_final_cleanup ([] ()
+    {
+      char *zap;
+      int wstat;
+
+      gdb_assert (startswith (tempdir_name, TMP_PREFIX));
+      zap = concat ("rm -rf ", tempdir_name, (char *) NULL);
+      wstat = system (zap);
+      if (wstat == -1 || !WIFEXITED (wstat) || WEXITSTATUS (wstat) != 0)
+	warning (_("Could not remove temporary directory %s"), tempdir_name);
+      XDELETEVEC (zap);
+    });
   return tempdir_name;
 }
 
@@ -480,22 +488,38 @@ get_expr_block_and_pc (CORE_ADDR *pc)
 
   if (block == NULL)
     {
-      struct symtab_and_line cursal = get_current_source_symtab_and_line ();
+      symtab_and_line cursal
+	= get_current_source_symtab_and_line (current_program_space);
 
       if (cursal.symtab)
-	block = BLOCKVECTOR_BLOCK (SYMTAB_BLOCKVECTOR (cursal.symtab),
-				   STATIC_BLOCK);
+	block = cursal.symtab->compunit ()->blockvector ()->static_block ();
+
       if (block != NULL)
-	*pc = BLOCK_ENTRY_PC (block);
+	*pc = block->entry_pc ();
     }
   else
-    *pc = BLOCK_ENTRY_PC (block);
+    *pc = block->entry_pc ();
 
   return block;
 }
 
 /* String for 'set compile-args' and 'show compile-args'.  */
-static char *compile_args;
+static std::string compile_args =
+  /* Override flags possibly coming from DW_AT_producer.  */
+  "-O0 -gdwarf-4"
+  /* We use -fPIE Otherwise GDB would need to reserve space large enough for
+     any object file in the inferior in advance to get the final address when
+     to link the object file to and additionally the default system linker
+     script would need to be modified so that one can specify there the
+     absolute target address.
+     -fPIC is not used at is would require from GDB to generate .got.  */
+  " -fPIE"
+  /* We want warnings, except for some commonly happening for GDB commands.  */
+  " -Wall "
+  " -Wno-unused-but-set-variable"
+  " -Wno-unused-variable"
+  /* Override CU's possible -fstack-protector-strong.  */
+  " -fno-stack-protector";
 
 /* Parsed form of COMPILE_ARGS.  */
 static gdb_argv compile_args_argv;
@@ -505,7 +529,7 @@ static gdb_argv compile_args_argv;
 static void
 set_compile_args (const char *args, int from_tty, struct cmd_list_element *c)
 {
-  compile_args_argv = gdb_argv (compile_args);
+  compile_args_argv = gdb_argv (compile_args.c_str ());
 }
 
 /* Implement 'show compile-args'.  */
@@ -514,13 +538,13 @@ static void
 show_compile_args (struct ui_file *file, int from_tty,
 		   struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Compile command command-line arguments "
-			    "are \"%s\".\n"),
-		    value);
+  gdb_printf (file, _("Compile command command-line arguments "
+		      "are \"%s\".\n"),
+	      value);
 }
 
 /* String for 'set compile-gcc' and 'show compile-gcc'.  */
-static char *compile_gcc;
+static std::string compile_gcc;
 
 /* Implement 'show compile-gcc'.  */
 
@@ -528,8 +552,8 @@ static void
 show_compile_gcc (struct ui_file *file, int from_tty,
 		  struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Compile command GCC driver filename is \"%s\".\n"),
-		    value);
+  gdb_printf (file, _("Compile command GCC driver filename is \"%s\".\n"),
+	      value);
 }
 
 /* Return DW_AT_producer parsed for get_selected_frame () (if any).
@@ -545,11 +569,11 @@ get_selected_pc_producer_options (void)
   struct compunit_symtab *symtab = find_pc_compunit_symtab (pc);
   const char *cs;
 
-  if (symtab == NULL || symtab->producer == NULL
-      || !startswith (symtab->producer, "GNU "))
+  if (symtab == NULL || symtab->producer () == NULL
+      || !startswith (symtab->producer (), "GNU "))
     return NULL;
 
-  cs = symtab->producer;
+  cs = symtab->producer ();
   while (*cs != 0 && *cs != '-')
     cs = skip_spaces (skip_to_space (cs));
   if (*cs != '-')
@@ -631,7 +655,7 @@ get_args (const compile_instance *compiler, struct gdbarch *gdbarch)
 static void
 print_callback (void *ignore, const char *message)
 {
-  fputs_filtered (message, gdb_stderr);
+  gdb_puts (message, gdb_stderr);
 }
 
 /* Process the compilation request.  On success it returns the object
@@ -692,17 +716,17 @@ compile_to_object (struct command_line *cmd, const char *cmd_string,
     = current_language->compute_program (compiler.get (), input, gdbarch,
 					 expr_block, expr_pc);
   if (compile_debug)
-    fprintf_unfiltered (gdb_stdlog, "debug output:\n\n%s", code.c_str ());
+    gdb_printf (gdb_stdlog, "debug output:\n\n%s", code.c_str ());
 
   compiler->set_verbose (compile_debug);
 
-  if (compile_gcc[0] != 0)
+  if (!compile_gcc.empty ())
     {
       if (compiler->version () < GCC_FE_VERSION_1)
 	error (_("Command 'set compile-gcc' requires GCC version 6 or higher "
 		 "(libcc1 interface version 1 or higher)"));
 
-      compiler->set_driver_filename (compile_gcc);
+      compiler->set_driver_filename (compile_gcc.c_str ());
     }
   else
     {
@@ -731,15 +755,15 @@ compile_to_object (struct command_line *cmd, const char *cmd_string,
     {
       int argi;
 
-      fprintf_unfiltered (gdb_stdlog, "Passing %d compiler options:\n", argc);
+      gdb_printf (gdb_stdlog, "Passing %d compiler options:\n", argc);
       for (argi = 0; argi < argc; argi++)
-	fprintf_unfiltered (gdb_stdlog, "Compiler option %d: <%s>\n",
-			    argi, argv[argi]);
+	gdb_printf (gdb_stdlog, "Compiler option %d: <%s>\n",
+		    argi, argv[argi]);
     }
 
   compile_file_names fnames = get_new_file_names ();
 
-  gdb::optional<gdb::unlinker> source_remover;
+  std::optional<gdb::unlinker> source_remover;
 
   {
     gdb_file_up src = gdb_fopen_cloexec (fnames.source_file (), "w");
@@ -753,8 +777,8 @@ compile_to_object (struct command_line *cmd, const char *cmd_string,
   }
 
   if (compile_debug)
-    fprintf_unfiltered (gdb_stdlog, "source file produced: %s\n\n",
-			fnames.source_file ());
+    gdb_printf (gdb_stdlog, "source file produced: %s\n\n",
+		fnames.source_file ());
 
   /* If we don't do this, then GDB simply exits
      when the compiler dies.  */
@@ -767,8 +791,8 @@ compile_to_object (struct command_line *cmd, const char *cmd_string,
     error (_("Compilation failed."));
 
   if (compile_debug)
-    fprintf_unfiltered (gdb_stdlog, "object file produced: %s\n\n",
-			fnames.object_file ());
+    gdb_printf (gdb_stdlog, "object file produced: %s\n\n",
+		fnames.object_file ());
 
   /* Keep the source file.  */
   source_remover->keep ();
@@ -1029,23 +1053,9 @@ String quoting is parsed like in shell, for example:\n\
   -mno-align-double \"-I/dir with a space/include\""),
 			  set_compile_args, show_compile_args, &setlist, &showlist);
 
-  /* Override flags possibly coming from DW_AT_producer.  */
-  compile_args = xstrdup ("-O0 -gdwarf-4"
-  /* We use -fPIE Otherwise GDB would need to reserve space large enough for
-     any object file in the inferior in advance to get the final address when
-     to link the object file to and additionally the default system linker
-     script would need to be modified so that one can specify there the
-     absolute target address.
-     -fPIC is not used at is would require from GDB to generate .got.  */
-			 " -fPIE"
-  /* We want warnings, except for some commonly happening for GDB commands.  */
-			 " -Wall "
-			 " -Wno-unused-but-set-variable"
-			 " -Wno-unused-variable"
-  /* Override CU's possible -fstack-protector-strong.  */
-			 " -fno-stack-protector"
-  );
-  set_compile_args (compile_args, 0, NULL);
+
+  /* Initialize compile_args_argv.  */
+  set_compile_args (compile_args.c_str (), 0, NULL);
 
   add_setshow_optional_filename_cmd ("compile-gcc", class_support,
 				     &compile_gcc,
@@ -1058,5 +1068,4 @@ It should be absolute filename of the gcc executable.\n\
 If empty the default target triplet will be searched in $PATH."),
 				     NULL, show_compile_gcc, &setlist,
 				     &showlist);
-  compile_gcc = xstrdup ("");
 }

@@ -1,6 +1,6 @@
 #objdump: -rst --special-syms -mips16
 #name: MIPS16 reloc
-#as: -32 -mips16
+#as: -32 -mips16 -mips1 -mpdr
 
 # Check MIPS16 reloc processing
 
@@ -21,7 +21,7 @@ SYMBOL TABLE:
 
 
 RELOCATION RECORDS FOR \[foo\]:
-OFFSET [ ]+ TYPE              VALUE 
+OFFSET +TYPE +VALUE
 0+0000000 R_MIPS_32         l1
 0+0000004 R_MIPS_32         l1
 0+0000008 R_MIPS_32         \.L1.*1

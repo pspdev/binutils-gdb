@@ -1,5 +1,5 @@
 /* Low level interface to ptrace, for GDB when running under Unix.
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "frame.h"
 #include "inferior.h"
 #include "command.h"
@@ -29,7 +28,7 @@
 #include <fcntl.h>
 #include "gdbsupport/gdb_select.h"
 
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #ifdef HAVE_TERMIOS_H
 #include <termios.h>
 #endif
@@ -38,6 +37,10 @@
 
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
+#endif
+
+#ifdef __CYGWIN__
+#include <sys/cygwin.h>
 #endif
 
 #ifndef O_NOCTTY
@@ -113,9 +116,9 @@ static struct terminal_info *get_inflow_inferior_data (struct inferior *);
    we save our handlers in these two variables and set SIGINT and SIGQUIT
    to SIG_IGN.  */
 
-static sighandler_t sigint_ours;
+static std::optional<sighandler_t> sigint_ours;
 #ifdef SIGQUIT
-static sighandler_t sigquit_ours;
+static std::optional<sighandler_t> sigquit_ours;
 #endif
 
 /* The name of the tty (from the `tty' command) that we're giving to
@@ -172,8 +175,8 @@ gdb_has_a_terminal (void)
 
 #define	OOPSY(what)	\
   if (result == -1)	\
-    fprintf_unfiltered(gdb_stderr, "[%s failed in terminal_inferior: %s]\n", \
-	    what, safe_strerror (errno))
+    gdb_printf(gdb_stderr, "[%s failed in terminal_inferior: %s]\n",	\
+	       what, safe_strerror (errno))
 
 /* Initialize the terminal settings we record for the inferior,
    before we actually run the inferior.  */
@@ -212,10 +215,9 @@ gdb_save_tty_state (void)
     }
 }
 
-/* Try to determine whether TTY is GDB's input terminal.  Returns
-   TRIBOOL_UNKNOWN if we can't tell.  */
+/* See inferior.h.  */
 
-static tribool
+tribool
 is_gdb_terminal (const char *tty)
 {
   struct stat gdb_tty;
@@ -234,26 +236,6 @@ is_gdb_terminal (const char *tty)
 	   && gdb_tty.st_ino == other_tty.st_ino)
 	  ? TRIBOOL_TRUE
 	  : TRIBOOL_FALSE);
-}
-
-/* Helper for sharing_input_terminal.  Try to determine whether
-   inferior INF is using the same TTY for input as GDB is.  Returns
-   TRIBOOL_UNKNOWN if we can't tell.  */
-
-static tribool
-sharing_input_terminal_1 (inferior *inf)
-{
-  /* Using host-dependent code here is fine, because the
-     child_terminal_foo functions are meant to be used by child/native
-     targets.  */
-#if defined (__linux__) || defined (__sun__)
-  char buf[100];
-
-  xsnprintf (buf, sizeof (buf), "/proc/%d/fd/0", inf->pid);
-  return is_gdb_terminal (buf);
-#else
-  return TRIBOOL_UNKNOWN;
-#endif
 }
 
 /* Return true if the inferior is using the same TTY for input as GDB
@@ -287,7 +269,7 @@ sharing_input_terminal (inferior *inf)
 {
   terminal_info *tinfo = get_inflow_inferior_data (inf);
 
-  tribool res = sharing_input_terminal_1 (inf);
+  tribool res = sharing_input_terminal (inf->pid);
 
   if (res == TRIBOOL_UNKNOWN)
     {
@@ -353,7 +335,7 @@ child_terminal_inferior (struct target_ops *self)
 
       if (!job_control)
 	{
-	  sigint_ours = signal (SIGINT, SIG_IGN);
+	  sigint_ours = install_sigint_handler (SIG_IGN);
 #ifdef SIGQUIT
 	  sigquit_ours = signal (SIGQUIT, SIG_IGN);
 #endif
@@ -366,11 +348,25 @@ child_terminal_inferior (struct target_ops *self)
 	     then restore whatever was the foreground pgrp the last
 	     time the inferior was running.  See also comments
 	     describing terminal_state::process_group.  */
-#ifdef HAVE_GETPGID
-	  result = tcsetpgrp (0, getpgid (inf->pid));
-#else
-	  result = tcsetpgrp (0, tinfo->process_group);
+	  pid_t pgrp = tinfo->process_group;
+#ifdef __CYGWIN__
+	  /* The Windows native target uses Win32 routines to run or
+	     attach to processes (CreateProcess / DebugActiveProcess),
+	     so a Cygwin inferior has a Windows PID, rather than a
+	     Cygwin PID.  We want to pass the Cygwin PID to Cygwin
+	     tcsetpgrp if we have a Cygwin inferior, so try to convert
+	     first.  If we have a non-Cygwin inferior, we'll end up
+	     passing down the WINPID to tcsetpgrp, stored in
+	     terminal_state::process_group.  tcsetpgrp still succeeds
+	     in that case, and it seems preferable to switch the
+	     foreground pgrp away from GDB, for consistency.  */
+	  pid_t cygpid = cygwin_internal (CW_WINPID_TO_CYGWIN_PID, inf->pid);
+	  if (cygpid <= cygwin_internal (CW_MAX_CYGWIN_PID))
+	    pgrp = getpgid (cygpid);
+#elif defined (HAVE_GETPGID)
+	  pgrp = getpgid (inf->pid);
 #endif
+	  result = tcsetpgrp (0, pgrp);
 	  if (result == -1)
 	    {
 #if 0
@@ -382,7 +378,7 @@ child_terminal_inferior (struct target_ops *self)
 		 process running on another terminal and we couldn't
 		 tell whether it was sharing GDB's terminal (and so
 		 assumed yes).  */
-	      fprintf_unfiltered
+	      gdb_printf
 		(gdb_stderr,
 		 "[tcsetpgrp failed in child_terminal_inferior: %s]\n",
 		 safe_strerror (errno));
@@ -492,18 +488,22 @@ child_terminal_ours_1 (target_terminal_state desired_state)
 	     used to check for an error here, so perhaps there are other
 	     such situations as well.  */
 	  if (result == -1)
-	    fprintf_unfiltered (gdb_stderr,
-				"[tcsetpgrp failed in child_terminal_ours: %s]\n",
-				safe_strerror (errno));
+	    gdb_printf (gdb_stderr,
+			"[tcsetpgrp failed in child_terminal_ours: %s]\n",
+			safe_strerror (errno));
 #endif
 #endif /* termios */
 	}
 
       if (!job_control && desired_state == target_terminal_state::is_ours)
 	{
-	  signal (SIGINT, sigint_ours);
+	  if (sigint_ours.has_value ())
+	    install_sigint_handler (*sigint_ours);
+	  sigint_ours.reset ();
 #ifdef SIGQUIT
-	  signal (SIGQUIT, sigquit_ours);
+	  if (sigquit_ours.has_value ())
+	    signal (SIGQUIT, *sigquit_ours);
+	  sigquit_ours.reset ();
 #endif
 	}
 
@@ -525,7 +525,7 @@ child_interrupt (struct target_ops *self)
   thread_info *resumed = NULL;
   for (thread_info *thr : all_non_exited_threads ())
     {
-      if (thr->executing)
+      if (thr->executing ())
 	{
 	  resumed = thr;
 	  break;
@@ -599,7 +599,7 @@ child_pass_ctrlc (struct target_ops *self)
 }
 
 /* Per-inferior data key.  */
-static const struct inferior_key<terminal_info> inflow_inferior_data;
+static const registry<inferior>::key<terminal_info> inflow_inferior_data;
 
 terminal_info::~terminal_info ()
 {
@@ -681,7 +681,7 @@ child_terminal_info (struct target_ops *self, const char *args, int from_tty)
 
   if (!gdb_has_a_terminal ())
     {
-      printf_filtered (_("This GDB does not control a terminal.\n"));
+      gdb_printf (_("This GDB does not control a terminal.\n"));
       return;
     }
 
@@ -691,8 +691,8 @@ child_terminal_info (struct target_ops *self, const char *args, int from_tty)
   inf = current_inferior ();
   tinfo = get_inflow_inferior_data (inf);
 
-  printf_filtered (_("Inferior's terminal status "
-		     "(currently saved by GDB):\n"));
+  gdb_printf (_("Inferior's terminal status "
+		"(currently saved by GDB):\n"));
 
   /* First the fcntl flags.  */
   {
@@ -700,7 +700,7 @@ child_terminal_info (struct target_ops *self, const char *args, int from_tty)
 
     flags = tinfo->tflags;
 
-    printf_filtered ("File descriptor flags = ");
+    gdb_printf ("File descriptor flags = ");
 
 #ifndef O_ACCMODE
 #define O_ACCMODE (O_RDONLY | O_WRONLY | O_RDWR)
@@ -709,20 +709,20 @@ child_terminal_info (struct target_ops *self, const char *args, int from_tty)
     switch (flags & (O_ACCMODE))
       {
       case O_RDONLY:
-	printf_filtered ("O_RDONLY");
+	gdb_printf ("O_RDONLY");
 	break;
       case O_WRONLY:
-	printf_filtered ("O_WRONLY");
+	gdb_printf ("O_WRONLY");
 	break;
       case O_RDWR:
-	printf_filtered ("O_RDWR");
+	gdb_printf ("O_RDWR");
 	break;
       }
     flags &= ~(O_ACCMODE);
 
 #ifdef O_NONBLOCK
     if (flags & O_NONBLOCK)
-      printf_filtered (" | O_NONBLOCK");
+      gdb_printf (" | O_NONBLOCK");
     flags &= ~O_NONBLOCK;
 #endif
 
@@ -731,27 +731,27 @@ child_terminal_info (struct target_ops *self, const char *args, int from_tty)
        print it as O_NONBLOCK, which is good cause that is what POSIX
        has, and the flag will already be cleared by the time we get here.  */
     if (flags & O_NDELAY)
-      printf_filtered (" | O_NDELAY");
+      gdb_printf (" | O_NDELAY");
     flags &= ~O_NDELAY;
 #endif
 
     if (flags & O_APPEND)
-      printf_filtered (" | O_APPEND");
+      gdb_printf (" | O_APPEND");
     flags &= ~O_APPEND;
 
 #if defined (O_BINARY)
     if (flags & O_BINARY)
-      printf_filtered (" | O_BINARY");
+      gdb_printf (" | O_BINARY");
     flags &= ~O_BINARY;
 #endif
 
     if (flags)
-      printf_filtered (" | 0x%x", flags);
-    printf_filtered ("\n");
+      gdb_printf (" | 0x%x", flags);
+    gdb_printf ("\n");
   }
 
 #ifdef HAVE_TERMIOS_H
-  printf_filtered ("Process group = %d\n", (int) tinfo->process_group);
+  gdb_printf ("Process group = %d\n", (int) tinfo->process_group);
 #endif
 
   serial_print_tty_state (stdin_serial, tinfo->ttystate, gdb_stdout);
@@ -783,7 +783,8 @@ check_syscall (const char *msg, int result)
 {
   if (result < 0)
     {
-      print_sys_errmsg (msg, errno);
+      gdb_printf (gdb_stderr, "%s:%s.\n", msg,
+		  safe_strerror (errno));
       _exit (1);
     }
 }
@@ -886,7 +887,7 @@ set_sigint_trap (void)
 
   if (inf->attach_flag || !tinfo->run_terminal.empty ())
     {
-      osig = signal (SIGINT, pass_signal);
+      osig = install_sigint_handler (pass_signal);
       osig_set = 1;
     }
   else
@@ -898,7 +899,7 @@ clear_sigint_trap (void)
 {
   if (osig_set)
     {
-      signal (SIGINT, osig);
+      install_sigint_handler (osig);
       osig_set = 0;
     }
 }

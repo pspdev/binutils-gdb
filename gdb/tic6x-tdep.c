@@ -1,6 +1,6 @@
 /* Target dependent code for GDB on TI C6x systems.
 
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2024 Free Software Foundation, Inc.
    Contributed by Andrew Jenner <andrew@codesourcery.com>
    Contributed by Yao Qi <yao@codesourcery.com>
 
@@ -19,7 +19,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "extract-store-integer.h"
 #include "frame.h"
 #include "frame-unwind.h"
 #include "frame-base.h"
@@ -29,7 +29,7 @@
 #include "inferior.h"
 #include "gdbtypes.h"
 #include "gdbcore.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "target.h"
 #include "dis-asm.h"
 #include "regcache.h"
@@ -102,9 +102,6 @@ static const int arg_regs[] = { 4, 20, 6, 22, 8, 24, 10, 26, 12, 28 };
 static const char *
 tic6x_register_name (struct gdbarch *gdbarch, int regno)
 {
-  if (regno < 0)
-    return NULL;
-
   if (tdesc_has_registers (gdbarch_target_desc (gdbarch)))
     return tdesc_register_name (gdbarch, regno);
   else if (regno >= ARRAY_SIZE (tic6x_register_names))
@@ -145,7 +142,7 @@ static CORE_ADDR
 tic6x_analyze_prologue (struct gdbarch *gdbarch, const CORE_ADDR start_pc,
 			const CORE_ADDR current_pc,
 			struct tic6x_unwind_cache *cache,
-			struct frame_info *this_frame)
+			const frame_info_ptr &this_frame)
 {
   unsigned int src_reg, base_reg, dst_reg;
   int i;
@@ -325,7 +322,7 @@ tic6x_breakpoint_kind_from_pc (struct gdbarch *gdbarch, CORE_ADDR *pcptr)
 static const gdb_byte *
 tic6x_sw_breakpoint_from_kind (struct gdbarch *gdbarch, int kind, int *size)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  tic6x_gdbarch_tdep *tdep = gdbarch_tdep<tic6x_gdbarch_tdep> (gdbarch);
 
   *size = kind;
 
@@ -343,7 +340,7 @@ tic6x_sw_breakpoint_from_kind (struct gdbarch *gdbarch, int kind, int *size)
 static void
 tic6x_dwarf2_frame_init_reg (struct gdbarch *gdbarch, int regnum,
 			     struct dwarf2_frame_state_reg *reg,
-			     struct frame_info *this_frame)
+			     const frame_info_ptr &this_frame)
 {
   /* Mark the PC as the destination for the return address.  */
   if (regnum == gdbarch_pc_regnum (gdbarch))
@@ -368,7 +365,7 @@ tic6x_dwarf2_frame_init_reg (struct gdbarch *gdbarch, int regnum,
 /* This is the implementation of gdbarch method unwind_pc.  */
 
 static CORE_ADDR
-tic6x_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
+tic6x_unwind_pc (struct gdbarch *gdbarch, const frame_info_ptr &next_frame)
 {
   gdb_byte buf[8];
 
@@ -379,7 +376,7 @@ tic6x_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
 /* Frame base handling.  */
 
 static struct tic6x_unwind_cache*
-tic6x_frame_unwind_cache (struct frame_info *this_frame,
+tic6x_frame_unwind_cache (const frame_info_ptr &this_frame,
 			  void **this_prologue_cache)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
@@ -407,7 +404,7 @@ tic6x_frame_unwind_cache (struct frame_info *this_frame,
 }
 
 static void
-tic6x_frame_this_id (struct frame_info *this_frame, void **this_cache,
+tic6x_frame_this_id (const frame_info_ptr &this_frame, void **this_cache,
 		     struct frame_id *this_id)
 {
   struct tic6x_unwind_cache *cache =
@@ -421,7 +418,7 @@ tic6x_frame_this_id (struct frame_info *this_frame, void **this_cache,
 }
 
 static struct value *
-tic6x_frame_prev_register (struct frame_info *this_frame, void **this_cache,
+tic6x_frame_prev_register (const frame_info_ptr &this_frame, void **this_cache,
 			   int regnum)
 {
   struct tic6x_unwind_cache *cache =
@@ -448,7 +445,7 @@ tic6x_frame_prev_register (struct frame_info *this_frame, void **this_cache,
 }
 
 static CORE_ADDR
-tic6x_frame_base_address (struct frame_info *this_frame, void **this_cache)
+tic6x_frame_base_address (const frame_info_ptr &this_frame, void **this_cache)
 {
   struct tic6x_unwind_cache *info
     = tic6x_frame_unwind_cache (this_frame, this_cache);
@@ -476,7 +473,7 @@ static const struct frame_base tic6x_frame_base =
 
 
 static struct tic6x_unwind_cache *
-tic6x_make_stub_cache (struct frame_info *this_frame)
+tic6x_make_stub_cache (const frame_info_ptr &this_frame)
 {
   struct tic6x_unwind_cache *cache;
 
@@ -492,7 +489,7 @@ tic6x_make_stub_cache (struct frame_info *this_frame)
 }
 
 static void
-tic6x_stub_this_id (struct frame_info *this_frame, void **this_cache,
+tic6x_stub_this_id (const frame_info_ptr &this_frame, void **this_cache,
 		    struct frame_id *this_id)
 {
   struct tic6x_unwind_cache *cache;
@@ -506,7 +503,7 @@ tic6x_stub_this_id (struct frame_info *this_frame, void **this_cache,
 
 static int
 tic6x_stub_unwind_sniffer (const struct frame_unwind *self,
-			   struct frame_info *this_frame,
+			   const frame_info_ptr &this_frame,
 			   void **this_prologue_cache)
 {
   CORE_ADDR addr_in_block;
@@ -598,7 +595,8 @@ tic6x_get_next_pc (struct regcache *regcache, CORE_ADDR pc)
 
       if (inst == TIC6X_INST_SWE)
 	{
-	  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+	  tic6x_gdbarch_tdep *tdep
+	    = gdbarch_tdep<tic6x_gdbarch_tdep> (gdbarch);
 
 	  if (tdep->syscall_next_pc != NULL)
 	    return tdep->syscall_next_pc (get_current_frame ());
@@ -701,7 +699,7 @@ static void
 tic6x_extract_return_value (struct type *valtype, struct regcache *regcache,
 			    enum bfd_endian byte_order, gdb_byte *valbuf)
 {
-  int len = TYPE_LENGTH (valtype);
+  int len = valtype->length ();
 
   /* pointer types are returned in register A4,
      up to 32-bit types in A4
@@ -745,7 +743,7 @@ static void
 tic6x_store_return_value (struct type *valtype, struct regcache *regcache,
 			  enum bfd_endian byte_order, const gdb_byte *valbuf)
 {
-  int len = TYPE_LENGTH (valtype);
+  int len = valtype->length ();
 
   /* return values of up to 8 bytes are returned in A5:A4 */
 
@@ -791,7 +789,7 @@ tic6x_return_value (struct gdbarch *gdbarch, struct value *function,
 	}
     }
 
-  if (TYPE_LENGTH (type) > 8)
+  if (type->length () > 8)
     return RETURN_VALUE_STRUCT_CONVENTION;
 
   if (readbuf)
@@ -809,7 +807,7 @@ tic6x_return_value (struct gdbarch *gdbarch, struct value *function,
 static int
 tic6x_arg_type_alignment (struct type *type)
 {
-  int len = TYPE_LENGTH (check_typedef (type));
+  int len = check_typedef (type)->length ();
   enum type_code typecode = check_typedef (type)->code ();
 
   if (typecode == TYPE_CODE_STRUCT || typecode == TYPE_CODE_UNION)
@@ -847,7 +845,7 @@ tic6x_arg_type_alignment (struct type *type)
 	    return 16;
 	}
       else
-	internal_error (__FILE__, __LINE__, _("unexpected length %d of type"),
+	internal_error (_("unexpected length %d of type"),
 			len);
     }
 }
@@ -866,7 +864,7 @@ tic6x_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   int stack_offset = 4;
   int references_offset = 4;
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  struct type *func_type = value_type (function);
+  struct type *func_type = function->type ();
   /* The first arg passed on stack.  Mostly the first 10 args are passed by
      registers.  */
   int first_arg_on_stack = 10;
@@ -884,7 +882,7 @@ tic6x_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   /* Determine the type of this function.  */
   func_type = check_typedef (func_type);
   if (func_type->code () == TYPE_CODE_PTR)
-    func_type = check_typedef (TYPE_TARGET_TYPE (func_type));
+    func_type = check_typedef (func_type->target_type ());
 
   gdb_assert (func_type->code () == TYPE_CODE_FUNC
 	      || func_type->code () == TYPE_CODE_METHOD);
@@ -897,7 +895,7 @@ tic6x_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   /* Now make space on the stack for the args.  */
   for (argnum = 0; argnum < nargs; argnum++)
     {
-      int len = align_up (TYPE_LENGTH (value_type (args[argnum])), 4);
+      int len = align_up (args[argnum]->type ()->length (), 4);
       if (argnum >= 10 - argreg)
 	references_offset += len;
       stack_offset += len;
@@ -915,11 +913,11 @@ tic6x_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
     {
       const gdb_byte *val;
       struct value *arg = args[argnum];
-      struct type *arg_type = check_typedef (value_type (arg));
-      int len = TYPE_LENGTH (arg_type);
+      struct type *arg_type = check_typedef (arg->type ());
+      int len = arg_type->length ();
       enum type_code typecode = arg_type->code ();
 
-      val = value_contents (arg);
+      val = arg->contents ().data ();
 
       /* Copy the argument to general registers or the stack in
 	 register-sized pieces.  */
@@ -1065,13 +1063,11 @@ tic6x_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
 		}
 	      else
-		internal_error (__FILE__, __LINE__,
-				_("unexpected type %d of arg %d"),
+		internal_error (_("unexpected type %d of arg %d"),
 				typecode, argnum);
 	    }
 	  else
-	    internal_error (__FILE__, __LINE__,
-			    _("unexpected length %d of arg %d"), len, argnum);
+	    internal_error (_("unexpected length %d of arg %d"), len, argnum);
 
 	  addr = sp + stack_offset;
 	  write_memory (addr, val, len);
@@ -1107,7 +1103,7 @@ tic6x_stack_frame_destroyed_p (struct gdbarch *gdbarch, CORE_ADDR pc)
 /* This is the implementation of gdbarch method get_longjmp_target.  */
 
 static int
-tic6x_get_longjmp_target (struct frame_info *frame, CORE_ADDR *pc)
+tic6x_get_longjmp_target (const frame_info_ptr &frame, CORE_ADDR *pc)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
@@ -1140,8 +1136,6 @@ tic6x_return_in_first_hidden_param_p (struct gdbarch *gdbarch,
 static struct gdbarch *
 tic6x_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 {
-  struct gdbarch *gdbarch;
-  struct gdbarch_tdep *tdep;
   tdesc_arch_data_up tdesc_data;
   const struct target_desc *tdesc = info.target_desc;
   int has_gp = 0;
@@ -1216,7 +1210,8 @@ tic6x_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
        arches != NULL;
        arches = gdbarch_list_lookup_by_info (arches->next, &info))
     {
-      tdep = gdbarch_tdep (arches->gdbarch);
+      tic6x_gdbarch_tdep *tdep
+	= gdbarch_tdep<tic6x_gdbarch_tdep> (arches->gdbarch);
 
       if (has_gp != tdep->has_gp)
 	continue;
@@ -1225,10 +1220,11 @@ tic6x_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 	return arches->gdbarch;
     }
 
-  tdep = XCNEW (struct gdbarch_tdep);
+  gdbarch *gdbarch
+    = gdbarch_alloc (&info, gdbarch_tdep_up (new tic6x_gdbarch_tdep));
+  tic6x_gdbarch_tdep *tdep = gdbarch_tdep<tic6x_gdbarch_tdep> (gdbarch);
 
   tdep->has_gp = has_gp;
-  gdbarch = gdbarch_alloc (&info, tdep);
 
   /* Data type sizes.  */
   set_gdbarch_ptr_bit (gdbarch, 32);
@@ -1301,5 +1297,5 @@ void _initialize_tic6x_tdep ();
 void
 _initialize_tic6x_tdep ()
 {
-  register_gdbarch_init (bfd_arch_tic6x, tic6x_gdbarch_init);
+  gdbarch_register (bfd_arch_tic6x, tic6x_gdbarch_init);
 }

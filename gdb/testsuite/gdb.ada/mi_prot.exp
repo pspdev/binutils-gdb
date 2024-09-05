@@ -1,4 +1,4 @@
-# Copyright 2020-2021 Free Software Foundation, Inc.
+# Copyright 2020-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,11 +15,9 @@
 
 load_lib "ada.exp"
 
-if { [skip_ada_tests] } { return -1 }
+require allow_ada_tests
+require {gnatmake_version_at_least 8}
 
-if { ![gnatmake_version_at_least 8] } {
-    return -1
-}
 standard_ada_testfile prot
 
 if {[gdb_compile_ada "${srcfile}" "${binfile}" executable \
@@ -33,7 +31,6 @@ set MIFLAGS "-i=mi"
 mi_clean_restart $binfile
 
 if {[mi_runto_main] < 0} {
-   fail "cannot run to main, testcase aborted"
    return 0
 }
 
@@ -42,8 +39,8 @@ mi_gdb_reinitialize_dir $srcdir/$subdir
 mi_gdb_load ${binfile}
 
 set line [gdb_get_line_number "STOP" ${testdir}/prot.adb]
-mi_continue_to_line $line "continue to protected method"
+mi_continue_to_line "$srcfile:$line" "continue to protected method"
 
 # The bug was that this crashed.
 mi_gdb_test "-stack-list-arguments --no-frame-filters 1" \
-    "\\^done,stack=.*"
+    "\\^done,stack-args=.*"

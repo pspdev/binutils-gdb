@@ -1,4 +1,4 @@
-# Copyright 2021 Free Software Foundation, Inc.
+# Copyright 2021-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,10 +16,7 @@
 # Test to see if gdb is properly single stepping over the
 # displaced plxv instruction.
 
-if { ![istarget powerpc*-*] || [skip_power_isa_3_1_tests] } {
-    verbose "Skipping powerpc ISA 3.1 plxv test."
-    return
-}
+require {istarget powerpc*-*} allow_power_isa_3_1_tests
 
 set retval 0
 
@@ -33,7 +30,7 @@ if { [prepare_for_testing "failed to prepare" $testfile "$srcfile" \
 gdb_test "set radix 0b10000"
 gdb_test "set debug displaced"
 
-if ![runto_main] then {
+if {![runto_main]} {
       return
 }
 

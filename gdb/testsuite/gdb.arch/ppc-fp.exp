@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2021 Free Software Foundation, Inc.
+# Copyright (C) 2008-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,17 +16,9 @@
 
 # Tests for Powerpc floating point register setting and fetching
 
-if ![istarget "powerpc*"] then {
-    verbose "Skipping powerpc floating point register tests."
-    return
-}
+require {istarget "powerpc*"}
 
 standard_testfile
-
-if [get_compiler_info] {
-    warning "get_compiler failed"
-    return -1
-}
 
 if ![test_compiler_info gcc*] {
     # We use GCC's extended asm syntax
@@ -39,12 +31,7 @@ if { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {quie
     return -1
 }
 
-# Start with a fresh gdb.
-
-gdb_exit
-gdb_start
-gdb_reinitialize_dir $srcdir/$subdir
-gdb_load ${binfile}
+clean_restart $binfile
 
 gdb_breakpoint [gdb_get_line_number "Invalid operation."]
 gdb_breakpoint [gdb_get_line_number "Division by zero."]
@@ -66,7 +53,7 @@ gdb_test_multiple "print \$fpscr" "FPSCR exists" {
 }
 
 # Step over invalid operation.
-gdb_test "next" "" ""
+gdb_test "next" "" "next over invalid operation"
 
 # Verify that the following bits are set (See Power ISA for details):
 #
@@ -80,7 +67,7 @@ gdb_test "print/t \$fpscr" " = 10100000001000010001000000000000" "FPSCR for inva
 gdb_continue_to_breakpoint "go to division by zero"
 
 # Step over division by zero.
-gdb_test "next" "" ""
+gdb_test "next" "" "next over division by zero"
 
 # Verify that the following bits are set (See Power ISA for details):
 #

@@ -1,5 +1,5 @@
 /* Functions for deciding which macros are currently in scope.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
    Contributed by Red Hat, Inc.
 
    This file is part of GDB.
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 
 #include "macroscope.h"
 #include "symtab.h"
@@ -43,14 +42,15 @@ sal_macro_scope (struct symtab_and_line sal)
 
   if (sal.symtab == NULL)
     return NULL;
-  cust = SYMTAB_COMPUNIT (sal.symtab);
-  if (COMPUNIT_MACRO_TABLE (cust) == NULL)
+
+  cust = sal.symtab->compunit ();
+  if (cust->macro_table () == NULL)
     return NULL;
 
   gdb::unique_xmalloc_ptr<struct macro_scope> ms (XNEW (struct macro_scope));
 
-  main_file = macro_main (COMPUNIT_MACRO_TABLE (cust));
-  inclusion = macro_lookup_inclusion (main_file, sal.symtab->filename);
+  main_file = macro_main (cust->macro_table ());
+  inclusion = macro_lookup_inclusion (main_file, sal.symtab->filename_for_id);
 
   if (inclusion)
     {
@@ -99,7 +99,7 @@ default_macro_scope (void)
 {
   struct symtab_and_line sal;
   gdb::unique_xmalloc_ptr<struct macro_scope> ms;
-  struct frame_info *frame;
+  frame_info_ptr frame;
   CORE_ADDR pc;
 
   /* If there's a selected frame, use its PC.  */
@@ -121,9 +121,9 @@ default_macro_scope (void)
 	 symbol files loaded, then get_current_or_default would raise an
 	 error.  But `set width' shouldn't raise an error just because
 	 it can't decide which scope to macro-expand its argument in.  */
-      struct symtab_and_line cursal
-	= get_current_source_symtab_and_line ();
-      
+      symtab_and_line cursal
+	= get_current_source_symtab_and_line (current_program_space);
+
       sal.symtab = cursal.symtab;
       sal.line = cursal.line;
     }

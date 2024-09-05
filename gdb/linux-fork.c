@@ -1,6 +1,6 @@
 /* GNU/Linux native-dependent code for debugging multiple forks.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,12 +17,12 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "arch-utils.h"
+#include "event-top.h"
 #include "inferior.h"
 #include "infrun.h"
 #include "regcache.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "infcall.h"
 #include "objfiles.h"
 #include "linux-fork.h"
@@ -32,6 +32,7 @@
 
 #include "nat/gdb_ptrace.h"
 #include "gdbsupport/gdb_wait.h"
+#include "target/waitstatus.h"
 #include <dirent.h>
 #include <ctype.h>
 
@@ -41,7 +42,7 @@
 struct fork_info
 {
   explicit fork_info (pid_t pid)
-    : ptid (pid, pid, 0)
+    : ptid (pid, pid)
   {
   }
 
@@ -219,12 +220,15 @@ fork_load_infrun_state (struct fork_info *fp)
   linux_nat_switch_fork (fp->ptid);
 
   if (fp->savedregs)
-    get_current_regcache ()->restore (fp->savedregs);
+    get_thread_regcache (inferior_thread ())->restore (fp->savedregs);
 
   registers_changed ();
   reinit_frame_cache ();
 
-  inferior_thread ()->set_stop_pc (regcache_read_pc (get_current_regcache ()));
+  inferior_thread ()->set_stop_pc
+    (regcache_read_pc (get_thread_regcache (inferior_thread ())));
+  inferior_thread ()->set_executing (false);
+  inferior_thread ()->set_resumed (false);
   nullify_last_target_wait_ptid ();
 
   /* Now restore the file positions of open file descriptors.  */
@@ -251,8 +255,9 @@ fork_save_infrun_state (struct fork_info *fp)
   if (fp->savedregs)
     delete fp->savedregs;
 
-  fp->savedregs = new readonly_detached_regcache (*get_current_regcache ());
-  fp->pc = regcache_read_pc (get_current_regcache ());
+  fp->savedregs = new readonly_detached_regcache
+    (*get_thread_regcache (inferior_thread ()));
+  fp->pc = regcache_read_pc (get_thread_regcache (inferior_thread ()));
 
   /* Now save the 'state' (file position) of all open file descriptors.
      Unfortunately fork does not take care of that for us...  */
@@ -348,8 +353,8 @@ linux_fork_mourn_inferior (void)
 
   last = find_last_fork ();
   fork_load_infrun_state (last);
-  printf_filtered (_("[Switching to %s]\n"),
-		   target_pid_to_str (inferior_ptid).c_str ());
+  gdb_printf (_("[Switching to %s]\n"),
+	      target_pid_to_str (inferior_ptid).c_str ());
 
   /* If there's only one fork, switch back to non-fork mode.  */
   if (one_fork_p ())
@@ -361,15 +366,24 @@ linux_fork_mourn_inferior (void)
    the first available.  */
 
 void
-linux_fork_detach (int from_tty)
+linux_fork_detach (int from_tty, lwp_info *lp)
 {
+  gdb_assert (lp != nullptr);
+  gdb_assert (lp->ptid == inferior_ptid);
+
   /* OK, inferior_ptid is the one we are detaching from.  We need to
      delete it from the fork_list, and switch to the next available
-     fork.  */
+     fork.  But before doing the detach, do make sure that the lwp
+     hasn't exited or been terminated first.  */
 
-  if (ptrace (PTRACE_DETACH, inferior_ptid.pid (), 0, 0))
-    error (_("Unable to detach %s"),
-	   target_pid_to_str (inferior_ptid).c_str ());
+  if (lp->waitstatus.kind () != TARGET_WAITKIND_EXITED
+      && lp->waitstatus.kind () != TARGET_WAITKIND_THREAD_EXITED
+      && lp->waitstatus.kind () != TARGET_WAITKIND_SIGNALLED)
+    {
+      if (ptrace (PTRACE_DETACH, inferior_ptid.pid (), 0, 0))
+	error (_("Unable to detach %s"),
+	       target_pid_to_str (inferior_ptid).c_str ());
+    }
 
   delete_fork (inferior_ptid);
 
@@ -381,8 +395,8 @@ linux_fork_detach (int from_tty)
   fork_load_infrun_state (&fork_list.front ());
 
   if (from_tty)
-    printf_filtered (_("[Switching to %s]\n"),
-		     target_pid_to_str (inferior_ptid).c_str ());
+    gdb_printf (_("[Switching to %s]\n"),
+		target_pid_to_str (inferior_ptid).c_str ());
 
   /* If there's only one fork, switch back to non-fork mode.  */
   if (one_fork_p ())
@@ -430,6 +444,18 @@ public:
 	    fork_load_infrun_state (m_oldfp);
 	    insert_breakpoints ();
 	  }
+	catch (const gdb_exception_quit &ex)
+	  {
+	    /* We can't throw from a destructor, so re-set the quit flag
+	      for later QUIT checking.  */
+	    set_quit_flag ();
+	  }
+	catch (const gdb_exception_forced_quit &ex)
+	  {
+	    /* Like above, but (eventually) cause GDB to terminate by
+	       setting sync_quit_force_run.  */
+	    set_force_quit_flag ();
+	  }
 	catch (const gdb_exception &ex)
 	  {
 	    warning (_("Couldn't restore checkpoint state in %s: %s"),
@@ -458,10 +484,12 @@ inferior_call_waitpid (ptid_t pptid, int pid)
   scoped_switch_fork_info switch_fork_info (pptid);
 
   /* Get the waitpid_fn.  */
-  if (lookup_minimal_symbol ("waitpid", NULL, NULL).minsym != NULL)
+  if (lookup_minimal_symbol (current_program_space, "waitpid").minsym
+      != nullptr)
     waitpid_fn = find_function_in_inferior ("waitpid", &waitpid_objf);
   if (!waitpid_fn
-      && lookup_minimal_symbol ("_waitpid", NULL, NULL).minsym != NULL)
+      && (lookup_minimal_symbol (current_program_space, "_waitpid").minsym
+	  != nullptr))
     waitpid_fn = find_function_in_inferior ("_waitpid", &waitpid_objf);
   if (waitpid_fn != nullptr)
     {
@@ -509,15 +537,26 @@ Please switch to another checkpoint before deleting the current one"));
   pptid = fi->parent_ptid;
 
   if (from_tty)
-    printf_filtered (_("Killed %s\n"), target_pid_to_str (ptid).c_str ());
+    gdb_printf (_("Killed %s\n"), target_pid_to_str (ptid).c_str ());
 
   delete_fork (ptid);
+
+  if (pptid == null_ptid)
+    {
+      int status;
+      /* Wait to collect the inferior's exit status.  Do not check whether
+	 this succeeds though, since we may be dealing with a process that we
+	 attached to.  Such a process will only report its exit status to its
+	 original parent.  */
+      waitpid (ptid.pid (), &status, 0);
+      return;
+    }
 
   /* If fi->parent_ptid is not a part of lwp but it's a part of checkpoint
      list, waitpid the ptid.
      If fi->parent_ptid is a part of lwp and it is stopped, waitpid the
      ptid.  */
-  thread_info *parent = find_thread_ptid (linux_target, pptid);
+  thread_info *parent = linux_target->find_thread (pptid);
   if ((parent == NULL && find_fork_ptid (pptid))
       || (parent != NULL && parent->state == THREAD_STOPPED))
     {
@@ -547,7 +586,7 @@ Please switch to another checkpoint before detaching the current one"));
     error (_("Unable to detach %s"), target_pid_to_str (ptid).c_str ());
 
   if (from_tty)
-    printf_filtered (_("Detached %s\n"), target_pid_to_str (ptid).c_str ());
+    gdb_printf (_("Detached %s\n"), target_pid_to_str (ptid).c_str ());
 
   delete_fork (ptid);
 }
@@ -559,7 +598,7 @@ info_checkpoints_command (const char *arg, int from_tty)
 {
   struct gdbarch *gdbarch = get_current_arch ();
   int requested = -1;
-  const fork_info *printed = NULL;
+  bool printed = false;
 
   if (arg && *arg)
     requested = (int) parse_and_eval_long (arg);
@@ -568,43 +607,53 @@ info_checkpoints_command (const char *arg, int from_tty)
     {
       if (requested > 0 && fi.num != requested)
 	continue;
+      printed = true;
 
-      printed = &fi;
-      if (fi.ptid == inferior_ptid)
-	printf_filtered ("* ");
+      bool is_current = fi.ptid == inferior_ptid;
+      if (is_current)
+	gdb_printf ("* ");
       else
-	printf_filtered ("  ");
+	gdb_printf ("  ");
 
-      ULONGEST pc = fi.pc;
-      printf_filtered ("%d %s", fi.num, target_pid_to_str (fi.ptid).c_str ());
+      gdb_printf ("%d %s", fi.num, target_pid_to_str (fi.ptid).c_str ());
       if (fi.num == 0)
-	printf_filtered (_(" (main process)"));
-      printf_filtered (_(" at "));
-      fputs_filtered (paddress (gdbarch, pc), gdb_stdout);
+	gdb_printf (_(" (main process)"));
+
+      if (is_current && inferior_thread ()->state == THREAD_RUNNING)
+	{
+	  gdb_printf (_(" <running>\n"));
+	  continue;
+	}
+
+      gdb_printf (_(" at "));
+      ULONGEST pc
+	= (is_current
+	   ? regcache_read_pc (get_thread_regcache (inferior_thread ()))
+	   : fi.pc);
+      gdb_puts (paddress (gdbarch, pc));
 
       symtab_and_line sal = find_pc_line (pc, 0);
       if (sal.symtab)
-	printf_filtered (_(", file %s"),
-			 symtab_to_filename_for_display (sal.symtab));
+	gdb_printf (_(", file %s"),
+		    symtab_to_filename_for_display (sal.symtab));
       if (sal.line)
-	printf_filtered (_(", line %d"), sal.line);
+	gdb_printf (_(", line %d"), sal.line);
       if (!sal.symtab && !sal.line)
 	{
-	  struct bound_minimal_symbol msym;
-
-	  msym = lookup_minimal_symbol_by_pc (pc);
+	  bound_minimal_symbol msym = lookup_minimal_symbol_by_pc (pc);
 	  if (msym.minsym)
-	    printf_filtered (", <%s>", msym.minsym->linkage_name ());
+	    gdb_printf (", <%s>", msym.minsym->linkage_name ());
 	}
 
-      putchar_filtered ('\n');
+      gdb_putc ('\n');
     }
-  if (printed == NULL)
+
+  if (!printed)
     {
       if (requested > 0)
-	printf_filtered (_("No checkpoint number %d.\n"), requested);
+	gdb_printf (_("No checkpoint number %d.\n"), requested);
       else
-	printf_filtered (_("No checkpoints.\n"));
+	gdb_printf (_("No checkpoints.\n"));
     }
 }
 
@@ -654,10 +703,11 @@ checkpoint_command (const char *args, int from_tty)
   
   /* Make the inferior fork, record its (and gdb's) state.  */
 
-  if (lookup_minimal_symbol ("fork", NULL, NULL).minsym != NULL)
+  if (lookup_minimal_symbol (current_program_space, "fork").minsym != nullptr)
     fork_fn = find_function_in_inferior ("fork", &fork_objf);
   if (!fork_fn)
-    if (lookup_minimal_symbol ("_fork", NULL, NULL).minsym != NULL)
+    if (lookup_minimal_symbol (current_program_space, "_fork").minsym
+	!= nullptr)
       fork_fn = find_function_in_inferior ("fork", &fork_objf);
   if (!fork_fn)
     error (_("checkpoint: can't find fork function in inferior."));
@@ -685,15 +735,15 @@ checkpoint_command (const char *args, int from_tty)
     {
       int parent_pid;
 
-      printf_filtered (_("checkpoint %d: fork returned pid %ld.\n"),
-		       fp != NULL ? fp->num : -1, (long) retpid);
+      gdb_printf (_("checkpoint %d: fork returned pid %ld.\n"),
+		  fp != NULL ? fp->num : -1, (long) retpid);
       if (info_verbose)
 	{
 	  parent_pid = last_target_ptid.lwp ();
 	  if (parent_pid == 0)
 	    parent_pid = last_target_ptid.pid ();
-	  printf_filtered (_("   gdb says parent = %ld.\n"),
-			   (long) parent_pid);
+	  gdb_printf (_("   gdb says parent = %ld.\n"),
+		      (long) parent_pid);
 	}
     }
 
@@ -728,8 +778,8 @@ linux_fork_context (struct fork_info *newfp, int from_tty)
   fork_load_infrun_state (newfp);
   insert_breakpoints ();
 
-  printf_filtered (_("Switching to %s\n"),
-		   target_pid_to_str (inferior_ptid).c_str ());
+  gdb_printf (_("Switching to %s\n"),
+	      target_pid_to_str (inferior_ptid).c_str ());
 
   print_stack_frame (get_selected_frame (NULL), 1, SRC_AND_LOC, 1);
 }

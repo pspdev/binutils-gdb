@@ -1,6 +1,6 @@
 /* DWARF CU data structure
 
-   Copyright (C) 2021 Free Software Foundation, Inc.
+   Copyright (C) 2021-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,7 +22,8 @@
 
 #include "buildsym.h"
 #include "dwarf2/comp-unit-head.h"
-#include "gdbsupport/gdb_optional.h"
+#include <optional>
+#include "language.h"
 
 /* Type used for delaying computation of method physnames.
    See comments for compute_delayed_physnames.  */
@@ -59,11 +60,11 @@ struct dwarf2_cu
      We don't need the pc/line-number mapping for type units.  */
   void setup_type_unit_groups (struct die_info *die);
 
-  /* Start a symtab for DWARF.  NAME, COMP_DIR, LOW_PC are passed to the
-     buildsym_compunit constructor.  */
-  struct compunit_symtab *start_symtab (const char *name,
-					const char *comp_dir,
-					CORE_ADDR low_pc);
+  /* Start a compunit_symtab for DWARF.  NAME, COMP_DIR, LOW_PC are passed to
+     the buildsym_compunit constructor.  */
+  struct compunit_symtab *start_compunit_symtab (const char *name,
+						 const char *comp_dir,
+						 CORE_ADDR low_pc);
 
   /* Reset the builder.  */
   void reset_builder () { m_builder.reset (); }
@@ -97,13 +98,19 @@ struct dwarf2_cu
   void add_dependence (struct dwarf2_per_cu_data *ref_per_cu);
 
   /* The header of the compilation unit.  */
-  struct comp_unit_head header {};
+  struct comp_unit_head header;
 
   /* Base address of this compilation unit.  */
-  gdb::optional<CORE_ADDR> base_address;
+  std::optional<unrelocated_addr> base_address;
 
   /* The language we are debugging.  */
   const struct language_defn *language_defn = nullptr;
+
+  enum language lang () const
+  {
+    gdb_assert (language_defn != language_def (language_unknown));
+    return language_defn->la_language;
+  }
 
   const char *producer = nullptr;
 
@@ -115,7 +122,7 @@ private:
   /* A set of pointers to dwarf2_per_cu_data objects for compilation
      units referenced by this one.  Only set during full symbol processing;
      partial symbol tables do not have dependencies.  */
-  htab_t m_dependencies = nullptr;
+  htab_up m_dependencies;
 
 public:
   /* The generic symbol table building routines have separate lists for
@@ -129,12 +136,8 @@ public:
      distinguish these in buildsym.c.  */
   struct pending **list_in_scope = nullptr;
 
-  /* Hash table holding all the loaded partial DIEs
-     with partial_die->offset.SECT_OFF as hash.  */
-  htab_t partial_dies = nullptr;
-
-  /* Storage for things with the same lifetime as this read-in compilation
-     unit, including partial DIEs.  */
+  /* Storage for things with the same lifetime as this read-in
+     compilation unit. */
   auto_obstack comp_unit_obstack;
 
   /* Backlink to our per_cu entry.  */
@@ -148,7 +151,7 @@ public:
 
   /* A hash table of DIE cu_offset for following references with
      die_info->offset.sect_off as hash.  */
-  htab_t die_hash = nullptr;
+  htab_up die_hash;
 
   /* Full DIEs if read in.  */
   struct die_info *dies = nullptr;
@@ -167,7 +170,7 @@ public:
   std::vector<delayed_method_info> method_list;
 
   /* To be copied to symtab->call_site_htab.  */
-  htab_t call_site_htab = nullptr;
+  htab_up call_site_htab;
 
   /* Non-NULL if this CU came from a DWO file.
      There is an invariant here that is important to remember:
@@ -182,7 +185,7 @@ public:
 
   /* The DW_AT_addr_base (DW_AT_GNU_addr_base) attribute if present.
      Note this value comes from the Fission stub CU/TU's DIE.  */
-  gdb::optional<ULONGEST> addr_base;
+  std::optional<ULONGEST> addr_base;
 
   /* The DW_AT_GNU_ranges_base attribute, if present.
 
@@ -235,7 +238,7 @@ public:
      files, the value is implicitly zero.  For DWARF 5 version DWO files, the
      value is often implicit and is the size of the header of
      .debug_str_offsets section (8 or 4, depending on the address size).  */
-  gdb::optional<ULONGEST> str_offsets_base;
+  std::optional<ULONGEST> str_offsets_base;
 
   /* Mark used when releasing cached dies.  */
   bool m_mark : 1;
@@ -253,23 +256,20 @@ public:
   bool checked_producer : 1;
   bool producer_is_gxx_lt_4_6 : 1;
   bool producer_is_gcc_lt_4_3 : 1;
+  bool producer_is_gcc_11 : 1;
   bool producer_is_icc : 1;
   bool producer_is_icc_lt_14 : 1;
   bool producer_is_codewarrior : 1;
+  bool producer_is_clang : 1;
+  bool producer_is_gas_lt_2_38 : 1;
+  bool producer_is_gas_2_39 : 1;
+  bool producer_is_gas_ge_2_40 : 1;
 
   /* When true, the file that we're processing is known to have
      debugging info for C++ namespaces.  GCC 3.3.x did not produce
      this information, but later versions do.  */
 
   bool processing_has_namespace_info : 1;
-
-  /* This flag will be set when reading partial DIEs if we need to load
-     absolutely all DIEs for this compilation unit, instead of just the ones
-     we think are interesting.  It gets set if we look for a DIE in the
-     hash table and don't find it.  */
-  bool load_all_dies : 1;
-
-  struct partial_die_info *find_partial_die (sect_offset sect_off);
 
   /* Get the buildsym_compunit for this CU.  */
   buildsym_compunit *get_builder ();

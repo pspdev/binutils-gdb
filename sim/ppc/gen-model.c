@@ -20,6 +20,7 @@
 
 #include "misc.h"
 #include "lf.h"
+#include "lf-ppc.h"
 #include "table.h"
 
 #include "filter.h"
@@ -39,7 +40,7 @@ model_c_or_h_data(insn_table *table,
   if (data->annex) {
     table_entry_print_cpp_line_nr(file, data);
     lf_print__c_code(file, data->annex);
-    lf_print__internal_reference(file);
+    lf_print__internal_ref(file);
     lf_printf(file, "\n");
   }
 }
@@ -48,14 +49,14 @@ static void
 model_c_or_h_function(insn_table *entry,
 		      lf *file,
 		      table_entry *function,
-		      char *prefix)
+		      const char *prefix)
 {
   if (function->fields[function_type] == NULL
       || function->fields[function_type][0] == '\0') {
-    error("Model function type not specified for %s", function->fields[function_name]);
+    ERROR("Model function type not specified for %s", function->fields[function_name]);
   }
   lf_printf(file, "\n");
-  lf_print_function_type(file, function->fields[function_type], prefix, " ");
+  lf_print__function_type(file, function->fields[function_type], prefix, " ");
   lf_printf(file, "%s\n(%s);\n",
 	    function->fields[function_name],
 	    function->fields[function_param]);
@@ -68,7 +69,7 @@ gen_model_h(insn_table *table, lf *file)
   insn *insn_ptr;
   model *model_ptr;
   insn *macro;
-  char *name;
+  const char *name;
   int model_create_p = 0;
   int model_init_p = 0;
   int model_halt_p = 0;
@@ -117,42 +118,42 @@ gen_model_h(insn_table *table, lf *file)
   }
 
   if (!model_create_p) {
-    lf_print_function_type(file, "model_data *", "INLINE_MODEL", " ");
+    lf_print__function_type(file, "model_data *", "INLINE_MODEL", " ");
     lf_printf(file, "model_create\n");
     lf_printf(file, "(cpu *processor);\n");
     lf_printf(file, "\n");
   }
 
   if (!model_init_p) {
-    lf_print_function_type(file, "void", "INLINE_MODEL", " ");
+    lf_print__function_type(file, "void", "INLINE_MODEL", " ");
     lf_printf(file, "model_init\n");
     lf_printf(file, "(model_data *model_ptr);\n");
     lf_printf(file, "\n");
   }
 
   if (!model_halt_p) {
-    lf_print_function_type(file, "void", "INLINE_MODEL", " ");
+    lf_print__function_type(file, "void", "INLINE_MODEL", " ");
     lf_printf(file, "model_halt\n");
     lf_printf(file, "(model_data *model_ptr);\n");
     lf_printf(file, "\n");
   }
 
   if (!model_mon_info_p) {
-    lf_print_function_type(file, "model_print *", "INLINE_MODEL", " ");
+    lf_print__function_type(file, "model_print *", "INLINE_MODEL", " ");
     lf_printf(file, "model_mon_info\n");
     lf_printf(file, "(model_data *model_ptr);\n");
     lf_printf(file, "\n");
   }
 
   if (!model_mon_info_free_p) {
-    lf_print_function_type(file, "void", "INLINE_MODEL", " ");
+    lf_print__function_type(file, "void", "INLINE_MODEL", " ");
     lf_printf(file, "model_mon_info_free\n");
     lf_printf(file, "(model_data *model_ptr,\n");
     lf_printf(file, " model_print *info_ptr);\n");
     lf_printf(file, "\n");
   }
 
-  lf_print_function_type(file, "void", "INLINE_MODEL", " ");
+  lf_print__function_type(file, "void", "INLINE_MODEL", " ");
   lf_printf(file, "model_set\n");
   lf_printf(file, "(const char *name);\n");
 }
@@ -174,7 +175,7 @@ model_c_insn(insn_table *entry,
 {
   model_c_passed_data *data_ptr = (model_c_passed_data *)data;
   lf *file = data_ptr->file;
-  char *current_name = data_ptr->model_ptr->printable_name;
+  const char *current_name = data_ptr->model_ptr->printable_name;
   table_model_entry *model_ptr = instruction->file_entry->model_first;
 
   while (model_ptr) {
@@ -203,11 +204,11 @@ model_c_function(insn_table *table,
 {
   if (function->fields[function_type] == NULL
       || function->fields[function_type][0] == '\0') {
-    error("Model function return type not specified for %s", function->fields[function_name]);
+    ERROR("Model function return type not specified for %s", function->fields[function_name]);
   }
   else {
     lf_printf(file, "\n");
-    lf_print_function_type(file, function->fields[function_type], prefix, "\n");
+    lf_print__function_type(file, function->fields[function_type], prefix, "\n");
     lf_printf(file, "%s(%s)\n",
 	      function->fields[function_name],
 	      function->fields[function_param]);
@@ -220,7 +221,7 @@ model_c_function(insn_table *table,
     lf_indent(file, -2);
   }
   lf_printf(file, "}\n");
-  lf_print__internal_reference(file);
+  lf_print__internal_ref(file);
   lf_printf(file, "\n");
 }
 
@@ -229,7 +230,7 @@ gen_model_c(insn_table *table, lf *file)
 {
   insn *insn_ptr;
   model *model_ptr;
-  char *name;
+  const char *name;
   int model_create_p = 0;
   int model_init_p = 0;
   int model_halt_p = 0;
@@ -279,7 +280,7 @@ gen_model_c(insn_table *table, lf *file)
   }
 
   if (!model_create_p) {
-    lf_print_function_type(file, "model_data *", "INLINE_MODEL", "\n");
+    lf_print__function_type(file, "model_data *", "INLINE_MODEL", "\n");
     lf_printf(file, "model_create(cpu *processor)\n");
     lf_printf(file, "{\n");
     lf_printf(file, "  return (model_data *)0;\n");
@@ -288,7 +289,7 @@ gen_model_c(insn_table *table, lf *file)
   }
 
   if (!model_init_p) {
-    lf_print_function_type(file, "void", "INLINE_MODEL", "\n");
+    lf_print__function_type(file, "void", "INLINE_MODEL", "\n");
     lf_printf(file, "model_init(model_data *model_ptr)\n");
     lf_printf(file, "{\n");
     lf_printf(file, "}\n");
@@ -296,7 +297,7 @@ gen_model_c(insn_table *table, lf *file)
   }
 
   if (!model_halt_p) {
-    lf_print_function_type(file, "void", "INLINE_MODEL", "\n");
+    lf_print__function_type(file, "void", "INLINE_MODEL", "\n");
     lf_printf(file, "model_halt(model_data *model_ptr)\n");
     lf_printf(file, "{\n");
     lf_printf(file, "}\n");
@@ -304,7 +305,7 @@ gen_model_c(insn_table *table, lf *file)
   }
 
   if (!model_mon_info_p) {
-    lf_print_function_type(file, "model_print *", "INLINE_MODEL", "\n");
+    lf_print__function_type(file, "model_print *", "INLINE_MODEL", "\n");
     lf_printf(file, "model_mon_info(model_data *model_ptr)\n");
     lf_printf(file, "{\n");
     lf_printf(file, "  return (model_print *)0;\n");
@@ -313,7 +314,7 @@ gen_model_c(insn_table *table, lf *file)
   }
 
   if (!model_mon_info_free_p) {
-    lf_print_function_type(file, "void", "INLINE_MODEL", "\n");
+    lf_print__function_type(file, "void", "INLINE_MODEL", "\n");
     lf_printf(file, "model_mon_info_free(model_data *model_ptr,\n");
     lf_printf(file, "                    model_print *info_ptr)\n");
     lf_printf(file, "{\n");
@@ -359,7 +360,7 @@ gen_model_c(insn_table *table, lf *file)
   lf_printf(file, "#endif\n");
   lf_printf(file, "\n");
 
-  lf_print_function_type(file, "void", "INLINE_MODEL", "\n");
+  lf_print__function_type(file, "void", "INLINE_MODEL", "\n");
   lf_printf(file, "model_set(const char *name)\n");
   lf_printf(file, "{\n");
   if (models) {

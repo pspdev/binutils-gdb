@@ -1,5 +1,5 @@
 /* ecoff.h -- header file for ECOFF debugging support
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
    Put together by Ian Lance Taylor <ian@cygnus.com>.
 
@@ -37,7 +37,7 @@ extern void ecoff_read_begin_hook (void);
 
 /* This function should be called when the assembler switches to a new
    file.  */
-extern void ecoff_new_file (const char *, int);
+extern void ecoff_new_file (const char *);
 
 /* This function should be called when a new symbol is created, by
    obj_symbol_new_hook.  */
@@ -82,7 +82,7 @@ extern void ecoff_directive_type (int);
 extern void ecoff_directive_val (int);
 
 /* Handle stabs.  */
-extern void ecoff_stab (segT sec, int what, const char *string,
+extern void ecoff_stab (int what, const char *string,
 			int type, int other, int desc);
 
 /* Set the GP prologue size.  */

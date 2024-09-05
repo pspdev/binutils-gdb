@@ -1,6 +1,6 @@
 /*  This file is part of GDB.
 
-    Copyright 2004-2021 Free Software Foundation, Inc.
+    Copyright 2004-2024 Free Software Foundation, Inc.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 #include "sim_callbacks.h"
 #include "sim/callback.h"
 #include "sim/sim.h"
-#include "gdb/sim-ppc.h"
+#include "sim/sim-ppc.h"
 
 /* Return the register name for the supplied SPR if any, or NULL if
    none.  */
@@ -1269,30 +1269,30 @@ regnum2name (int regnum)
 
 
 int
-sim_fetch_register (SIM_DESC sd, int regno, unsigned char *buf, int length)
+sim_fetch_register (SIM_DESC sd, int regno, void *buf, int length)
 {
   const char *regname = regnum2name (regno);
 
   if (simulator == NULL || regname == NULL)
     return -1;
 
-  TRACE(trace_gdb, ("sim_fetch_register(regno=%d(%s), buf=0x%lx)\n",
-		    regno, regname, (long)buf));
+  TRACE(trace_gdb, ("sim_fetch_register(regno=%d(%s), buf=%p)\n",
+		    regno, regname, buf));
   return psim_read_register(simulator, MAX_NR_PROCESSORS,
 			    buf, regname, raw_transfer);
 }
 
 
 int
-sim_store_register (SIM_DESC sd, int regno, unsigned char *buf, int length)
+sim_store_register (SIM_DESC sd, int regno, const void *buf, int length)
 {
   const char *regname = regnum2name (regno);
 
   if (simulator == NULL || regname == NULL)
     return 0;
 
-  TRACE(trace_gdb, ("sim_store_register(regno=%d(%s), buf=0x%lx)\n",
-		    regno, regname, (long)buf));
+  TRACE(trace_gdb, ("sim_store_register(regno=%d(%s), buf=%p)\n",
+		    regno, regname, buf));
   return psim_write_register(simulator, MAX_NR_PROCESSORS,
 			     buf, regname, raw_transfer);
 }

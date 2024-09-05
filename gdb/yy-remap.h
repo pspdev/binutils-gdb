@@ -1,4 +1,4 @@
-/* Copyright (C) 1986-2021 Free Software Foundation, Inc.
+/* Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +19,7 @@
 #define YY_REMAP_H
 
 /* Remap normal yacc parser interface names (yyparse, yylex, yyerror,
-   etc), as well as gratuitiously global symbol names, so we can have
+   etc), as well as gratuitously global symbol names, so we can have
    multiple yacc generated parsers in gdb.  Note that these are only
    the variables produced by yacc.  If other parser generators (bison,
    byacc, etc) produce additional global names that conflict at link
@@ -85,15 +85,12 @@
 #define yystacksize	GDB_YY_REMAP (yystacksize)
 #define yyvs		GDB_YY_REMAP (yyvs)
 #define yyvsp		GDB_YY_REMAP (yyvsp)
+#define YYSTACKDATA	GDB_YY_REMAP (YYSTACKDATA)
 
 /* The following are common to all parsers.  */
 
 #ifndef YYDEBUG
 # define YYDEBUG 1  /* Default to yydebug support */
-#endif
-
-#ifndef TEST_CPNAMES
-# define YYFPRINTF parser_fprintf
 #endif
 
 #endif /* YY_REMAP_H */

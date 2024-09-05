@@ -1,5 +1,5 @@
 /* Target-dependent code for GNU/Linux on RISC-V processors.
-   Copyright (C) 2018-2021 Free Software Foundation, Inc.
+   Copyright (C) 2018-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "riscv-tdep.h"
 #include "osabi.h"
 #include "glibc-tdep.h"
@@ -86,7 +85,7 @@ riscv_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 /* Signal trampoline support.  */
 
 static void riscv_linux_sigframe_init (const struct tramp_frame *self,
-				       struct frame_info *this_frame,
+				       const frame_info_ptr &this_frame,
 				       struct trad_frame_cache *this_cache,
 				       CORE_ADDR func);
 
@@ -125,7 +124,7 @@ static const struct tramp_frame riscv_linux_sigframe = {
 
 static void
 riscv_linux_sigframe_init (const struct tramp_frame *self,
-			   struct frame_info *this_frame,
+			   const frame_info_ptr &this_frame,
 			   struct trad_frame_cache *this_cache,
 			   CORE_ADDR func)
 {
@@ -163,7 +162,7 @@ riscv_linux_sigframe_init (const struct tramp_frame *self,
    instruction to be executed.  */
 
 static CORE_ADDR
-riscv_linux_syscall_next_pc (struct frame_info *frame)
+riscv_linux_syscall_next_pc (const frame_info_ptr &frame)
 {
   const CORE_ADDR pc = get_frame_pc (frame);
   const ULONGEST a7 = get_frame_register_unsigned (frame, RISCV_A7_REGNUM);
@@ -179,7 +178,7 @@ riscv_linux_syscall_next_pc (struct frame_info *frame)
 static void
 riscv_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  riscv_gdbarch_tdep *tdep = gdbarch_tdep<riscv_gdbarch_tdep> (gdbarch);
 
   linux_init_abi (info, gdbarch, 0);
 
@@ -187,8 +186,8 @@ riscv_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 
   set_solib_svr4_fetch_link_map_offsets (gdbarch,
 					 (riscv_isa_xlen (gdbarch) == 4
-					  ? svr4_ilp32_fetch_link_map_offsets
-					  : svr4_lp64_fetch_link_map_offsets));
+					  ? linux_ilp32_fetch_link_map_offsets
+					  : linux_lp64_fetch_link_map_offsets));
 
   /* GNU/Linux uses SVR4-style shared libraries.  */
   set_gdbarch_skip_trampoline_code (gdbarch, find_solib_trampoline_target);

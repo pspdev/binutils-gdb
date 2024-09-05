@@ -1,6 +1,6 @@
 /* Native-dependent code for BSD Unix running on ARM's, for GDB.
 
-   Copyright (C) 1988-2021 Free Software Foundation, Inc.
+   Copyright (C) 1988-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +19,6 @@
 
 /* We define this to get types like register_t.  */
 #define _KERNTYPES
-#include "defs.h"
 #include "gdbcore.h"
 #include "inferior.h"
 #include "regcache.h"
@@ -50,7 +49,7 @@ static arm_netbsd_nat_target the_arm_netbsd_nat_target;
 static void
 arm_supply_vfpregset (struct regcache *regcache, struct fpreg *fpregset)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (regcache->arch ());
+  arm_gdbarch_tdep *tdep = gdbarch_tdep<arm_gdbarch_tdep> (regcache->arch ());
   if (tdep->vfp_register_count == 0)
     return;
 
@@ -97,7 +96,7 @@ fetch_fp_register (struct regcache *regcache, int regno)
       return;
     }
 
-  struct gdbarch_tdep *tdep = gdbarch_tdep (regcache->arch ());
+  arm_gdbarch_tdep *tdep = gdbarch_tdep<arm_gdbarch_tdep> (regcache->arch ());
   if (regno == ARM_FPSCR_REGNUM && tdep->vfp_register_count != 0)
     regcache->raw_supply (ARM_FPSCR_REGNUM, (char *) &vfp.vfp_fpscr);
   else if (regno >= ARM_D0_REGNUM
@@ -279,7 +278,7 @@ store_fp_register (const struct regcache *regcache, int regno)
       return;
     }
 
-  struct gdbarch_tdep *tdep = gdbarch_tdep (regcache->arch ());
+  arm_gdbarch_tdep *tdep = gdbarch_tdep<arm_gdbarch_tdep> (regcache->arch ());
   if (regno == ARM_FPSCR_REGNUM && tdep->vfp_register_count != 0)
     regcache->raw_collect (ARM_FPSCR_REGNUM, (char *) &vfp.vfp_fpscr);
   else if (regno >= ARM_D0_REGNUM
@@ -301,7 +300,7 @@ store_fp_register (const struct regcache *regcache, int regno)
 static void
 store_fp_regs (const struct regcache *regcache)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (regcache->arch ());
+  arm_gdbarch_tdep *tdep = gdbarch_tdep<arm_gdbarch_tdep> (regcache->arch ());
   int lwp = regcache->ptid ().lwp ();
   if (tdep->vfp_register_count == 0)
     return;
@@ -346,13 +345,13 @@ arm_netbsd_nat_target::read_description ()
 
   if (sysctlbyname("machdep.fpu_present", &flag, &len, NULL, 0) != 0
       || !flag)
-    return arm_read_description (ARM_FP_TYPE_NONE);
+    return arm_read_description (ARM_FP_TYPE_NONE, false);
 
   len = sizeof(flag);
   if (sysctlbyname("machdep.neon_present", &flag, &len, NULL, 0) == 0 && flag)
-    return aarch32_read_description ();
+    return aarch32_read_description (false);
 
-  return arm_read_description (ARM_FP_TYPE_VFPV3);
+  return arm_read_description (ARM_FP_TYPE_VFPV3, false);
 }
 
 void _initialize_arm_netbsd_nat ();

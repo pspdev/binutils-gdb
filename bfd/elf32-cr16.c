@@ -1,5 +1,5 @@
 /* BFD back-end for National Semiconductor's CR16 ELF
-   Copyright (C) 2007-2021 Free Software Foundation, Inc.
+   Copyright (C) 2007-2024 Free Software Foundation, Inc.
    Written by M R Swami Reddy.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -116,7 +116,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 {
   HOWTO (R_CR16_NONE,		   /* type */
 	 0,			   /* rightshift */
-	 3,			   /* size */
+	 0,			   /* size */
 	 0,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -130,7 +130,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_NUM8,		   /* type */
 	 0,			   /* rightshift */
-	 0,			   /* size */
+	 1,			   /* size */
 	 8,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -144,7 +144,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_NUM16,		   /* type */
 	 0,			   /* rightshift */
-	 1,			   /* size */
+	 2,			   /* size */
 	 16,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -158,7 +158,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_NUM32,		   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 32,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -172,7 +172,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_NUM32a,		   /* type */
 	 1,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 32,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -186,7 +186,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_REGREL4,	   /* type */
 	 0,			   /* rightshift */
-	 0,			   /* size */
+	 1,			   /* size */
 	 4,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -200,7 +200,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_REGREL4a,	   /* type */
 	 0,			   /* rightshift */
-	 0,			   /* size */
+	 1,			   /* size */
 	 4,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -214,7 +214,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_REGREL14,	   /* type */
 	 0,			   /* rightshift */
-	 1,			   /* size */
+	 2,			   /* size */
 	 14,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -228,7 +228,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_REGREL14a,	   /* type */
 	 0,			   /* rightshift */
-	 1,			   /* size */
+	 2,			   /* size */
 	 14,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -242,7 +242,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_REGREL16,	   /* type */
 	 0,			   /* rightshift */
-	 1,			   /* size */
+	 2,			   /* size */
 	 16,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -256,7 +256,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_REGREL20,	   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 20,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -270,7 +270,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_REGREL20a,	   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 20,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -284,7 +284,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_ABS20,		   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 20,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -298,7 +298,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_ABS24,		   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 24,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -312,7 +312,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_IMM4,		   /* type */
 	 0,			   /* rightshift */
-	 0,			   /* size */
+	 1,			   /* size */
 	 4,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -326,7 +326,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_IMM8,		   /* type */
 	 0,			   /* rightshift */
-	 0,			   /* size */
+	 1,			   /* size */
 	 8,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -340,7 +340,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_IMM16,		   /* type */
 	 0,			   /* rightshift */
-	 1,			   /* size */
+	 2,			   /* size */
 	 16,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -354,7 +354,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_IMM20,		   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 20,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -368,7 +368,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_IMM24,		   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 24,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -382,7 +382,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_IMM32,		   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 32,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -396,7 +396,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_IMM32a,		   /* type */
 	 1,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 32,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -410,7 +410,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_DISP4,		   /* type */
 	 1,			   /* rightshift */
-	 0,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 1,			   /* size */
 	 4,			   /* bitsize */
 	 true,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -424,7 +424,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_DISP8,		   /* type */
 	 1,			   /* rightshift */
-	 0,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 1,			   /* size */
 	 8,			   /* bitsize */
 	 true,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -438,7 +438,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_DISP16,		   /* type */
 	 0,			   /* rightshift REVIITS: To sync with WinIDEA*/
-	 1,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 2,			   /* size */
 	 16,			   /* bitsize */
 	 true,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -453,7 +453,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
      but its not done, to sync with WinIDEA and CR16 4.1 tools */
   HOWTO (R_CR16_DISP24,		   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			   /* size */
 	 24,			   /* bitsize */
 	 true,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -467,7 +467,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_DISP24a,	   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			   /* size */
 	 24,			   /* bitsize */
 	 true,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -484,7 +484,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
      between the reloc address and L2.  */
   HOWTO (R_CR16_SWITCH8,	   /* type */
 	 0,			   /* rightshift */
-	 0,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 1,			   /* size */
 	 8,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -501,7 +501,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
      between the reloc address and L2.  */
   HOWTO (R_CR16_SWITCH16,	   /* type */
 	 0,			   /* rightshift */
-	 1,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 2,			   /* size */
 	 16,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -518,7 +518,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
      between the reloc address and L2.  */
   HOWTO (R_CR16_SWITCH32,	   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			   /* size */
 	 32,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -532,7 +532,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_GOT_REGREL20,	   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 20,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -546,7 +546,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_GOTC_REGREL20,	   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size */
+	 4,			   /* size */
 	 20,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -560,7 +560,7 @@ static reloc_howto_type cr16_elf_howto_table[] =
 
   HOWTO (R_CR16_GLOB_DAT,	   /* type */
 	 0,			   /* rightshift */
-	 2,			   /* size (0 = byte, 1 = short, 2 = long) */
+	 4,			   /* size */
 	 32,			   /* bitsize */
 	 false,			   /* pc_relative */
 	 0,			   /* bitpos */
@@ -700,7 +700,7 @@ cr16_elf_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 {
   Elf_Internal_Shdr *symtab_hdr;
   Elf_Internal_Sym * isymbuf = NULL;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
   bfd *      dynobj;
@@ -717,9 +717,6 @@ cr16_elf_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof (Elf32_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   dynobj = elf_hash_table (info)->dynobj;
   local_got_offsets = elf_local_got_offsets (abfd);
@@ -955,9 +952,9 @@ cr16_elf_final_link_relocate (reloc_howto_type *howto,
       Rvalue &= howto->dst_mask;
     }
 
-  switch (howto->size)
+  switch (bfd_get_reloc_size (howto))
     {
-    case 0:
+    case 1:
       if (r_type == R_CR16_DISP8)
 	{
 	  Rvalue1 = bfd_get_16 (input_bfd, hit_data);
@@ -984,7 +981,7 @@ cr16_elf_final_link_relocate (reloc_howto_type *howto,
 	}
       break;
 
-    case 1:
+    case 2:
       if (r_type == R_CR16_DISP16)
 	{
 	  Rvalue |= (bfd_get_16 (input_bfd, hit_data));
@@ -1005,7 +1002,7 @@ cr16_elf_final_link_relocate (reloc_howto_type *howto,
       bfd_put_16 (input_bfd, Rvalue, hit_data);
       break;
 
-    case 2:
+    case 4:
       if ((r_type == R_CR16_ABS20) || (r_type == R_CR16_IMM20))
 	{
 	  Rvalue1 = (bfd_get_16 (input_bfd, hit_data + 2)
@@ -1484,6 +1481,13 @@ elf32_cr16_get_relocated_section_contents (bfd *output_bfd,
 
   symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
 
+  bfd_byte *orig_data = data;
+  if (data == NULL)
+    {
+      data = bfd_malloc (input_section->size);
+      if (data == NULL)
+	return NULL;
+    }
   memcpy (data, elf_section_data (input_section)->this_hdr.contents,
 	  (size_t) input_section->size);
 
@@ -1554,6 +1558,8 @@ elf32_cr16_get_relocated_section_contents (bfd *output_bfd,
     free (isymbuf);
   if (elf_section_data (input_section)->relocs != internal_relocs)
     free (internal_relocs);
+  if (orig_data == NULL)
+    free (data);
   return NULL;
 }
 
@@ -1712,8 +1718,9 @@ elf32_cr16_relax_section (bfd *abfd, asection *sec,
      this section does not have relocs, or if this is not a
      code section.  */
   if (bfd_link_relocatable (link_info)
-      || (sec->flags & SEC_RELOC) == 0
       || sec->reloc_count == 0
+      || (sec->flags & SEC_RELOC) == 0
+      || (sec->flags & SEC_HAS_CONTENTS) == 0
       || (sec->flags & SEC_CODE) == 0)
     return true;
 
@@ -2384,15 +2391,16 @@ _bfd_cr16_elf_adjust_dynamic_symbol (struct bfd_link_info * info,
 /* Set the sizes of the dynamic sections.  */
 
 static bool
-_bfd_cr16_elf_size_dynamic_sections (bfd * output_bfd,
-				     struct bfd_link_info * info)
+_bfd_cr16_elf_late_size_sections (bfd * output_bfd,
+				  struct bfd_link_info * info)
 {
   bfd * dynobj;
   asection * s;
   bool relocs;
 
   dynobj = elf_hash_table (info)->dynobj;
-  BFD_ASSERT (dynobj != NULL);
+  if (dynobj == NULL)
+    return true;
 
   if (elf_hash_table (info)->dynamic_sections_created)
     {
@@ -2829,8 +2837,8 @@ _bfd_cr16_elf_reloc_type_class (const struct bfd_link_info *info ATTRIBUTE_UNUSE
 				  _bfd_cr16_elf_create_dynamic_sections
 #define elf_backend_adjust_dynamic_symbol \
 				  _bfd_cr16_elf_adjust_dynamic_symbol
-#define elf_backend_size_dynamic_sections \
-				  _bfd_cr16_elf_size_dynamic_sections
+#define elf_backend_late_size_sections \
+				  _bfd_cr16_elf_late_size_sections
 #define elf_backend_omit_section_dynsym _bfd_elf_omit_section_dynsym_all
 #define elf_backend_finish_dynamic_symbol \
 				   _bfd_cr16_elf_finish_dynamic_symbol

@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2021 Free Software Foundation, Inc.
+# Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,12 +18,18 @@
 
 import gdb
 
+saved_options = {}
+
 
 class PointPrinter(object):
     def __init__(self, val):
         self.val = val
 
     def to_string(self):
+        global saved_options
+        saved_options = gdb.print_options()
+        if saved_options["summary"]:
+            return "No Data"
         return "Pretty Point (%s, %s)" % (self.val["x"], self.val["y"])
 
 

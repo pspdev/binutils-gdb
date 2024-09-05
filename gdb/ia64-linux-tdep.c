@@ -1,6 +1,6 @@
 /* Target-dependent code for the IA-64 for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "extract-store-integer.h"
 #include "ia64-tdep.h"
 #include "arch-utils.h"
 #include "gdbcore.h"
@@ -216,7 +216,7 @@ ia64_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 static void
 ia64_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ia64_gdbarch_tdep *tdep = gdbarch_tdep<ia64_gdbarch_tdep> (gdbarch);
   static const char *const stap_register_prefixes[] = { "r", NULL };
   static const char *const stap_register_indirection_prefixes[] = { "[",
 								    NULL };
@@ -237,7 +237,7 @@ ia64_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   set_gdbarch_skip_trampoline_code (gdbarch, find_solib_trampoline_target);
 
   set_solib_svr4_fetch_link_map_offsets
-    (gdbarch, svr4_lp64_fetch_link_map_offsets);
+    (gdbarch, linux_lp64_fetch_link_map_offsets);
 
   /* Enable TLS support.  */
   set_gdbarch_fetch_tls_load_module_address (gdbarch,

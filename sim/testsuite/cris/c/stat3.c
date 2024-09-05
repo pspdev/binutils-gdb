@@ -1,5 +1,5 @@
 /* Simulator options:
-#sim: --sysroot=@exedir@
+#sim: --sysroot=$pwd
 */
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -10,17 +10,22 @@
 
 int main (int argc, char *argv[])
 {
-  char path[1024] = "/";
+  /* Pick a regular file we know will always be in the sim builddir.  */
+  char path[1024] = "/Makefile";
   struct stat buf;
 
-  strcat (path, argv[0]);
   if (stat (".", &buf) != 0
       || !S_ISDIR (buf.st_mode))
-    abort ();
+    {
+      fprintf (stderr, "cwd is not a directory\n");
+      return 1;
+    }
   if (stat (path, &buf) != 0
       || !S_ISREG (buf.st_mode))
-    abort ();
+    {
+      fprintf (stderr, "%s: is not a regular file\n", path);
+      return 1;
+    }
   printf ("pass\n");
   exit (0);
 }
-

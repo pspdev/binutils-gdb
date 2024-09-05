@@ -1,6 +1,6 @@
 /* Rust language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 2016-2021 Free Software Foundation, Inc.
+   Copyright (C) 2016-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 
 #include <ctype.h>
 
@@ -26,10 +25,10 @@
 #include "charset.h"
 #include "cp-support.h"
 #include "demangle.h"
+#include "event-top.h"
 #include "gdbarch.h"
 #include "infcall.h"
 #include "objfiles.h"
-#include "psymtab.h"
 #include "rust-lang.h"
 #include "typeprint.h"
 #include "valprint.h"
@@ -58,7 +57,7 @@ rust_last_path_segment (const char *path)
 std::string
 rust_crate_for_block (const struct block *block)
 {
-  const char *scope = block_scope (block);
+  const char *scope = block->scope ();
 
   if (scope[0] == '\0')
     return std::string ();
@@ -94,7 +93,7 @@ rust_enum_variant (struct type *type)
 {
   /* The active variant is simply the first non-artificial field.  */
   for (int i = 0; i < type->num_fields (); ++i)
-    if (!TYPE_FIELD_ARTIFICIAL (type, i))
+    if (!type->field (i).is_artificial ())
       return i;
 
   /* Perhaps we could get here by trying to print an Ada variant
@@ -130,12 +129,12 @@ rust_underscore_fields (struct type *type)
     return false;
   for (i = 0; i < type->num_fields (); ++i)
     {
-      if (!field_is_static (&type->field (i)))
+      if (!type->field (i).is_static ())
 	{
 	  char buf[20];
 
 	  xsnprintf (buf, sizeof (buf), "__%d", field_number);
-	  if (strcmp (buf, TYPE_FIELD_NAME (type, i)) != 0)
+	  if (strcmp (buf, type->field (i).name ()) != 0)
 	    return false;
 	  field_number++;
 	}
@@ -154,15 +153,24 @@ rust_tuple_struct_type_p (struct type *type)
   return type->num_fields () > 0 && rust_underscore_fields (type);
 }
 
-/* Return true if TYPE is a slice type, otherwise false.  */
+/* Return true if TYPE is "slice-like"; false otherwise.  */
 
 static bool
-rust_slice_type_p (struct type *type)
+rust_slice_type_p (const struct type *type)
 {
-  return (type->code () == TYPE_CODE_STRUCT
-	  && type->name () != NULL
-	  && (strncmp (type->name (), "&[", 2) == 0
-	      || strcmp (type->name (), "&str") == 0));
+  if (type->code () == TYPE_CODE_STRUCT
+      && type->name () != NULL
+      && type->num_fields () == 2)
+    {
+      /* The order of fields doesn't matter.  While it would be nice
+	 to check for artificiality here, the Rust compiler doesn't
+	 emit this information.  */
+      const char *n1 = type->field (0).name ();
+      const char *n2 = type->field (1).name ();
+      return ((streq (n1, "data_ptr") && streq (n2, "length"))
+	      || (streq (n2, "data_ptr") && streq (n1, "length")));
+    }
+  return false;
 }
 
 /* Return true if TYPE is a range type, otherwise false.  */
@@ -182,7 +190,7 @@ rust_range_type_p (struct type *type)
     return true;
 
   i = 0;
-  if (strcmp (TYPE_FIELD_NAME (type, 0), "start") == 0)
+  if (strcmp (type->field (0).name (), "start") == 0)
     {
       if (type->num_fields () == 1)
 	return true;
@@ -194,7 +202,7 @@ rust_range_type_p (struct type *type)
       return false;
     }
 
-  return strcmp (TYPE_FIELD_NAME (type, i), "end") == 0;
+  return strcmp (type->field (i).name (), "end") == 0;
 }
 
 /* Return true if TYPE is an inclusive range type, otherwise false.
@@ -215,7 +223,7 @@ rust_u8_type_p (struct type *type)
 {
   return (type->code () == TYPE_CODE_INT
 	  && type->is_unsigned ()
-	  && TYPE_LENGTH (type) == 1);
+	  && type->length () == 1);
 }
 
 /* Return true if TYPE is a Rust character type.  */
@@ -224,7 +232,7 @@ static bool
 rust_chartype_p (struct type *type)
 {
   return (type->code () == TYPE_CODE_CHAR
-	  && TYPE_LENGTH (type) == 4
+	  && type->length () == 4
 	  && type->is_unsigned ());
 }
 
@@ -235,7 +243,7 @@ rust_chartype_p (struct type *type)
 static struct value *
 rust_get_trait_object_pointer (struct value *value)
 {
-  struct type *type = check_typedef (value_type (value));
+  struct type *type = check_typedef (value->type ());
 
   if (type->code () != TYPE_CODE_STRUCT || type->num_fields () != 2)
     return NULL;
@@ -244,9 +252,9 @@ rust_get_trait_object_pointer (struct value *value)
   int vtable_field = 0;
   for (int i = 0; i < 2; ++i)
     {
-      if (strcmp (TYPE_FIELD_NAME (type, i), "vtable") == 0)
+      if (strcmp (type->field (i).name (), "vtable") == 0)
 	vtable_field = i;
-      else if (strcmp (TYPE_FIELD_NAME (type, i), "pointer") != 0)
+      else if (strcmp (type->field (i).name (), "pointer") != 0)
 	return NULL;
     }
 
@@ -259,6 +267,125 @@ rust_get_trait_object_pointer (struct value *value)
     = static_cast<struct rust_vtable_symbol *> (symbol);
   struct type *pointer_type = lookup_pointer_type (vtable_sym->concrete_type);
   return value_cast (pointer_type, value_field (value, 1 - vtable_field));
+}
+
+/* Find and possibly rewrite the unsized part of a slice-like type.
+
+   This function has two modes.  If the out parameters are both NULL,
+   it will return true if an unsized member of IN_TYPE is found.
+
+   If the out parameters are both non-NULL, it will do the same, but
+   will also rewrite the unsized member's type to be an array of the
+   appropriate type.  BOUND is the upper bound of the new array.
+
+   See convert_slice to understand the different kinds of unsized type
+   and how they are represented.
+*/
+static bool
+rewrite_slice_type (struct type *in_type, struct type **new_type,
+		    LONGEST bound, ULONGEST *additional_length)
+{
+  if (in_type->code () != TYPE_CODE_STRUCT)
+    return false;
+
+  unsigned nfields = in_type->num_fields ();
+  if (nfields == 0)
+    return false;
+
+  struct type *rewritten;
+  const field &field = in_type->field (nfields - 1);
+  struct type *field_type = field.type ();
+  if (field.loc_kind () == FIELD_LOC_KIND_BITPOS
+      && field.loc_bitpos () == 8 * in_type->length ())
+    {
+      if (additional_length == nullptr)
+	return true;
+      rewritten = lookup_array_range_type (field_type, 0, bound);
+      *additional_length = rewritten->length ();
+    }
+  else
+    {
+    if (!rewrite_slice_type (field_type, &rewritten, bound,
+			     additional_length))
+	return false;
+      if (additional_length == nullptr)
+	return true;
+    }
+
+  struct type *result = copy_type (in_type);
+  result->copy_fields (in_type);
+  result->field (nfields - 1).set_type (rewritten);
+  result->set_length (result->length () + *additional_length);
+
+  *new_type = result;
+  return true;
+}
+
+/* Convert a Rust slice to its "true" representation.
+
+   The Rust compiler emits slices as "fat" pointers like:
+
+   struct { payload *data_ptr; usize length }
+
+   Any sort of unsized type is emitted this way.
+
+   If 'payload' is a struct type, then it must be searched to see if
+   the trailing field is unsized.  This has to be done recursively (as
+   in, if the final field in the struct type itself has struct type,
+   then that type must be searched).  In this scenario, the unsized
+   field can be recognized because it does not contribute to the
+   type's size.
+
+   If 'payload' does not have a trailing unsized type, or if it is not
+   of struct type, then this slice is "array-like".  In this case
+   rewriting will return an array.
+*/
+static struct value *
+convert_slice (struct value *val)
+{
+  struct type *type = check_typedef (val->type ());
+  /* This must have been checked by the caller.  */
+  gdb_assert (rust_slice_type_p (type));
+
+  struct value *len = value_struct_elt (&val, {}, "length", nullptr,
+					"slice");
+  LONGEST llen = value_as_long (len);
+
+  struct value *ptr = value_struct_elt (&val, {}, "data_ptr", nullptr,
+					"slice");
+  struct type *original_type = ptr->type ()->target_type ();
+  ULONGEST new_length_storage = 0;
+  struct type *new_type = nullptr;
+  if (!rewrite_slice_type (original_type, &new_type, llen - 1,
+			   &new_length_storage))
+    new_type = lookup_array_range_type (original_type, 0, llen - 1);
+
+  struct value *result = value::allocate_lazy (new_type);
+  result->set_lval (lval_memory);
+  result->set_address (value_as_address (ptr));
+  result->fetch_lazy ();
+
+  return result;
+}
+
+/* If TYPE is an array-like slice, return the element type; otherwise
+   return NULL.  */
+static struct type *
+rust_array_like_element_type (struct type *type)
+{
+  /* Caller must check this.  */
+  gdb_assert (rust_slice_type_p (type));
+  for (int i = 0; i < type->num_fields (); ++i)
+    {
+      if (strcmp (type->field (i).name (), "data_ptr") == 0)
+	{
+	  struct type *base_type = type->field (i).type ()->target_type ();
+	  if (rewrite_slice_type (base_type, nullptr, 0, nullptr))
+	    return nullptr;
+	  return base_type;
+	}
+    }
+  return nullptr;
 }
 
 
@@ -283,8 +410,9 @@ rust_language::printstr (struct ui_file *stream, struct type *type,
 	{
 	  /* This is probably some C string, so let's let C deal with
 	     it.  */
-	  c_printstr (stream, type, string, length, user_encoding,
-		      force_ellipses, options);
+	  language_defn::printstr (stream, type, string, length,
+				   user_encoding, force_ellipses,
+				   options);
 	  return;
 	}
     }
@@ -295,185 +423,6 @@ rust_language::printstr (struct ui_file *stream, struct type *type,
 }
 
 
-
-/* Helper function to print a string slice.  */
-
-static void
-rust_val_print_str (struct ui_file *stream, struct value *val,
-		    const struct value_print_options *options)
-{
-  struct value *base = value_struct_elt (&val, {}, "data_ptr", NULL,
-					 "slice");
-  struct value *len = value_struct_elt (&val, {}, "length", NULL, "slice");
-
-  val_print_string (TYPE_TARGET_TYPE (value_type (base)), "UTF-8",
-		    value_as_address (base), value_as_long (len), stream,
-		    options);
-}
-
-/* See rust-lang.h.  */
-
-void
-rust_language::val_print_struct
-	(struct value *val, struct ui_file *stream, int recurse,
-	 const struct value_print_options *options) const
-{
-  int i;
-  int first_field;
-  struct type *type = check_typedef (value_type (val));
-
-  if (rust_slice_type_p (type) && strcmp (type->name (), "&str") == 0)
-    {
-      /* If what we are printing here is actually a string within a
-	 structure then VAL will be the original parent value, while TYPE
-	 will be the type of the structure representing the string we want
-	 to print.
-	 However, RUST_VAL_PRINT_STR looks up the fields of the string
-	 inside VAL, assuming that VAL is the string.
-	 So, recreate VAL as a value representing just the string.  */
-      val = value_at_lazy (type, value_address (val));
-      rust_val_print_str (stream, val, options);
-      return;
-    }
-
-  bool is_tuple = rust_tuple_type_p (type);
-  bool is_tuple_struct = !is_tuple && rust_tuple_struct_type_p (type);
-  struct value_print_options opts;
-
-  if (!is_tuple)
-    {
-      if (type->name () != NULL)
-	fprintf_filtered (stream, "%s", type->name ());
-
-      if (type->num_fields () == 0)
-	return;
-
-      if (type->name () != NULL)
-	fputs_filtered (" ", stream);
-    }
-
-  if (is_tuple || is_tuple_struct)
-    fputs_filtered ("(", stream);
-  else
-    fputs_filtered ("{", stream);
-
-  opts = *options;
-  opts.deref_ref = 0;
-
-  first_field = 1;
-  for (i = 0; i < type->num_fields (); ++i)
-    {
-      if (field_is_static (&type->field (i)))
-	continue;
-
-      if (!first_field)
-	fputs_filtered (",", stream);
-
-      if (options->prettyformat)
-	{
-	  fputs_filtered ("\n", stream);
-	  print_spaces_filtered (2 + 2 * recurse, stream);
-	}
-      else if (!first_field)
-	fputs_filtered (" ", stream);
-
-      first_field = 0;
-
-      if (!is_tuple && !is_tuple_struct)
-	{
-	  fputs_styled (TYPE_FIELD_NAME (type, i),
-			variable_name_style.style (), stream);
-	  fputs_filtered (": ", stream);
-	}
-
-      common_val_print (value_field (val, i), stream, recurse + 1, &opts,
-			this);
-    }
-
-  if (options->prettyformat)
-    {
-      fputs_filtered ("\n", stream);
-      print_spaces_filtered (2 * recurse, stream);
-    }
-
-  if (is_tuple || is_tuple_struct)
-    fputs_filtered (")", stream);
-  else
-    fputs_filtered ("}", stream);
-}
-
-/* See rust-lang.h.  */
-
-void
-rust_language::print_enum (struct value *val, struct ui_file *stream,
-			   int recurse,
-			   const struct value_print_options *options) const
-{
-  struct value_print_options opts = *options;
-  struct type *type = check_typedef (value_type (val));
-
-  opts.deref_ref = 0;
-
-  gdb_assert (rust_enum_p (type));
-  gdb::array_view<const gdb_byte> view (value_contents_for_printing (val),
-					TYPE_LENGTH (value_type (val)));
-  type = resolve_dynamic_type (type, view, value_address (val));
-
-  if (rust_empty_enum_p (type))
-    {
-      /* Print the enum type name here to be more clear.  */
-      fprintf_filtered (stream, _("%s {%p[<No data fields>%p]}"),
-			type->name (),
-			metadata_style.style ().ptr (), nullptr);
-      return;
-    }
-
-  int variant_fieldno = rust_enum_variant (type);
-  val = value_field (val, variant_fieldno);
-  struct type *variant_type = type->field (variant_fieldno).type ();
-
-  int nfields = variant_type->num_fields ();
-
-  bool is_tuple = rust_tuple_struct_type_p (variant_type);
-
-  fprintf_filtered (stream, "%s", variant_type->name ());
-  if (nfields == 0)
-    {
-      /* In case of a nullary variant like 'None', just output
-	 the name. */
-      return;
-    }
-
-  /* In case of a non-nullary variant, we output 'Foo(x,y,z)'. */
-  if (is_tuple)
-    fprintf_filtered (stream, "(");
-  else
-    {
-      /* struct variant.  */
-      fprintf_filtered (stream, "{");
-    }
-
-  bool first_field = true;
-  for (int j = 0; j < variant_type->num_fields (); j++)
-    {
-      if (!first_field)
-	fputs_filtered (", ", stream);
-      first_field = false;
-
-      if (!is_tuple)
-	fprintf_filtered (stream, "%ps: ",
-			  styled_string (variable_name_style.style (),
-					 TYPE_FIELD_NAME (variant_type, j)));
-
-      common_val_print (value_field (val, j), stream, recurse + 1, &opts,
-			this);
-    }
-
-  if (is_tuple)
-    fputs_filtered (")", stream);
-  else
-    fputs_filtered ("}", stream);
-}
 
 static const struct generic_val_print_decorations rust_decorations =
 {
@@ -489,6 +438,215 @@ static const struct generic_val_print_decorations rust_decorations =
   "]"
 };
 
+/* See rust-lang.h.  */
+
+struct value *
+rust_slice_to_array (struct value *val)
+{
+  val = convert_slice (val);
+  if (val->type ()->code () != TYPE_CODE_ARRAY)
+    return nullptr;
+  return val;
+}
+
+/* Helper function to print a slice.  */
+
+void
+rust_language::val_print_slice
+     (struct value *val, struct ui_file *stream, int recurse,
+      const struct value_print_options *options) const
+{
+  struct type *orig_type = check_typedef (val->type ());
+
+  val = convert_slice (val);
+  struct type *type = check_typedef (val->type ());
+
+  /* &str is handled here; but for all other slice types it is fine to
+     simply print the contents.  */
+  if (orig_type->name () != nullptr
+      && strcmp (orig_type->name (), "&str") == 0)
+    {
+      LONGEST low_bound, high_bound;
+      if (get_array_bounds (type, &low_bound, &high_bound))
+	{
+	  val_print_string (type->target_type (), "UTF-8",
+			    val->address (), high_bound - low_bound + 1,
+			    stream, options);
+	  return;
+	}
+    }
+
+  /* Print the slice type here.  This was gdb's historical behavior
+     (from before unsized types were generically handled) and helps
+     make it clear that the user is seeing a slice, not an array.
+     Only arrays must be handled as the other cases are handled by
+     value_print_inner.  */
+  if (type->code () == TYPE_CODE_ARRAY)
+    {
+      type_print (orig_type, "", stream, -1);
+      gdb_printf (stream, " ");
+    }
+
+  value_print_inner (val, stream, recurse, options);
+}
+
+/* See rust-lang.h.  */
+
+void
+rust_language::val_print_struct
+	(struct value *val, struct ui_file *stream, int recurse,
+	 const struct value_print_options *options) const
+{
+  int i;
+  int first_field;
+  struct type *type = check_typedef (val->type ());
+
+  if (rust_slice_type_p (type))
+    {
+      val_print_slice (val, stream, recurse, options);
+      return;
+    }
+
+  bool is_tuple = rust_tuple_type_p (type);
+  bool is_tuple_struct = !is_tuple && rust_tuple_struct_type_p (type);
+  struct value_print_options opts;
+
+  if (!is_tuple)
+    {
+      if (type->name () != NULL)
+	gdb_printf (stream, "%s", type->name ());
+
+      if (type->num_fields () == 0)
+	return;
+
+      if (type->name () != NULL)
+	gdb_puts (" ", stream);
+    }
+
+  if (is_tuple || is_tuple_struct)
+    gdb_puts ("(", stream);
+  else
+    gdb_puts ("{", stream);
+
+  opts = *options;
+  opts.deref_ref = false;
+
+  first_field = 1;
+  for (i = 0; i < type->num_fields (); ++i)
+    {
+      if (type->field (i).is_static ())
+	continue;
+
+      if (!first_field)
+	gdb_puts (",", stream);
+
+      if (options->prettyformat)
+	{
+	  gdb_puts ("\n", stream);
+	  print_spaces (2 + 2 * recurse, stream);
+	}
+      else if (!first_field)
+	gdb_puts (" ", stream);
+
+      first_field = 0;
+
+      if (!is_tuple && !is_tuple_struct)
+	{
+	  fputs_styled (type->field (i).name (),
+			variable_name_style.style (), stream);
+	  gdb_puts (": ", stream);
+	}
+
+      common_val_print (value_field (val, i), stream, recurse + 1, &opts,
+			this);
+    }
+
+  if (options->prettyformat)
+    {
+      gdb_puts ("\n", stream);
+      print_spaces (2 * recurse, stream);
+    }
+
+  if (is_tuple || is_tuple_struct)
+    gdb_puts (")", stream);
+  else
+    gdb_puts ("}", stream);
+}
+
+/* See rust-lang.h.  */
+
+void
+rust_language::print_enum (struct value *val, struct ui_file *stream,
+			   int recurse,
+			   const struct value_print_options *options) const
+{
+  struct value_print_options opts = *options;
+  struct type *type = check_typedef (val->type ());
+
+  opts.deref_ref = false;
+
+  gdb_assert (rust_enum_p (type));
+  gdb::array_view<const gdb_byte> view
+    (val->contents_for_printing ().data (),
+     val->type ()->length ());
+  type = resolve_dynamic_type (type, view, val->address ());
+
+  if (rust_empty_enum_p (type))
+    {
+      /* Print the enum type name here to be more clear.  */
+      gdb_printf (stream, _("%s {%p[<No data fields>%p]}"),
+		  type->name (),
+		  metadata_style.style ().ptr (), nullptr);
+      return;
+    }
+
+  int variant_fieldno = rust_enum_variant (type);
+  val = val->primitive_field (0, variant_fieldno, type);
+  struct type *variant_type = type->field (variant_fieldno).type ();
+
+  int nfields = variant_type->num_fields ();
+
+  bool is_tuple = rust_tuple_struct_type_p (variant_type);
+
+  gdb_printf (stream, "%s", variant_type->name ());
+  if (nfields == 0)
+    {
+      /* In case of a nullary variant like 'None', just output
+	 the name. */
+      return;
+    }
+
+  /* In case of a non-nullary variant, we output 'Foo(x,y,z)'. */
+  if (is_tuple)
+    gdb_printf (stream, "(");
+  else
+    {
+      /* struct variant.  */
+      gdb_printf (stream, "{");
+    }
+
+  bool first_field = true;
+  for (int j = 0; j < nfields; j++)
+    {
+      if (!first_field)
+	gdb_puts (", ", stream);
+      first_field = false;
+
+      if (!is_tuple)
+	gdb_printf (stream, "%ps: ",
+		    styled_string (variable_name_style.style (),
+				   variant_type->field (j).name ()));
+
+      common_val_print (value_field (val, j), stream, recurse + 1, &opts,
+			this);
+    }
+
+  if (is_tuple)
+    gdb_puts (")", stream);
+  else
+    gdb_puts ("}", stream);
+}
+
 /* See language.h.  */
 
 void
@@ -497,38 +655,38 @@ rust_language::value_print_inner
 	 const struct value_print_options *options) const
 {
   struct value_print_options opts = *options;
-  opts.deref_ref = 1;
+  opts.deref_ref = true;
 
   if (opts.prettyformat == Val_prettyformat_default)
     opts.prettyformat = (opts.prettyformat_structs
 			 ? Val_prettyformat : Val_no_prettyformat);
 
-  struct type *type = check_typedef (value_type (val));
+  struct type *type = check_typedef (val->type ());
   switch (type->code ())
     {
     case TYPE_CODE_PTR:
       {
 	LONGEST low_bound, high_bound;
 	
-	if (TYPE_TARGET_TYPE (type)->code () == TYPE_CODE_ARRAY
-	    && rust_u8_type_p (TYPE_TARGET_TYPE (TYPE_TARGET_TYPE (type)))
-	    && get_array_bounds (TYPE_TARGET_TYPE (type), &low_bound,
+	if (type->target_type ()->code () == TYPE_CODE_ARRAY
+	    && rust_u8_type_p (type->target_type ()->target_type ())
+	    && get_array_bounds (type->target_type (), &low_bound,
 				 &high_bound))
 	  {
 	    /* We have a pointer to a byte string, so just print
 	       that.  */
-	    struct type *elttype = check_typedef (TYPE_TARGET_TYPE (type));
+	    struct type *elttype = check_typedef (type->target_type ());
 	    CORE_ADDR addr = value_as_address (val);
 	    struct gdbarch *arch = type->arch ();
 
 	    if (opts.addressprint)
 	      {
-		fputs_filtered (paddress (arch, addr), stream);
-		fputs_filtered (" ", stream);
+		gdb_puts (paddress (arch, addr), stream);
+		gdb_puts (" ", stream);
 	      }
 
-	    fputs_filtered ("b", stream);
-	    val_print_string (TYPE_TARGET_TYPE (elttype), "ASCII", addr,
+	    gdb_puts ("b", stream);
+	    val_print_string (elttype->target_type (), "ASCII", addr,
 			      high_bound - low_bound + 1, stream,
 			      &opts);
 	    break;
@@ -538,10 +696,10 @@ rust_language::value_print_inner
 
     case TYPE_CODE_INT:
       /* Recognize the unit type.  */
-      if (type->is_unsigned () && TYPE_LENGTH (type) == 0
+      if (type->is_unsigned () && type->length () == 0
 	  && type->name () != NULL && strcmp (type->name (), "()") == 0)
 	{
-	  fputs_filtered ("()", stream);
+	  gdb_puts ("()", stream);
 	  break;
 	}
       goto generic_print;
@@ -556,9 +714,9 @@ rust_language::value_print_inner
 	/* If we see a plain TYPE_CODE_STRING, then we're printing a
 	   byte string, hence the choice of "ASCII" as the
 	   encoding.  */
-	fputs_filtered ("b", stream);
-	printstr (stream, TYPE_TARGET_TYPE (type),
-		  value_contents_for_printing (val),
+	gdb_puts ("b", stream);
+	printstr (stream, type->target_type (),
+		  val->contents_for_printing ().data (),
 		  high_bound - low_bound + 1, "ASCII", 0, &opts);
       }
       break;
@@ -569,7 +727,7 @@ rust_language::value_print_inner
 
 	if (get_array_bounds (type, &low_bound, &high_bound)
 	    && high_bound - low_bound + 1 == 0)
-	  fputs_filtered ("[]", stream);
+	  gdb_puts ("[]", stream);
 	else
 	  goto generic_print;
       }
@@ -598,6 +756,27 @@ rust_language::value_print_inner
     }
 }
 
+/* See language.h.  */
+
+void
+rust_language::value_print
+	(struct value *val, struct ui_file *stream,
+	 const struct value_print_options *options) const
+{
+  value_print_options opts = *options;
+  opts.deref_ref = true;
+
+  struct type *type = check_typedef (val->type ());
+  if (type->is_pointer_or_reference ())
+    {
+      gdb_printf (stream, "(");
+      type_print (val->type (), "", stream, -1);
+      gdb_printf (stream, ") ");
+    }
+
+  return common_val_print (val, stream, 0, &opts, this);
+}
+
 
 
 static void
@@ -616,13 +795,13 @@ rust_print_struct_def (struct type *type, const char *varstring,
   /* Print a tuple type simply.  */
   if (rust_tuple_type_p (type))
     {
-      fputs_filtered (type->name (), stream);
+      gdb_puts (type->name (), stream);
       return;
     }
 
   /* If we see a base class, delegate to C.  */
   if (TYPE_N_BASECLASSES (type) > 0)
-    c_print_type (type, varstring, stream, show, level, flags);
+    c_print_type (type, varstring, stream, show, level, language_rust, flags);
 
   if (flags->print_offsets)
     {
@@ -647,26 +826,26 @@ rust_print_struct_def (struct type *type, const char *varstring,
       /* This code path is also used by unions and enums.  */
       if (is_enum)
 	{
-	  fputs_filtered ("enum ", stream);
+	  gdb_puts ("enum ", stream);
 	  dynamic_prop *prop = type->dyn_prop (DYN_PROP_VARIANT_PARTS);
 	  if (prop != nullptr && prop->kind () == PROP_TYPE)
 	    type = prop->original_type ();
 	}
       else if (type->code () == TYPE_CODE_STRUCT)
-	fputs_filtered ("struct ", stream);
+	gdb_puts ("struct ", stream);
       else
-	fputs_filtered ("union ", stream);
+	gdb_puts ("union ", stream);
 
       if (tagname != NULL)
-	fputs_filtered (tagname, stream);
+	gdb_puts (tagname, stream);
     }
 
   if (type->num_fields () == 0 && !is_tuple)
     return;
   if (for_rust_enum && !flags->print_offsets)
-    fputs_filtered (is_tuple_struct ? "(" : "{", stream);
+    gdb_puts (is_tuple_struct ? "(" : "{", stream);
   else
-    fputs_filtered (is_tuple_struct ? " (\n" : " {\n", stream);
+    gdb_puts (is_tuple_struct ? " (\n" : " {\n", stream);
 
   /* When printing offsets, we rearrange the fields into storage
      order.  This lets us show holes more clearly.  We work using
@@ -675,9 +854,9 @@ rust_print_struct_def (struct type *type, const char *varstring,
   std::vector<int> fields;
   for (int i = 0; i < type->num_fields (); ++i)
     {
-      if (field_is_static (&type->field (i)))
+      if (type->field (i).is_static ())
 	continue;
-      if (is_enum && TYPE_FIELD_ARTIFICIAL (type, i))
+      if (is_enum && type->field (i).is_artificial ())
 	continue;
       fields.push_back (i);
     }
@@ -685,16 +864,16 @@ rust_print_struct_def (struct type *type, const char *varstring,
     std::sort (fields.begin (), fields.end (),
 	       [&] (int a, int b)
 	       {
-		 return (TYPE_FIELD_BITPOS (type, a)
-			 < TYPE_FIELD_BITPOS (type, b));
+		 return (type->field (a).loc_bitpos ()
+			 < type->field (b).loc_bitpos ());
 	       });
 
   for (int i : fields)
     {
       QUIT;
 
-      gdb_assert (!field_is_static (&type->field (i)));
-      gdb_assert (! (is_enum && TYPE_FIELD_ARTIFICIAL (type, i)));
+      gdb_assert (!type->field (i).is_static ());
+      gdb_assert (! (is_enum && type->field (i).is_artificial ()));
 
       if (flags->print_offsets)
 	podata->update (type, i, stream);
@@ -706,25 +885,25 @@ rust_print_struct_def (struct type *type, const char *varstring,
       /* For a tuple struct we print the type but nothing
 	 else.  */
       if (!for_rust_enum || flags->print_offsets)
-	print_spaces_filtered (level + 2, stream);
+	print_spaces (level + 2, stream);
       if (is_enum)
-	fputs_styled (TYPE_FIELD_NAME (type, i), variable_name_style.style (),
+	fputs_styled (type->field (i).name (), variable_name_style.style (),
 		      stream);
       else if (!is_tuple_struct)
-	fprintf_filtered (stream, "%ps: ",
-			  styled_string (variable_name_style.style (),
-					 TYPE_FIELD_NAME (type, i)));
+	gdb_printf (stream, "%ps: ",
+		    styled_string (variable_name_style.style (),
+				   type->field (i).name ()));
 
       rust_internal_print_type (type->field (i).type (), NULL,
 				stream, (is_enum ? show : show - 1),
 				level + 2, flags, is_enum, podata);
       if (!for_rust_enum || flags->print_offsets)
-	fputs_filtered (",\n", stream);
+	gdb_puts (",\n", stream);
       /* Note that this check of "I" is ok because we only sorted the
 	 fields by offset when print_offsets was set, so we won't take
 	 this branch in that case.  */
       else if (i + 1 < type->num_fields ())
-	fputs_filtered (", ", stream);
+	gdb_puts (", ", stream);
     }
 
   if (flags->print_offsets)
@@ -732,13 +911,13 @@ rust_print_struct_def (struct type *type, const char *varstring,
       /* Undo the temporary level increase we did above.  */
       level -= 2;
       podata->finish (type, level, stream);
-      print_spaces_filtered (print_offset_data::indentation, stream);
+      print_spaces (print_offset_data::indentation, stream);
       if (level == 0)
-	print_spaces_filtered (2, stream);
+	print_spaces (2, stream);
     }
   if (!for_rust_enum || flags->print_offsets)
-    print_spaces_filtered (level, stream);
-  fputs_filtered (is_tuple_struct ? ")" : "}", stream);
+    print_spaces (level, stream);
+  gdb_puts (is_tuple_struct ? ")" : "}", stream);
 }
 
 /* la_print_type implementation for Rust.  */
@@ -756,9 +935,9 @@ rust_internal_print_type (struct type *type, const char *varstring,
       /* Rust calls the unit type "void" in its debuginfo,
 	 but we don't want to print it as that.  */
       if (type->code () == TYPE_CODE_VOID)
-	fputs_filtered ("()", stream);
+	gdb_puts ("()", stream);
       else
-	fputs_filtered (type->name (), stream);
+	gdb_puts (type->name (), stream);
       return;
     }
 
@@ -770,7 +949,7 @@ rust_internal_print_type (struct type *type, const char *varstring,
 	 unqualified name, and there is nothing else to print
 	 here.  */
       if (!for_rust_enum)
-	fputs_filtered ("()", stream);
+	gdb_puts ("()", stream);
       break;
 
     case TYPE_CODE_FUNC:
@@ -778,24 +957,24 @@ rust_internal_print_type (struct type *type, const char *varstring,
       if (type->has_varargs ())
 	goto c_printer;
 
-      fputs_filtered ("fn ", stream);
+      gdb_puts ("fn ", stream);
       if (varstring != NULL)
-	fputs_filtered (varstring, stream);
-      fputs_filtered ("(", stream);
+	gdb_puts (varstring, stream);
+      gdb_puts ("(", stream);
       for (int i = 0; i < type->num_fields (); ++i)
 	{
 	  QUIT;
 	  if (i > 0)
-	    fputs_filtered (", ", stream);
+	    gdb_puts (", ", stream);
 	  rust_internal_print_type (type->field (i).type (), "", stream,
 				    -1, 0, flags, false, podata);
 	}
-      fputs_filtered (")", stream);
+      gdb_puts (")", stream);
       /* If it returns unit, we can omit the return type.  */
-      if (TYPE_TARGET_TYPE (type)->code () != TYPE_CODE_VOID)
+      if (type->target_type ()->code () != TYPE_CODE_VOID)
 	{
-	  fputs_filtered (" -> ", stream);
-	  rust_internal_print_type (TYPE_TARGET_TYPE (type), "", stream,
+	  gdb_puts (" -> ", stream);
+	  rust_internal_print_type (type->target_type (), "", stream,
 				    -1, 0, flags, false, podata);
 	}
       break;
@@ -804,18 +983,18 @@ rust_internal_print_type (struct type *type, const char *varstring,
       {
 	LONGEST low_bound, high_bound;
 
-	fputs_filtered ("[", stream);
-	rust_internal_print_type (TYPE_TARGET_TYPE (type), NULL,
+	gdb_puts ("[", stream);
+	rust_internal_print_type (type->target_type (), NULL,
 				  stream, show - 1, level, flags, false,
 				  podata);
 
 	if (type->bounds ()->high.kind () == PROP_LOCEXPR
 	    || type->bounds ()->high.kind () == PROP_LOCLIST)
-	  fprintf_filtered (stream, "; variable length");
+	  gdb_printf (stream, "; variable length");
 	else if (get_array_bounds (type, &low_bound, &high_bound))
-	  fprintf_filtered (stream, "; %s",
-			    plongest (high_bound - low_bound + 1));
-	fputs_filtered ("]", stream);
+	  gdb_printf (stream, "; %s",
+		      plongest (high_bound - low_bound + 1));
+	gdb_puts ("]", stream);
       }
       break;
 
@@ -829,18 +1008,18 @@ rust_internal_print_type (struct type *type, const char *varstring,
       {
 	int len = 0;
 
-	fputs_filtered ("enum ", stream);
+	gdb_puts ("enum ", stream);
 	if (type->name () != NULL)
 	  {
-	    fputs_filtered (type->name (), stream);
-	    fputs_filtered (" ", stream);
+	    gdb_puts (type->name (), stream);
+	    gdb_puts (" ", stream);
 	    len = strlen (type->name ());
 	  }
-	fputs_filtered ("{\n", stream);
+	gdb_puts ("{\n", stream);
 
 	for (int i = 0; i < type->num_fields (); ++i)
 	  {
-	    const char *name = TYPE_FIELD_NAME (type, i);
+	    const char *name = type->field (i).name ();
 
 	    QUIT;
 
@@ -849,33 +1028,34 @@ rust_internal_print_type (struct type *type, const char *varstring,
 		&& name[len] == ':'
 		&& name[len + 1] == ':')
 	      name += len + 2;
-	    fprintf_filtered (stream, "%*s%ps,\n",
-			      level + 2, "",
-			      styled_string (variable_name_style.style (),
-					     name));
+	    gdb_printf (stream, "%*s%ps,\n",
+			level + 2, "",
+			styled_string (variable_name_style.style (),
+				       name));
 	  }
 
-	fputs_filtered ("}", stream);
+	gdb_puts ("}", stream);
       }
       break;
 
     case TYPE_CODE_PTR:
       {
 	if (type->name () != nullptr)
-	  fputs_filtered (type->name (), stream);
+	  gdb_puts (type->name (), stream);
 	else
 	  {
 	    /* We currently can't distinguish between pointers and
 	       references.  */
-	    fputs_filtered ("*mut ", stream);
-	    type_print (TYPE_TARGET_TYPE (type), "", stream, 0);
+	    gdb_puts ("*mut ", stream);
+	    type_print (type->target_type (), "", stream, 0);
 	  }
       }
       break;
 
     default:
     c_printer:
-      c_print_type (type, varstring, stream, show, level, flags);
+      c_print_type (type, varstring, stream, show, level, language_rust,
+		    flags);
     }
 }
 
@@ -890,7 +1070,7 @@ rust_composite_type (struct type *original,
 		     const char *field1, struct type *type1,
 		     const char *field2, struct type *type2)
 {
-  struct type *result = alloc_type_copy (original);
+  struct type *result = type_allocator (original).new_type ();
   int i, nfields, bitpos;
 
   nfields = 0;
@@ -902,9 +1082,7 @@ rust_composite_type (struct type *original,
   result->set_code (TYPE_CODE_STRUCT);
   result->set_name (name);
 
-  result->set_num_fields (nfields);
-  result->set_fields
-    ((struct field *) TYPE_ZALLOC (result, nfields * sizeof (struct field)));
+  result->alloc_fields (nfields);
 
   i = 0;
   bitpos = 0;
@@ -912,10 +1090,10 @@ rust_composite_type (struct type *original,
     {
       struct field *field = &result->field (i);
 
-      SET_FIELD_BITPOS (*field, bitpos);
-      bitpos += TYPE_LENGTH (type1) * TARGET_CHAR_BIT;
+      field->set_loc_bitpos (bitpos);
+      bitpos += type1->length () * TARGET_CHAR_BIT;
 
-      FIELD_NAME (*field) = field1;
+      field->set_name (field1);
       field->set_type (type1);
       ++i;
     }
@@ -933,17 +1111,16 @@ rust_composite_type (struct type *original,
 	  if (delta != 0)
 	    bitpos += align - delta;
 	}
-      SET_FIELD_BITPOS (*field, bitpos);
+      field->set_loc_bitpos (bitpos);
 
-      FIELD_NAME (*field) = field2;
+      field->set_name (field2);
       field->set_type (type2);
       ++i;
     }
 
   if (i > 0)
-    TYPE_LENGTH (result)
-      = (TYPE_FIELD_BITPOS (result, i - 1) / TARGET_CHAR_BIT +
-	 TYPE_LENGTH (result->field (i - 1).type ()));
+    result->set_length (result->field (i - 1).loc_bitpos () / TARGET_CHAR_BIT
+			+ result->field (i - 1).type ()->length ());
   return result;
 }
 
@@ -990,7 +1167,7 @@ rust_range (struct type *expect_type, struct expression *exp,
 	}
       else
 	{
-	  index_type = value_type (high);
+	  index_type = high->type ();
 	  name = (inclusive
 		  ? "std::ops::RangeToInclusive" : "std::ops::RangeTo");
 	}
@@ -999,14 +1176,14 @@ rust_range (struct type *expect_type, struct expression *exp,
     {
       if (high == NULL)
 	{
-	  index_type = value_type (low);
+	  index_type = low->type ();
 	  name = "std::ops::RangeFrom";
 	}
       else
 	{
-	  if (!types_equal (value_type (low), value_type (high)))
+	  if (!types_equal (low->type (), high->type ()))
 	    error (_("Range expression with different types"));
-	  index_type = value_type (low);
+	  index_type = low->type ();
 	  name = inclusive ? "std::ops::RangeInclusive" : "std::ops::Range";
 	}
     }
@@ -1022,9 +1199,9 @@ rust_range (struct type *expect_type, struct expression *exp,
 				    high == NULL ? NULL : "end", index_type);
 
   if (noside == EVAL_AVOID_SIDE_EFFECTS)
-    return value_zero (range_type, lval_memory);
+    return value::zero (range_type, lval_memory);
 
-  addrval = value_allocate_space_in_inferior (TYPE_LENGTH (range_type));
+  addrval = value_allocate_space_in_inferior (range_type->length ());
   addr = value_as_long (addrval);
   result = value_at_lazy (range_type, addr);
 
@@ -1071,14 +1248,14 @@ rust_compute_range (struct type *type, struct value *range,
     return;
 
   i = 0;
-  if (strcmp (TYPE_FIELD_NAME (type, 0), "start") == 0)
+  if (strcmp (type->field (0).name (), "start") == 0)
     {
       *kind = RANGE_HIGH_BOUND_DEFAULT;
       *low = value_as_long (value_field (range, 0));
       ++i;
     }
   if (type->num_fields () > i
-      && strcmp (TYPE_FIELD_NAME (type, i), "end") == 0)
+      && strcmp (type->field (i).name (), "end") == 0)
     {
       *kind = (*kind == (RANGE_LOW_BOUND_DEFAULT | RANGE_HIGH_BOUND_DEFAULT)
 	       ? RANGE_LOW_BOUND_DEFAULT : RANGE_STANDARD);
@@ -1104,7 +1281,7 @@ rust_subscript (struct type *expect_type, struct expression *exp,
   LONGEST high = 0;
   int want_slice = 0;
 
-  rhstype = check_typedef (value_type (rhs));
+  rhstype = check_typedef (rhs->type ());
   if (rust_range_type_p (rhstype))
     {
       if (!for_addr)
@@ -1115,27 +1292,21 @@ rust_subscript (struct type *expect_type, struct expression *exp,
   else
     low = value_as_long (rhs);
 
-  struct type *type = check_typedef (value_type (lhs));
+  struct type *type = check_typedef (lhs->type ());
+  struct type *orig_type = type;
   if (noside == EVAL_AVOID_SIDE_EFFECTS)
     {
       struct type *base_type = nullptr;
       if (type->code () == TYPE_CODE_ARRAY)
-	base_type = TYPE_TARGET_TYPE (type);
+	base_type = type->target_type ();
       else if (rust_slice_type_p (type))
 	{
-	  for (int i = 0; i < type->num_fields (); ++i)
-	    {
-	      if (strcmp (TYPE_FIELD_NAME (type, i), "data_ptr") == 0)
-		{
-		  base_type = TYPE_TARGET_TYPE (type->field (i).type ());
-		  break;
-		}
-	    }
+	  base_type = rust_array_like_element_type (type);
 	  if (base_type == nullptr)
-	    error (_("Could not find 'data_ptr' in slice type"));
+	    error (_("Cannot subscript non-array-like slice"));
 	}
       else if (type->code () == TYPE_CODE_PTR)
-	base_type = TYPE_TARGET_TYPE (type);
+	base_type = type->target_type ();
       else
 	error (_("Cannot subscript non-array type"));
 
@@ -1156,12 +1327,18 @@ rust_subscript (struct type *expect_type, struct expression *exp,
       else
 	new_type = base_type;
 
-      return value_zero (new_type, VALUE_LVAL (lhs));
+      return value::zero (new_type, lhs->lval ());
     }
   else
     {
       LONGEST low_bound;
       struct value *base;
+
+      if (rust_slice_type_p (type))
+	{
+	  lhs = convert_slice (lhs);
+	  type = check_typedef (lhs->type ());
+	}
 
       if (type->code () == TYPE_CODE_ARRAY)
 	{
@@ -1171,15 +1348,6 @@ rust_subscript (struct type *expect_type, struct expression *exp,
 	  if (low_bound != 0)
 	    error (_("Found array with non-zero lower bound"));
 	  ++high_bound;
-	}
-      else if (rust_slice_type_p (type))
-	{
-	  struct value *len;
-
-	  base = value_struct_elt (&lhs, {}, "data_ptr", NULL, "slice");
-	  len = value_struct_elt (&lhs, {}, "length", NULL, "slice");
-	  low_bound = 0;
-	  high_bound = value_as_long (len);
 	}
       else if (type->code () == TYPE_CODE_PTR)
 	{
@@ -1220,13 +1388,15 @@ rust_subscript (struct type *expect_type, struct expression *exp,
 	  usize = language_lookup_primitive_type (exp->language_defn,
 						  exp->gdbarch,
 						  "usize");
-	  const char *new_name = ((type != nullptr
-				   && rust_slice_type_p (type))
-				  ? type->name () : "&[*gdb*]");
+	  /* Preserve the name for slice-of-slice; this lets
+	     string-printing work a bit more nicely.  */
+	  const char *new_name = ((orig_type != nullptr
+				   && rust_slice_type_p (orig_type))
+				  ? orig_type->name () : "&[*gdb*]");
 
-	  slice = rust_slice_type (new_name, value_type (result), usize);
+	  slice = rust_slice_type (new_name, result->type (), usize);
 
-	  addrval = value_allocate_space_in_inferior (TYPE_LENGTH (slice));
+	  addrval = value_allocate_space_in_inferior (slice->length ());
 	  addr = value_as_long (addrval);
 	  tem = value_at_lazy (slice, addr);
 
@@ -1243,21 +1413,27 @@ rust_subscript (struct type *expect_type, struct expression *exp,
   return result;
 }
 
-/* A helper function for UNOP_IND.  */
+namespace expr
+{
 
 struct value *
-eval_op_rust_ind (struct type *expect_type, struct expression *exp,
-		  enum noside noside,
-		  enum exp_opcode opcode,
-		  struct value *value)
+rust_unop_ind_operation::evaluate (struct type *expect_type,
+				   struct expression *exp,
+				   enum noside noside)
 {
-  gdb_assert (noside == EVAL_NORMAL);
+  if (noside != EVAL_NORMAL)
+    return unop_ind_operation::evaluate (expect_type, exp, noside);
+
+  struct value *value = std::get<0> (m_storage)->evaluate (nullptr, exp,
+							   noside);
   struct value *trait_ptr = rust_get_trait_object_pointer (value);
   if (trait_ptr != NULL)
     value = trait_ptr;
 
   return value_ind (value);
 }
+
+} /* namespace expr */
 
 /* A helper function for UNOP_COMPLEMENT.  */
 
@@ -1267,8 +1443,8 @@ eval_op_rust_complement (struct type *expect_type, struct expression *exp,
 			 enum exp_opcode opcode,
 			 struct value *value)
 {
-  if (value_type (value)->code () == TYPE_CODE_BOOL)
-    return value_from_longest (value_type (value), value_logical_not (value));
+  if (value->type ()->code () == TYPE_CODE_BOOL)
+    return value_from_longest (value->type (), value_logical_not (value));
   return value_complement (value);
 }
 
@@ -1285,30 +1461,27 @@ eval_op_rust_array (struct type *expect_type, struct expression *exp,
     error (_("Array with negative number of elements"));
 
   if (noside == EVAL_NORMAL)
-    {
-      int i;
-      std::vector<struct value *> eltvec (copies);
-
-      for (i = 0; i < copies; ++i)
-	eltvec[i] = elt;
-      return value_array (0, copies - 1, eltvec.data ());
-    }
+    return value_array (0, std::vector<value *> (copies, elt));
   else
     {
       struct type *arraytype
-	= lookup_array_range_type (value_type (elt), 0, copies - 1);
-      return allocate_value (arraytype);
+	= lookup_array_range_type (elt->type (), 0, copies - 1);
+      return value::allocate (arraytype);
     }
 }
 
-/* A helper function for STRUCTOP_ANONYMOUS.  */
+namespace expr
+{
 
 struct value *
-eval_op_rust_struct_anon (struct type *expect_type, struct expression *exp,
-			  enum noside noside,
-			  int field_number, struct value *lhs)
+rust_struct_anon::evaluate (struct type *expect_type,
+			    struct expression *exp,
+			    enum noside noside)
 {
-  struct type *type = value_type (lhs);
+  value *lhs = std::get<1> (m_storage)->evaluate (nullptr, exp, noside);
+  int field_number = std::get<0> (m_storage);
+
+  struct type *type = lhs->type ();
 
   if (type->code () == TYPE_CODE_STRUCT)
     {
@@ -1316,18 +1489,17 @@ eval_op_rust_struct_anon (struct type *expect_type, struct expression *exp,
 
       if (rust_enum_p (type))
 	{
-	  gdb::array_view<const gdb_byte> view (value_contents (lhs),
-						TYPE_LENGTH (type));
-	  type = resolve_dynamic_type (type, view, value_address (lhs));
+	  type = resolve_dynamic_type (type, lhs->contents (),
+				       lhs->address ());
 
 	  if (rust_empty_enum_p (type))
 	    error (_("Cannot access field %d of empty enum %s"),
 		   field_number, type->name ());
 
 	  int fieldno = rust_enum_variant (type);
-	  lhs = value_primitive_field (lhs, 0, fieldno, type);
+	  lhs = lhs->primitive_field (0, fieldno, type);
 	  outer_type = type;
-	  type = value_type (lhs);
+	  type = lhs->type ();
 	}
 
       /* Tuples and tuple structs */
@@ -1361,37 +1533,37 @@ eval_op_rust_struct_anon (struct type *expect_type, struct expression *exp,
 		  field_number, type->name ());
 	}
 
-      return value_primitive_field (lhs, 0, field_number, type);
+      return lhs->primitive_field (0, field_number, type);
     }
   else
     error(_("Anonymous field access is only allowed on tuples, \
 tuple structs, and tuple-like enum variants"));
 }
 
-/* A helper function for STRUCTOP_STRUCT.  */
-
 struct value *
-eval_op_rust_structop (struct type *expect_type, struct expression *exp,
-		       enum noside noside,
-		       struct value *lhs, const char *field_name)
+rust_structop::evaluate (struct type *expect_type,
+			 struct expression *exp,
+			 enum noside noside)
 {
+  value *lhs = std::get<0> (m_storage)->evaluate (nullptr, exp, noside);
+  const char *field_name = std::get<1> (m_storage).c_str ();
+
   struct value *result;
-  struct type *type = value_type (lhs);
+  struct type *type = lhs->type ();
   if (type->code () == TYPE_CODE_STRUCT && rust_enum_p (type))
     {
-      gdb::array_view<const gdb_byte> view (value_contents (lhs),
-					    TYPE_LENGTH (type));
-      type = resolve_dynamic_type (type, view, value_address (lhs));
+      type = resolve_dynamic_type (type, lhs->contents (),
+				   lhs->address ());
 
       if (rust_empty_enum_p (type))
 	error (_("Cannot access field %s of empty enum %s"),
 	       field_name, type->name ());
 
       int fieldno = rust_enum_variant (type);
-      lhs = value_primitive_field (lhs, 0, fieldno, type);
+      lhs = lhs->primitive_field (0, fieldno, type);
 
       struct type *outer_type = type;
-      type = value_type (lhs);
+      type = lhs->type ();
       if (rust_tuple_type_p (type) || rust_tuple_struct_type_p (type))
 	error (_("Attempting to access named field %s of tuple "
 		 "variant %s::%s, which has only anonymous fields"),
@@ -1411,14 +1583,15 @@ eval_op_rust_structop (struct type *expect_type, struct expression *exp,
 	}
     }
   else
-    result = value_struct_elt (&lhs, {}, field_name, NULL, "structure");
+    {
+      if (rust_slice_type_p (type))
+	lhs = convert_slice (lhs);
+      result = value_struct_elt (&lhs, {}, field_name, NULL, "structure");
+    }
   if (noside == EVAL_AVOID_SIDE_EFFECTS)
-    result = value_zero (value_type (result), VALUE_LVAL (result));
+    result = value::zero (result->type (), result->lval ());
   return result;
 }
-
-namespace expr
-{
 
 value *
 rust_aggregate_operation::evaluate (struct type *expect_type,
@@ -1432,7 +1605,7 @@ rust_aggregate_operation::evaluate (struct type *expect_type,
 
   if (noside == EVAL_NORMAL)
     {
-      addrval = value_allocate_space_in_inferior (TYPE_LENGTH (type));
+      addrval = value_allocate_space_in_inferior (type->length ());
       addr = value_as_long (addrval);
       result = value_at_lazy (type, addr);
     }
@@ -1464,7 +1637,7 @@ rust_aggregate_operation::evaluate (struct type *expect_type,
     }
 
   if (noside == EVAL_AVOID_SIDE_EFFECTS)
-    result = allocate_value (type);
+    result = value::allocate (type);
   else
     result = value_at_lazy (type, addr);
 
@@ -1483,10 +1656,10 @@ rust_structop::evaluate_funcall (struct type *expect_type,
      type in order to look up the method.  */
   args[0] = std::get<0> (m_storage)->evaluate (nullptr, exp, noside);
   /* We don't yet implement real Deref semantics.  */
-  while (value_type (args[0])->code () == TYPE_CODE_PTR)
+  while (args[0]->type ()->code () == TYPE_CODE_PTR)
     args[0] = value_ind (args[0]);
 
-  struct type *type = value_type (args[0]);
+  struct type *type = args[0]->type ();
   if ((type->code () != TYPE_CODE_STRUCT
        && type->code () != TYPE_CODE_UNION
        && type->code () != TYPE_CODE_ENUM)
@@ -1500,11 +1673,12 @@ rust_structop::evaluate_funcall (struct type *expect_type,
 
   const struct block *block = get_selected_block (0);
   struct block_symbol sym = lookup_symbol (name.c_str (), block,
-					   VAR_DOMAIN, NULL);
+					   SEARCH_FUNCTION_DOMAIN,
+					   nullptr);
   if (sym.symbol == NULL)
     error (_("Could not find function named '%s'"), name.c_str ());
 
-  struct type *fn_type = SYMBOL_TYPE (sym.symbol);
+  struct type *fn_type = sym.symbol->type ();
   if (fn_type->num_fields () == 0)
     error (_("Function '%s' takes no arguments"), name.c_str ());
 
@@ -1517,7 +1691,7 @@ rust_structop::evaluate_funcall (struct type *expect_type,
     args[i + 1] = ops[i]->evaluate (nullptr, exp, noside);
 
   if (noside == EVAL_AVOID_SIDE_EFFECTS)
-    return value_zero (TYPE_TARGET_TYPE (fn_type), not_lval);
+    return value::zero (fn_type->target_type (), not_lval);
   return call_function_by_hand (function, NULL, args);
 }
 
@@ -1540,27 +1714,30 @@ rust_language::language_arch_info (struct gdbarch *gdbarch,
     return t;
   };
 
+  type_allocator alloc (gdbarch);
   struct type *bool_type
-    = add (arch_boolean_type (gdbarch, 8, 1, "bool"));
-  add (arch_character_type (gdbarch, 32, 1, "char"));
-  add (arch_integer_type (gdbarch, 8, 0, "i8"));
+    = add (init_boolean_type (alloc, 8, 1, "bool"));
+  add (init_character_type (alloc, 32, 1, "char"));
+  add (init_integer_type (alloc, 8, 0, "i8"));
   struct type *u8_type
-    = add (arch_integer_type (gdbarch, 8, 1, "u8"));
-  add (arch_integer_type (gdbarch, 16, 0, "i16"));
-  add (arch_integer_type (gdbarch, 16, 1, "u16"));
-  add (arch_integer_type (gdbarch, 32, 0, "i32"));
-  add (arch_integer_type (gdbarch, 32, 1, "u32"));
-  add (arch_integer_type (gdbarch, 64, 0, "i64"));
-  add (arch_integer_type (gdbarch, 64, 1, "u64"));
+    = add (init_integer_type (alloc, 8, 1, "u8"));
+  add (init_integer_type (alloc, 16, 0, "i16"));
+  add (init_integer_type (alloc, 16, 1, "u16"));
+  add (init_integer_type (alloc, 32, 0, "i32"));
+  add (init_integer_type (alloc, 32, 1, "u32"));
+  add (init_integer_type (alloc, 64, 0, "i64"));
+  add (init_integer_type (alloc, 64, 1, "u64"));
+  add (init_integer_type (alloc, 128, 0, "i128"));
+  add (init_integer_type (alloc, 128, 1, "u128"));
 
-  unsigned int length = 8 * TYPE_LENGTH (builtin->builtin_data_ptr);
-  add (arch_integer_type (gdbarch, length, 0, "isize"));
+  unsigned int length = 8 * builtin->builtin_data_ptr->length ();
+  add (init_integer_type (alloc, length, 0, "isize"));
   struct type *usize_type
-    = add (arch_integer_type (gdbarch, length, 1, "usize"));
+    = add (init_integer_type (alloc, length, 1, "usize"));
 
-  add (arch_float_type (gdbarch, 32, "f32", floatformats_ieee_single));
-  add (arch_float_type (gdbarch, 64, "f64", floatformats_ieee_double));
-  add (arch_integer_type (gdbarch, 0, 1, "()"));
+  add (init_float_type (alloc, 32, "f32", floatformats_ieee_single));
+  add (init_float_type (alloc, 64, "f64", floatformats_ieee_double));
+  add (init_integer_type (alloc, 0, 1, "()"));
 
   struct type *tem = make_cv_type (1, 0, u8_type, NULL);
   add (rust_slice_type ("&str", tem, usize_type));
@@ -1591,21 +1768,31 @@ rust_language::emitchar (int ch, struct type *chtype,
     generic_emit_char (ch, chtype, stream, quoter,
 		       target_charset (chtype->arch ()));
   else if (ch == '\\' || ch == quoter)
-    fprintf_filtered (stream, "\\%c", ch);
+    gdb_printf (stream, "\\%c", ch);
   else if (ch == '\n')
-    fputs_filtered ("\\n", stream);
+    gdb_puts ("\\n", stream);
   else if (ch == '\r')
-    fputs_filtered ("\\r", stream);
+    gdb_puts ("\\r", stream);
   else if (ch == '\t')
-    fputs_filtered ("\\t", stream);
+    gdb_puts ("\\t", stream);
   else if (ch == '\0')
-    fputs_filtered ("\\0", stream);
+    gdb_puts ("\\0", stream);
   else if (ch >= 32 && ch <= 127 && isprint (ch))
-    fputc_filtered (ch, stream);
+    gdb_putc (ch, stream);
   else if (ch <= 255)
-    fprintf_filtered (stream, "\\x%02x", ch);
+    gdb_printf (stream, "\\x%02x", ch);
   else
-    fprintf_filtered (stream, "\\u{%06x}", ch);
+    gdb_printf (stream, "\\u{%06x}", ch);
+}
+
+/* See language.h.  */
+
+bool
+rust_language::is_array_like (struct type *type) const
+{
+  if (!rust_slice_type_p (type))
+    return false;
+  return rust_array_like_element_type (type) != nullptr;
 }
 
 /* See language.h.  */
@@ -1618,14 +1805,51 @@ rust_language::is_string_type_p (struct type *type) const
   type = check_typedef (type);
   return ((type->code () == TYPE_CODE_STRING)
 	  || (type->code () == TYPE_CODE_PTR
-	      && (TYPE_TARGET_TYPE (type)->code () == TYPE_CODE_ARRAY
-		  && rust_u8_type_p (TYPE_TARGET_TYPE (TYPE_TARGET_TYPE (type)))
-		  && get_array_bounds (TYPE_TARGET_TYPE (type), &low_bound,
+	      && (type->target_type ()->code () == TYPE_CODE_ARRAY
+		  && rust_u8_type_p (type->target_type ()->target_type ())
+		  && get_array_bounds (type->target_type (), &low_bound,
 				       &high_bound)))
 	  || (type->code () == TYPE_CODE_STRUCT
 	      && !rust_enum_p (type)
 	      && rust_slice_type_p (type)
 	      && strcmp (type->name (), "&str") == 0));
+}
+
+/* See language.h.  */
+
+struct block_symbol
+rust_language::lookup_symbol_nonlocal
+     (const char *name, const struct block *block,
+      const domain_search_flags domain) const
+{
+  struct block_symbol result = {};
+
+  const char *scope = block == nullptr ? "" : block->scope ();
+  symbol_lookup_debug_printf
+    ("rust_lookup_symbol_non_local (%s, %s (scope %s), %s)",
+     name, host_address_to_string (block), scope,
+     domain_name (domain).c_str ());
+
+  /* Look up bare names in the block's scope.  */
+  std::string scopedname;
+  if (name[cp_find_first_component (name)] == '\0')
+    {
+      if (scope[0] != '\0')
+	{
+	  scopedname = std::string (scope) + "::" + name;
+	  name = scopedname.c_str ();
+	}
+      else
+	name = NULL;
+    }
+
+  if (name != NULL)
+    {
+      result = lookup_symbol_in_static_block (name, block, domain);
+      if (result.symbol == NULL)
+	result = lookup_global_symbol (name, block, domain);
+    }
+  return result;
 }
 
 /* Single instance of the Rust language class.  */

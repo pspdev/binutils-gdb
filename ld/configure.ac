@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script
 dnl
-dnl   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+dnl   Copyright (C) 2012-2024 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -18,21 +18,22 @@ dnl <http://www.gnu.org/licenses/>.
 dnl
 
 m4_include([../bfd/version.m4])
-AC_INIT([ld], BFD_VERSION)
+AC_INIT([ld], [BFD_VERSION])
 AC_CONFIG_SRCDIR(ldmain.c)
 
 AC_CANONICAL_TARGET
 AC_CANONICAL_BUILD
 
 AM_INIT_AUTOMAKE
+AM_SILENT_RULES([yes])
 AM_MAINTAINER_MODE
 
 AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_GREP
-AC_GNU_SOURCE
 AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_INSTALL
+PKG_PROG_PKG_CONFIG
 
 LT_INIT
 ACX_LARGEFILE
@@ -59,13 +60,8 @@ AC_ARG_ENABLE(targets,
   no)       enable_targets= ;;
   *)        enable_targets=$enableval ;;
 esac])dnl
-AC_ARG_ENABLE(64-bit-bfd,
-[  --enable-64-bit-bfd     64-bit support (on hosts with narrower word sizes)],
-[case "${enableval}" in
-  yes)  want64=true  ;;
-  no)   want64=false ;;
-  *)    AC_MSG_ERROR(bad value ${enableval} for 64-bit-bfd option) ;;
-esac],[want64=false])dnl
+
+BFD_64_BIT
 
 AC_ARG_WITH(sysroot,
 [  --with-sysroot[=DIR] Search for usr/lib et al within DIR.],
@@ -166,6 +162,15 @@ AC_ARG_ENABLE(compressed_debug_sections,
   ,no, | ,none,)  ac_default_compressed_debug_sections=no ;;
 esac])dnl
 
+# Select default compression algorithm.
+ac_default_compressed_debug_sections_algorithm=COMPRESS_DEBUG_GABI_ZLIB
+AC_ARG_ENABLE(default_compressed_debug_sections_algorithm,
+	      AS_HELP_STRING([--enable-default-compressed-debug-sections-algorithm={zlib,zstd}],
+	      [Default compression algorithm for --enable-compressed-debug-sections.]),
+[case "${enableval}" in
+   zstd) ac_default_compressed_debug_sections_algorithm=COMPRESS_DEBUG_ZSTD ;;
+esac])dnl
+
 # Decide setting DT_RUNPATH instead of DT_RPATH by default
 ac_default_new_dtags=unset
 # Provide a configure time option to override our default.
@@ -191,7 +196,7 @@ esac])dnl
 # Decide if DT_TEXTREL check should be enabled in ELF linker.
 ac_default_ld_textrel_check=unset
 AC_ARG_ENABLE([textrel-check],
-	      AC_HELP_STRING([--enable-textrel-check=@<:@yes|no|warning|error@:>@],
+	      AS_HELP_STRING([--enable-textrel-check=@<:@yes|no|warning|error@:>@],
 			     [enable DT_TEXTREL check in ELF linker]),
 [case "${enableval}" in
   yes|no|warning|error) ac_default_ld_textrel_check=${enableval} ;;
@@ -206,6 +211,75 @@ AC_ARG_ENABLE(separate-code,
   yes) ac_default_ld_z_separate_code=1 ;;
   no) ac_default_ld_z_separate_code=0 ;;
 esac])
+
+# Decide if --rosegment should be enabled in the ELF linker by default.
+ac_default_ld_rosegment=unset
+AC_ARG_ENABLE(rosegment,
+	      AS_HELP_STRING([--enable-rosegment],
+	      [enable --rosegment in the ELF linker by default]),
+[case "${enableval}" in
+  yes) ac_default_ld_rosegment=1 ;;
+  no)  ac_default_ld_rosegment=0 ;;
+esac])
+
+# Decide if -z mark-plt should be enabled in ELF x86-64 linker by default.
+ac_default_ld_z_mark_plt=unset
+AC_ARG_ENABLE(mark-plt,
+	      AS_HELP_STRING([--enable-mark-plt],
+	      [enable -z mark-plt in ELF x86-64 linker by default]),
+[case "${enableval}" in
+  yes) ac_default_ld_z_mark_plt=1 ;;
+  no) ac_default_ld_z_mark_plt=0 ;;
+esac])
+
+
+# By default warn when an executable stack is created due to object files
+# requesting such, not when the user specifies -z execstack.
+ac_default_ld_warn_execstack=2
+AC_ARG_ENABLE(warn-execstack,
+	      AS_HELP_STRING([--enable-warn-execstack],
+	      [enable warnings when creating an executable stack]),
+[case "${enableval}" in
+  yes) ac_default_ld_warn_execstack=1 ;;
+  no)  ac_default_ld_warn_execstack=0 ;;
+esac])
+
+ac_default_ld_error_execstack=0
+AC_ARG_ENABLE(error-execstack,
+	      AS_HELP_STRING([--enable-error-execstack],
+	      [turn executable stack warnings into errors]),
+[case "${enableval}" in
+  yes) ac_default_ld_error_execstack=1 ;;
+  no)  ac_default_ld_error_execstack=0 ;;
+esac])
+
+ac_default_ld_warn_rwx_segments=unset
+AC_ARG_ENABLE(warn-rwx-segments,
+	      AS_HELP_STRING([--enable-warn-rwx-segments],
+	      [enable warnings when creating segments with RWX permissions]),
+[case "${enableval}" in
+  yes) ac_default_ld_warn_rwx_segments=1 ;;
+  no)  ac_default_ld_warn_rwx_segments=0 ;;
+esac])
+
+ac_default_ld_error_rwx_segments=0
+AC_ARG_ENABLE(error-rwx-segments,
+	      AS_HELP_STRING([--enable-error-rwx-segments],
+	      [turn executable segment warnings into errors]),
+[case "${enableval}" in
+  yes) ac_default_ld_error_rwx_segments=1 ;;
+  no)  ac_default_ld_error_rwx_segments=0 ;;
+esac])
+
+ac_default_ld_default_execstack=unset
+AC_ARG_ENABLE(default-execstack,
+	      AS_HELP_STRING([--enable-default-execstack],
+	      [create an executable stack if an input file is missing a .note.GNU-stack section]),
+[case "${enableval}" in
+  yes) ac_default_ld_default_execstack=1 ;;
+  no)  ac_default_ld_default_execstack=0 ;;
+esac])
+
 
 # Decide if --error-handling-script should be supported.
 ac_support_error_handling_script=unset
@@ -262,6 +336,23 @@ fi
 AM_CONDITIONAL(ENABLE_LIBCTF, test "${enable_libctf}" = yes)
 AC_SUBST(enable_libctf)
 
+# Used to validate --package-metadata= input. Disabled by default.
+AC_ARG_ENABLE([jansson],
+  [AS_HELP_STRING([--enable-jansson],
+    [enable jansson [default=no]])],
+  [enable_jansson=$enableval],
+  [enable_jansson="no"])
+
+AS_IF([test "x$enable_jansson" != "xno"],
+  [PKG_CHECK_MODULES(JANSSON, [jansson],
+    [
+      AC_DEFINE(HAVE_JANSSON, 1, [The jansson library is to be used])
+      AC_SUBST([JANSSON_CFLAGS])
+      AC_SUBST([JANSSON_LIBS])
+    ],
+    [AC_MSG_ERROR([Cannot find jansson library])])
+  ])
+
 AM_BINUTILS_WARNINGS
 
 AM_LC_MESSAGES
@@ -313,13 +404,13 @@ AC_SUBST(NATIVE_LIB_DIRS)
 AC_CHECK_HEADERS(fcntl.h elf-hints.h limits.h inttypes.h stdint.h \
 		 sys/file.h sys/mman.h sys/param.h sys/stat.h sys/time.h \
 		 sys/types.h unistd.h)
-AC_CHECK_FUNCS(close glob lseek mkstemp open realpath sbrk waitpid)
+AC_CHECK_FUNCS(close glob lseek mkstemp open realpath waitpid)
 
 BFD_BINARY_FOPEN
 
-AC_CHECK_DECLS([asprintf, environ, sbrk])
+AC_CHECK_DECLS([asprintf, environ, stpcpy])
 
-AC_FUNC_MMAP
+GCC_AC_FUNC_MMAP
 
 AC_SEARCH_LIBS([dlopen], [dl])
 
@@ -333,28 +424,10 @@ if test $ld_cv_decl_getopt_unistd_h = yes; then
 	    [Is the prototype for getopt in <unistd.h> in the expected format?])
 fi
 
-# Link in zlib if we can.  This allows us to read and write
-# compressed CTF sections.
+# Link in zlib/zstd if we can.  This allows us to read and write
+# compressed debug sections.
 AM_ZLIB
-
-# When converting linker scripts into strings for use in emulation
-# files, use astring.sed if the compiler supports ANSI string
-# concatenation, or ostring.sed otherwise.  This is to support the
-# broken Microsoft MSVC compiler, which limits the length of string
-# constants, while still supporting pre-ANSI compilers which do not
-# support string concatenation.
-AC_MSG_CHECKING([whether ANSI C string concatenation works])
-AC_CACHE_VAL(ld_cv_string_concatenation,
-[AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [char *a = "a" "a";])],
-  ld_cv_string_concatenation=yes,
-  ld_cv_string_concatenation=no)])
-AC_MSG_RESULT($ld_cv_string_concatenation)
-if test "$ld_cv_string_concatenation" = "yes"; then
-  STRINGIFY=astring.sed
-else
-  STRINGIFY=ostring.sed
-fi
-AC_SUBST(STRINGIFY)
+AC_ZSTD
 
 # target-specific stuff:
 
@@ -364,15 +437,6 @@ all_emuls=
 all_emul_extras=
 all_libpath=
 TDIRS=
-
-# If the host is 64-bit, then we enable 64-bit targets by default.
-# This is consistent with what ../bfd/configure.ac does.
-if test x${want64} = xfalse; then
-  AC_CHECK_SIZEOF(void *)
-  if test "x${ac_cv_sizeof_void_p}" = "x8"; then
-    want64=true
-  fi
-fi
 
 elf_list_options=false
 elf_shlib_list_options=false
@@ -399,11 +463,11 @@ do
       EMUL=$targ_emul
     fi
 
-    if test x${want64} = xfalse; then
+    if test x${enable_64_bit_bfd} = xno; then
       . ${srcdir}/../bfd/config.bfd
     fi
 
-    if test x${want64} = xtrue; then
+    if test x${enable_64_bit_bfd} = xyes; then
       targ_extra_emuls="$targ_extra_emuls $targ64_extra_emuls"
       targ_extra_libpath="$targ_extra_libpath $targ64_extra_libpath"
     fi
@@ -473,6 +537,9 @@ if test x$ac_default_compressed_debug_sections = xyes ; then
   AC_DEFINE(DEFAULT_FLAG_COMPRESS_DEBUG, 1, [Define if you want compressed debug sections by default.])
 fi
 
+AC_DEFINE_UNQUOTED(DEFAULT_COMPRESSED_DEBUG_ALGORITHM, $ac_default_compressed_debug_sections_algorithm,
+		   [Default compression algorithm for --enable-compressed-debug-sections.])
+
 if test "${ac_default_new_dtags}" = unset; then
   ac_default_new_dtags=0
 fi
@@ -514,6 +581,48 @@ AC_DEFINE_UNQUOTED(DEFAULT_LD_Z_SEPARATE_CODE,
   $ac_default_ld_z_separate_code,
   [Define to 1 if you want to enable -z separate-code in ELF linker by default.])
 
+if test "${ac_default_ld_rosegment}" = unset; then
+  ac_default_ld_rosegment=0
+fi
+AC_DEFINE_UNQUOTED(DEFAULT_LD_ROSEGMENT,
+  $ac_default_ld_rosegment,
+  [Define to 1 if you want to enable --rosegment in the ELF linker by default.])
+
+if test "${ac_default_ld_z_mark_plt}" = unset; then
+  ac_default_ld_z_mark_plt=0
+fi
+AC_DEFINE_UNQUOTED(DEFAULT_LD_Z_MARK_PLT,
+  $ac_default_ld_z_mark_plt,
+  [Define to 1 if you want to enable -z mark-plt in ELF x86-64 linker by default.])
+
+
+AC_DEFINE_UNQUOTED(DEFAULT_LD_WARN_EXECSTACK,
+  $ac_default_ld_warn_execstack,
+  [Define to 1 if you want to enable --warn-execstack in ELF linker by default.])
+
+AC_DEFINE_UNQUOTED(DEFAULT_LD_ERROR_EXECSTACK,
+  $ac_default_ld_error_execstack,
+  [Define to 1 if you want to turn executable stack warnings into errors by default.])
+
+if test "${ac_default_ld_warn_rwx_segments}" = unset; then
+  ac_default_ld_warn_rwx_segments=1
+fi
+AC_DEFINE_UNQUOTED(DEFAULT_LD_WARN_RWX_SEGMENTS,
+  $ac_default_ld_warn_rwx_segments,
+  [Define to 0 if you want to disable --warn-rwx-segments in ELF linker by default.])
+
+AC_DEFINE_UNQUOTED(DEFAULT_LD_ERROR_RWX_SEGMENTS,
+  $ac_default_ld_error_rwx_segments,
+  [Define to 1 if you want to turn executable segment warnings into errors by default.])
+
+if test "${ac_default_ld_default_execstack}" = unset; then
+  ac_default_ld_default_execstack=1
+fi
+AC_DEFINE_UNQUOTED(DEFAULT_LD_EXECSTACK,
+  $ac_default_ld_default_execstack,
+  [Define to 0 if you want to disable the generation of an executable stack when a .note-GNU-stack section is missing.])
+
+
 if test "${ac_support_error_handling_script}" = unset; then
   ac_support_error_handling_script=1
 fi
@@ -538,7 +647,7 @@ AC_SUBST(TDIRS)
 AM_SUBST_NOTMAKE(TDIRS)
 
 if test x${all_targets} = xtrue; then
-  if test x${want64} = xtrue; then
+  if test x${enable_64_bit_bfd} = xyes; then
     EMULATION_OFILES='$(ALL_EMULATIONS) $(ALL_64_EMULATIONS)'
     EMUL_EXTRA_OFILES='$(ALL_EMUL_EXTRA_OFILES) $(ALL_64_EMUL_EXTRA_OFILES)'
   else
@@ -559,15 +668,18 @@ AC_SUBST(EMULATION_LIBPATH)
 if test x${enable_static} = xno; then
   TESTBFDLIB="-Wl,--rpath,../bfd/.libs ../bfd/.libs/libbfd.so"
   TESTCTFLIB="-Wl,--rpath,../libctf/.libs ../libctf/.libs/libctf.so"
+  TESTSFRAMELIB="-Wl,--rpath,../libsframe/.libs ../libsframe/.libs/libsframe.so"
 else
   TESTBFDLIB="../bfd/.libs/libbfd.a"
   TESTCTFLIB="../libctf/.libs/libctf.a"
+  TESTSFRAMELIB="../libsframe/.libs/libsframe.a"
 fi
 if test "${enable_libctf}" = no; then
     TESTCTFLIB=
 fi
 AC_SUBST(TESTBFDLIB)
 AC_SUBST(TESTCTFLIB)
+AC_SUBST(TESTSFRAMELIB)
 
 target_vendor=${target_vendor=$host_vendor}
 case "$target_vendor" in

@@ -1,5 +1,5 @@
 /* tc-m68k.c -- Assemble for the m68k family
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -107,25 +107,9 @@ static int m68k_rel32_from_cmdline;
    displacement.  */
 static enum m68k_size m68k_index_width_default = SIZE_LONG;
 
-/* We want to warn if any text labels are misaligned.  In order to get
-   the right line number, we need to record the line number for each
-   label.  */
-struct label_line
-{
-  struct label_line *next;
-  symbolS *label;
-  const char *file;
-  unsigned int line;
-  int text;
-};
-
-/* The list of labels.  */
-
-static struct label_line *labels;
-
 /* The current label.  */
 
-static struct label_line *current_label;
+static struct m68k_tc_sy *current_label;
 
 /* Pointer to list holding the opcodes sorted by name.  */
 static struct m68k_opcode const ** m68k_sorted_opcodes;
@@ -471,7 +455,6 @@ static int reverse_16_bits (int in);
 static int reverse_8_bits (int in);
 static void install_gen_operand (int mode, int val);
 static void install_operand (int mode, int val);
-static void s_bss (int);
 static void s_data1 (int);
 static void s_data2 (int);
 static void s_even (int);
@@ -878,7 +861,6 @@ const pseudo_typeS md_pseudo_table[] =
 {
   {"data1", s_data1, 0},
   {"data2", s_data2, 0},
-  {"bss", s_bss, 0},
   {"even", s_even, 0},
   {"skip", s_space, 0},
   {"proc", s_proc, 0},
@@ -4697,14 +4679,11 @@ md_begin (void)
 void
 m68k_frob_label (symbolS *sym)
 {
-  struct label_line *n;
+  struct m68k_tc_sy *n;
 
-  n = XNEW (struct label_line);
-  n->next = labels;
-  n->label = sym;
+  n = symbol_get_tc (sym);
   n->file = as_where (&n->line);
   n->text = 0;
-  labels = n;
   current_label = n;
 
   dwarf2_emit_label (sym);
@@ -4733,19 +4712,13 @@ m68k_frob_symbol (symbolS *sym)
     }
   else if ((S_GET_VALUE (sym) & 1) != 0)
     {
-      struct label_line *l;
+      struct m68k_tc_sy *l;
+      l = symbol_get_tc (sym);
 
-      for (l = labels; l != NULL; l = l->next)
-	{
-	  if (l->label == sym)
-	    {
-	      if (l->text)
-		as_warn_where (l->file, l->line,
-			       _("text label `%s' aligned to odd boundary"),
-			       S_GET_NAME (sym));
-	      break;
-	    }
-	}
+      if (l->text)
+        as_warn_where (l->file, l->line,
+		       _("text label `%s' aligned to odd boundary"),
+		       S_GET_NAME (sym));
     }
 }
 
@@ -5515,16 +5488,6 @@ static void
 s_data2 (int ignore ATTRIBUTE_UNUSED)
 {
   subseg_set (data_section, 2);
-  demand_empty_rest_of_line ();
-}
-
-static void
-s_bss (int ignore ATTRIBUTE_UNUSED)
-{
-  /* We don't support putting frags in the BSS segment, we fake it
-     by marking in_bss, then looking at s_skip for clues.  */
-
-  subseg_set (bss_section, 0);
   demand_empty_rest_of_line ();
 }
 

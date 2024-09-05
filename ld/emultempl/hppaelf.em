@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+#   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -314,11 +314,6 @@ EOF
 # Define some shell vars to insert bits of code into the standard elf
 # parse_args and list_options functions.
 #
-PARSE_AND_LIST_PROLOGUE='
-#define OPTION_MULTI_SUBSPACE		301
-#define OPTION_STUBGROUP_SIZE		(OPTION_MULTI_SUBSPACE + 1)
-'
-
 PARSE_AND_LIST_LONGOPTS='
   { "multi-subspace", no_argument, NULL, OPTION_MULTI_SUBSPACE },
   { "stub-group-size", required_argument, NULL, OPTION_STUBGROUP_SIZE },

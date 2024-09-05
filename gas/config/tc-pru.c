@@ -1,5 +1,5 @@
 /* TI PRU assembler.
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2024 Free Software Foundation, Inc.
    Contributed by Dimitar Dimitrov <dimitar@dinux.eu>
    Based on tc-nios2.c
 
@@ -368,7 +368,7 @@ s_pru_align (int ignore ATTRIBUTE_UNUSED)
 static void
 s_pru_text (int i)
 {
-  s_text (i);
+  obj_elf_text (i);
   pru_last_label = NULL;
   pru_current_align = 0;
   pru_current_align_seg = now_seg;
@@ -379,7 +379,7 @@ s_pru_text (int i)
 static void
 s_pru_data (int i)
 {
-  s_data (i);
+  obj_elf_data (i);
   pru_last_label = NULL;
   pru_current_align = 0;
   pru_current_align_seg = now_seg;
@@ -1401,6 +1401,7 @@ pru_parse_args (pru_insn_infoS *insn ATTRIBUTE_UNUSED, char *argstr,
   char *p;
   char *end = NULL;
   int i;
+  size_t len;
   p = argstr;
   i = 0;
   bool terminate = false;
@@ -1436,6 +1437,13 @@ pru_parse_args (pru_insn_infoS *insn ATTRIBUTE_UNUSED, char *argstr,
 	  if (end != NULL)
 	    as_bad (_("too many arguments"));
 	}
+
+      /* Strip trailing whitespace.  */
+      len = strlen (parsed_args[i]);
+      for (char *temp = parsed_args[i] + len - 1;
+	   len && ISSPACE (*temp);
+	   temp--, len--)
+	*temp = '\0';
 
       if (*parsestr == '\0' || (p != NULL && *p == '\0'))
 	terminate = true;
@@ -1787,7 +1795,7 @@ md_pcrel_from (fixS *fixP ATTRIBUTE_UNUSED)
 
 /* Called just before the assembler exits.  */
 void
-md_end (void)
+pru_md_end (void)
 {
   htab_delete (pru_opcode_hash);
   htab_delete (pru_reg_hash);

@@ -1,4 +1,4 @@
-/* Copyright (C) 1992-2021 Free Software Foundation, Inc.
+/* Copyright (C) 1992-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -15,25 +15,23 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "target-dcache.h"
-#include "gdbcmd.h"
 #include "progspace.h"
 #include "cli/cli-cmds.h"
 
 /* The target dcache is kept per-address-space.  This key lets us
    associate the cache with the address space.  */
 
-static const struct address_space_key<DCACHE, dcache_deleter>
+static const registry<address_space>::key<DCACHE, dcache_deleter>
   target_dcache_aspace_key;
 
 /* Target dcache is initialized or not.  */
 
 int
-target_dcache_init_p (void)
+target_dcache_init_p (address_space_ref_ptr aspace)
 {
   DCACHE *dcache
-    = target_dcache_aspace_key.get (current_program_space->aspace);
+    = target_dcache_aspace_key.get (aspace.get ());
 
   return (dcache != NULL);
 }
@@ -41,10 +39,10 @@ target_dcache_init_p (void)
 /* Invalidate the target dcache.  */
 
 void
-target_dcache_invalidate (void)
+target_dcache_invalidate (address_space_ref_ptr aspace)
 {
   DCACHE *dcache
-    = target_dcache_aspace_key.get (current_program_space->aspace);
+    = target_dcache_aspace_key.get (aspace.get ());
 
   if (dcache != NULL)
     dcache_invalidate (dcache);
@@ -54,24 +52,24 @@ target_dcache_invalidate (void)
    initialized yet.  */
 
 DCACHE *
-target_dcache_get (void)
+target_dcache_get (address_space_ref_ptr aspace)
 {
-  return target_dcache_aspace_key.get (current_program_space->aspace);
+  return target_dcache_aspace_key.get (aspace.get ());
 }
 
 /* Return the target dcache.  If it is not initialized yet, initialize
    it.  */
 
 DCACHE *
-target_dcache_get_or_init (void)
+target_dcache_get_or_init (address_space_ref_ptr aspace)
 {
   DCACHE *dcache
-    = target_dcache_aspace_key.get (current_program_space->aspace);
+    = target_dcache_aspace_key.get (aspace.get ());
 
   if (dcache == NULL)
     {
       dcache = dcache_init ();
-      target_dcache_aspace_key.set (current_program_space->aspace, dcache);
+      target_dcache_aspace_key.set (aspace.get (), dcache);
     }
 
   return dcache;
@@ -93,7 +91,7 @@ static void
 set_stack_cache (const char *args, int from_tty, struct cmd_list_element *c)
 {
   if (stack_cache_enabled != stack_cache_enabled_1)
-    target_dcache_invalidate ();
+    target_dcache_invalidate (current_program_space->aspace);
 
   stack_cache_enabled = stack_cache_enabled_1;
 }
@@ -102,7 +100,7 @@ static void
 show_stack_cache (struct ui_file *file, int from_tty,
 		  struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Cache use for stack accesses is %s.\n"), value);
+  gdb_printf (file, _("Cache use for stack accesses is %s.\n"), value);
 }
 
 /* Return true if "stack cache" is enabled, otherwise, return false.  */
@@ -131,7 +129,7 @@ static void
 set_code_cache (const char *args, int from_tty, struct cmd_list_element *c)
 {
   if (code_cache_enabled != code_cache_enabled_1)
-    target_dcache_invalidate ();
+    target_dcache_invalidate (current_program_space->aspace);
 
   code_cache_enabled = code_cache_enabled_1;
 }
@@ -142,7 +140,7 @@ static void
 show_code_cache (struct ui_file *file, int from_tty,
 		 struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Cache use for code accesses is %s.\n"), value);
+  gdb_printf (file, _("Cache use for code accesses is %s.\n"), value);
 }
 
 /* Return true if "code cache" is enabled, otherwise, return false.  */
@@ -158,9 +156,9 @@ code_cache_enabled_p (void)
 static void
 maint_flush_dcache_command (const char *command, int from_tty)
 {
-  target_dcache_invalidate ();
+  target_dcache_invalidate (current_program_space->aspace);
   if (from_tty)
-    printf_filtered (_("The dcache was flushed.\n"));
+    gdb_printf (_("The dcache was flushed.\n"));
 }
 
 void _initialize_target_dcache ();

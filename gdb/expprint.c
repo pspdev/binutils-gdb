@@ -1,6 +1,6 @@
 /* Print in infix form a struct expression.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,14 +17,13 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "symtab.h"
 #include "gdbtypes.h"
 #include "expression.h"
 #include "value.h"
 #include "language.h"
 #include "parser-defs.h"
-#include "user-regs.h"		/* For user_reg_map_regnum_to_name.  */
+#include "user-regs.h"
 #include "target.h"
 #include "block.h"
 #include "objfiles.h"
@@ -36,98 +35,111 @@
 
 #include <ctype.h>
 
-/* Default name for the standard operator OPCODE (i.e., one defined in
-   the definition of enum exp_opcode).  */
+/* Meant to be used in debug sessions, so don't export it in a header file.  */
+extern void ATTRIBUTE_USED debug_exp (struct expression *exp);
 
-const char *
-op_name (enum exp_opcode opcode)
-{
-  switch (opcode)
-    {
-    default:
-      {
-	static char buf[30];
-
-	xsnprintf (buf, sizeof (buf), "<unknown %d>", opcode);
-	return buf;
-      }
-#define OP(name)	\
-    case name:		\
-      return #name ;
-#include "std-operator.def"
-#undef OP
-    }
-}
+/* Print EXP.  */
 
 void
-dump_prefix_expression (struct expression *exp, struct ui_file *stream)
+ATTRIBUTE_USED
+debug_exp (struct expression *exp)
 {
-  exp->op->dump (stream, 0);
+  exp->dump (gdb_stdlog);
+  gdb_flush (gdb_stdlog);
 }
 
 namespace expr
 {
 
+bool
+check_objfile (const struct block *block, struct objfile *objfile)
+{
+  return check_objfile (block->objfile (), objfile);
+}
+
 void
 dump_for_expression (struct ui_file *stream, int depth, enum exp_opcode op)
 {
-  fprintf_filtered (stream, _("%*sOperation: %s\n"), depth, "", op_name (op));
+  gdb_printf (stream, _("%*sOperation: "), depth, "");
+
+  switch (op)
+    {
+    default:
+      gdb_printf (stream, "<unknown %d>", op);
+      break;
+
+#define OP(name)	\
+    case name:		\
+      gdb_puts (#name, stream); \
+      break;
+#include "std-operator.def"
+#undef OP
+    }
+
+  gdb_puts ("\n", stream);
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth, const std::string &str)
 {
-  fprintf_filtered (stream, _("%*sString: %s\n"), depth, "", str.c_str ());
+  gdb_printf (stream, _("%*sString: %s\n"), depth, "", str.c_str ());
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth, struct type *type)
 {
-  fprintf_filtered (stream, _("%*sType: "), depth, "");
+  gdb_printf (stream, _("%*sType: "), depth, "");
   type_print (type, nullptr, stream, 0);
-  fprintf_filtered (stream, "\n");
+  gdb_printf (stream, "\n");
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth, CORE_ADDR addr)
 {
-  fprintf_filtered (stream, _("%*sConstant: %s\n"), depth, "",
-		     core_addr_to_string (addr));
+  gdb_printf (stream, _("%*sConstant: %s\n"), depth, "",
+	      core_addr_to_string (addr));
+}
+
+void
+dump_for_expression (struct ui_file *stream, int depth, const gdb_mpz &val)
+{
+  gdb_printf (stream, _("%*sConstant: %s\n"), depth, "", val.str ().c_str ());
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth, internalvar *ivar)
 {
-  fprintf_filtered (stream, _("%*sInternalvar: $%s\n"), depth, "",
-		     internalvar_name (ivar));
+  gdb_printf (stream, _("%*sInternalvar: $%s\n"), depth, "",
+	      internalvar_name (ivar));
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth, symbol *sym)
 {
-  fprintf_filtered (stream, _("%*sSymbol: %s\n"), depth, "",
-		     sym->print_name ());
+  gdb_printf (stream, _("%*sSymbol: %s\n"), depth, "",
+	      sym->print_name ());
+  dump_for_expression (stream, depth + 1, sym->type ());
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth,
 		     bound_minimal_symbol msym)
 {
-  fprintf_filtered (stream, _("%*sMinsym %s in objfile %s\n"), depth, "",
-		    msym.minsym->print_name (), objfile_name (msym.objfile));
+  gdb_printf (stream, _("%*sMinsym %s in objfile %s\n"), depth, "",
+	      msym.minsym->print_name (), objfile_name (msym.objfile));
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth, const block *bl)
 {
-  fprintf_filtered (stream, _("%*sBlock: %p\n"), depth, "", bl);
+  gdb_printf (stream, _("%*sBlock: %p\n"), depth, "", bl);
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth,
 		     const block_symbol &sym)
 {
-  fprintf_filtered (stream, _("%*sBlock symbol:\n"), depth, "");
+  gdb_printf (stream, _("%*sBlock symbol:\n"), depth, "");
   dump_for_expression (stream, depth + 1, sym.symbol);
   dump_for_expression (stream, depth + 1, sym.block);
 }
@@ -136,56 +148,56 @@ void
 dump_for_expression (struct ui_file *stream, int depth,
 		     type_instance_flags flags)
 {
-  fprintf_filtered (stream, _("%*sType flags: "), depth, "");
+  gdb_printf (stream, _("%*sType flags: "), depth, "");
   if (flags & TYPE_INSTANCE_FLAG_CONST)
-    fputs_unfiltered ("const ", stream);
+    gdb_puts ("const ", stream);
   if (flags & TYPE_INSTANCE_FLAG_VOLATILE)
-    fputs_unfiltered ("volatile", stream);
-  fprintf_filtered (stream, "\n");
+    gdb_puts ("volatile", stream);
+  gdb_printf (stream, "\n");
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth,
 		     enum c_string_type_values flags)
 {
-  fprintf_filtered (stream, _("%*sC string flags: "), depth, "");
+  gdb_printf (stream, _("%*sC string flags: "), depth, "");
   switch (flags & ~C_CHAR)
     {
     case C_WIDE_STRING:
-      fputs_unfiltered (_("wide "), stream);
+      gdb_puts (_("wide "), stream);
       break;
     case C_STRING_16:
-      fputs_unfiltered (_("u16 "), stream);
+      gdb_puts (_("u16 "), stream);
       break;
     case C_STRING_32:
-      fputs_unfiltered (_("u32 "), stream);
+      gdb_puts (_("u32 "), stream);
       break;
     default:
-      fputs_unfiltered (_("ordinary "), stream);
+      gdb_puts (_("ordinary "), stream);
       break;
     }
 
   if ((flags & C_CHAR) != 0)
-    fputs_unfiltered (_("char"), stream);
+    gdb_puts (_("char"), stream);
   else
-    fputs_unfiltered (_("string"), stream);
-  fputs_unfiltered ("\n", stream);
+    gdb_puts (_("string"), stream);
+  gdb_puts ("\n", stream);
 }
 
 void
 dump_for_expression (struct ui_file *stream, int depth,
 		     enum range_flag flags)
 {
-  fprintf_filtered (stream, _("%*sRange:"), depth, "");
+  gdb_printf (stream, _("%*sRange:"), depth, "");
   if ((flags & RANGE_LOW_BOUND_DEFAULT) != 0)
-    fputs_unfiltered (_("low-default "), stream);
+    gdb_puts (_("low-default "), stream);
   if ((flags & RANGE_HIGH_BOUND_DEFAULT) != 0)
-    fputs_unfiltered (_("high-default "), stream);
+    gdb_puts (_("high-default "), stream);
   if ((flags & RANGE_HIGH_BOUND_EXCLUSIVE) != 0)
-    fputs_unfiltered (_("high-exclusive "), stream);
+    gdb_puts (_("high-exclusive "), stream);
   if ((flags & RANGE_HAS_STRIDE) != 0)
-    fputs_unfiltered (_("has-stride"), stream);
-  fprintf_filtered (stream, "\n");
+    gdb_puts (_("has-stride"), stream);
+  gdb_printf (stream, "\n");
 }
 
 void
@@ -198,9 +210,9 @@ dump_for_expression (struct ui_file *stream, int depth,
 void
 float_const_operation::dump (struct ui_file *stream, int depth) const
 {
-  fprintf_filtered (stream, _("%*sFloat: "), depth, "");
+  gdb_printf (stream, _("%*sFloat: "), depth, "");
   print_floating (m_data.data (), m_type, stream);
-  fprintf_filtered (stream, "\n");
+  gdb_printf (stream, "\n");
 }
 
 } /* namespace expr */

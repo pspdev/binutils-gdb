@@ -1,6 +1,6 @@
 /* Displaced stepping related things.
 
-   Copyright (C) 2020-2021 Free Software Foundation, Inc.
+   Copyright (C) 2020-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "displaced-stepping.h"
 
 #include "cli/cli-cmds.h"
@@ -40,7 +39,7 @@ static void
 show_debug_displaced (struct ui_file *file, int from_tty,
 		      struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Displace stepping debugging is %s.\n"), value);
+  gdb_printf (file, _("Displace stepping debugging is %s.\n"), value);
 }
 
 displaced_step_prepare_status
@@ -53,9 +52,8 @@ displaced_step_buffers::prepare (thread_info *thread, CORE_ADDR &displaced_pc)
     gdb_assert (buf.current_thread != thread);
 
   regcache *regcache = get_thread_regcache (thread);
-  const address_space *aspace = regcache->aspace ();
   gdbarch *arch = regcache->arch ();
-  ULONGEST len = gdbarch_max_insn_length (arch);
+  ULONGEST len = gdbarch_displaced_step_buffer_length (arch);
 
   /* Search for an unused buffer.  */
   displaced_step_buffer *buffer = nullptr;
@@ -64,7 +62,8 @@ displaced_step_buffers::prepare (thread_info *thread, CORE_ADDR &displaced_pc)
 
   for (displaced_step_buffer &candidate : m_buffers)
     {
-      bool bp_in_range = breakpoint_in_range_p (aspace, candidate.addr, len);
+      bool bp_in_range = breakpoint_in_range_p (thread->inf->aspace.get (),
+						candidate.addr, len);
       bool is_free = candidate.current_thread == nullptr;
 
       if (!bp_in_range)
@@ -122,8 +121,7 @@ displaced_step_buffers::prepare (thread_info *thread, CORE_ADDR &displaced_pc)
 
   displaced_debug_printf ("saved %s: %s",
 			  paddress (arch, buffer->addr),
-			  displaced_step_dump_bytes
-			  (buffer->saved_copy.data (), len).c_str ());
+			  bytes_to_string (buffer->saved_copy).c_str ());
 
   /* Save this in a local variable first, so it's released if code below
      throws.  */
@@ -139,14 +137,32 @@ displaced_step_buffers::prepare (thread_info *thread, CORE_ADDR &displaced_pc)
       return DISPLACED_STEP_PREPARE_STATUS_CANT;
     }
 
-  /* Resume execution at the copy.  */
-  regcache_write_pc (regcache, buffer->addr);
-
   /* This marks the buffer as being in use.  */
   buffer->current_thread = thread;
 
   /* Save this, now that we know everything went fine.  */
   buffer->copy_insn_closure = std::move (copy_insn_closure);
+
+  /* Reset the displaced step buffer state if we failed to write PC.
+     Otherwise we will prevent this buffer from being used, as it will
+     always have a thread in buffer->current_thread.  */
+  auto reset_buffer = make_scope_exit
+    ([buffer] ()
+      {
+	buffer->current_thread = nullptr;
+	buffer->copy_insn_closure.reset ();
+      });
+
+  /* Adjust the PC so it points to the displaced step buffer address that will
+     be used.  This needs to be done after we save the copy_insn_closure, as
+     some architectures (Arm, for one) need that information so they can adjust
+     other data as needed.  In particular, Arm needs to know if the instruction
+     being executed in the displaced step buffer is thumb or not.  Without that
+     information, things will be very wrong in a random way.  */
+  regcache_write_pc (regcache, buffer->addr);
+
+  /* PC update successful.  Discard the displaced step state rollback.  */
+  reset_buffer.release ();
 
   /* Tell infrun not to try preparing a displaced step again for this inferior if
      all buffers are taken.  */
@@ -174,11 +190,17 @@ write_memory_ptid (ptid_t ptid, CORE_ADDR memaddr,
 }
 
 static bool
-displaced_step_instruction_executed_successfully (gdbarch *arch,
-						  gdb_signal signal)
+displaced_step_instruction_executed_successfully
+  (gdbarch *arch, const target_waitstatus &status)
 {
-  if (signal != GDB_SIGNAL_TRAP)
+  if (status.kind () == TARGET_WAITKIND_STOPPED
+      && status.sig () != GDB_SIGNAL_TRAP)
     return false;
+
+  /* All other (thread event) waitkinds can only happen if the
+     instruction fully executed.  For example, a fork, or a syscall
+     entry can only happen if the syscall instruction actually
+     executed.  */
 
   if (target_stopped_by_watchpoint ())
     {
@@ -192,7 +214,7 @@ displaced_step_instruction_executed_successfully (gdbarch *arch,
 
 displaced_step_finish_status
 displaced_step_buffers::finish (gdbarch *arch, thread_info *thread,
-				gdb_signal sig)
+				const target_waitstatus &status)
 {
   gdb_assert (thread->displaced_step_state.in_progress ());
 
@@ -225,37 +247,35 @@ displaced_step_buffers::finish (gdbarch *arch, thread_info *thread,
      below.  */
   thread->inf->displaced_step_state.unavailable = false;
 
-  ULONGEST len = gdbarch_max_insn_length (arch);
+  ULONGEST len = gdbarch_displaced_step_buffer_length (arch);
 
   /* Restore memory of the buffer.  */
   write_memory_ptid (thread->ptid, buffer->addr,
 		     buffer->saved_copy.data (), len);
 
   displaced_debug_printf ("restored %s %s",
-			  target_pid_to_str (thread->ptid).c_str (),
+			  thread->ptid.to_string ().c_str (),
 			  paddress (arch, buffer->addr));
+
+  /* If the thread exited while stepping, we are done.  The code above
+     made the buffer available again, and we restored the bytes in the
+     buffer.  We don't want to run the fixup: since the thread is now
+     dead there's nothing to adjust.  */
+  if (status.kind () == TARGET_WAITKIND_THREAD_EXITED)
+    return DISPLACED_STEP_FINISH_STATUS_OK;
 
   regcache *rc = get_thread_regcache (thread);
 
   bool instruction_executed_successfully
-    = displaced_step_instruction_executed_successfully (arch, sig);
+    = displaced_step_instruction_executed_successfully (arch, status);
 
-  if (instruction_executed_successfully)
-    {
-      gdbarch_displaced_step_fixup (arch, copy_insn_closure.get (),
-				    buffer->original_pc,
-				    buffer->addr, rc);
-      return DISPLACED_STEP_FINISH_STATUS_OK;
-    }
-  else
-    {
-      /* Since the instruction didn't complete, all we can do is relocate the
-	 PC.  */
-      CORE_ADDR pc = regcache_read_pc (rc);
-      pc = buffer->original_pc + (pc - buffer->addr);
-      regcache_write_pc (rc, pc);
-      return DISPLACED_STEP_FINISH_STATUS_NOT_EXECUTED;
-    }
+  gdbarch_displaced_step_fixup (arch, copy_insn_closure.get (),
+				buffer->original_pc, buffer->addr,
+				rc, instruction_executed_successfully);
+
+  return (instruction_executed_successfully
+	  ? DISPLACED_STEP_FINISH_STATUS_OK
+	  : DISPLACED_STEP_FINISH_STATUS_NOT_EXECUTED);
 }
 
 const displaced_step_copy_insn_closure *
@@ -263,8 +283,13 @@ displaced_step_buffers::copy_insn_closure_by_addr (CORE_ADDR addr)
 {
   for (const displaced_step_buffer &buffer : m_buffers)
     {
-      if (addr == buffer.addr)
+      /* Make sure we have active buffers to compare to.  */
+      if (buffer.current_thread != nullptr && addr == buffer.addr)
+      {
+	/* The closure information should always be available. */
+	gdb_assert (buffer.copy_insn_closure.get () != nullptr);
 	return buffer.copy_insn_closure.get ();
+      }
     }
 
   return nullptr;
@@ -280,12 +305,12 @@ displaced_step_buffers::restore_in_ptid (ptid_t ptid)
 
       regcache *regcache = get_thread_regcache (buffer.current_thread);
       gdbarch *arch = regcache->arch ();
-      ULONGEST len = gdbarch_max_insn_length (arch);
+      ULONGEST len = gdbarch_displaced_step_buffer_length (arch);
 
       write_memory_ptid (ptid, buffer.addr, buffer.saved_copy.data (), len);
 
       displaced_debug_printf ("restored in ptid %s %s",
-			      target_pid_to_str (ptid).c_str (),
+			      ptid.to_string ().c_str (),
 			      paddress (arch, buffer.addr));
     }
 }

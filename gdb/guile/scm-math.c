@@ -1,6 +1,6 @@
 /* GDB/Scheme support for math operations on values.
 
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,12 +20,11 @@
 /* See README file in this directory for implementation notes, coding
    conventions, et.al.  */
 
-#include "defs.h"
 #include "arch-utils.h"
 #include "charset.h"
 #include "cp-abi.h"
 #include "target-float.h"
-#include "symtab.h" /* Needed by language.h.  */
+#include "symtab.h"
 #include "language.h"
 #include "valprint.h"
 #include "value.h"
@@ -65,7 +64,7 @@ enum valscm_binary_opcode
 
 /* If TYPE is a reference, return the target; otherwise return TYPE.  */
 #define STRIP_REFERENCE(TYPE) \
-  ((TYPE->code () == TYPE_CODE_REF) ? (TYPE_TARGET_TYPE (TYPE)) : (TYPE))
+  ((TYPE->code () == TYPE_CODE_REF) ? ((TYPE)->target_type ()) : (TYPE))
 
 /* Helper for vlscm_unop.  Contains all the code that may throw a GDB
    exception.  */
@@ -109,7 +108,7 @@ vlscm_unop_gdbthrow (enum valscm_unary_opcode opcode, SCM x,
       res_val = arg1;
       break;
     case VALSCM_ABS:
-      if (value_less (arg1, value_zero (value_type (arg1), not_lval)))
+      if (value_less (arg1, value::zero (arg1->type (), not_lval)))
 	res_val = value_neg (arg1);
       else
 	res_val = arg1;
@@ -160,8 +159,8 @@ vlscm_binop_gdbthrow (enum valscm_binary_opcode opcode, SCM x, SCM y,
     {
     case VALSCM_ADD:
       {
-	struct type *ltype = value_type (arg1);
-	struct type *rtype = value_type (arg2);
+	struct type *ltype = arg1->type ();
+	struct type *rtype = arg2->type ();
 
 	ltype = check_typedef (ltype);
 	ltype = STRIP_REFERENCE (ltype);
@@ -180,8 +179,8 @@ vlscm_binop_gdbthrow (enum valscm_binary_opcode opcode, SCM x, SCM y,
       break;
     case VALSCM_SUB:
       {
-	struct type *ltype = value_type (arg1);
-	struct type *rtype = value_type (arg2);
+	struct type *ltype = arg1->type ();
+	struct type *rtype = arg2->type ();
 
 	ltype = check_typedef (ltype);
 	ltype = STRIP_REFERENCE (ltype);
@@ -524,20 +523,17 @@ vlscm_convert_typed_number (const char *func_name, int obj_arg_pos, SCM obj,
 			    int type_arg_pos, SCM type_scm, struct type *type,
 			    struct gdbarch *gdbarch, SCM *except_scmp)
 {
-  if (is_integral_type (type)
-      || type->code () == TYPE_CODE_PTR)
+  if (is_integral_type (type))
     {
       if (type->is_unsigned ())
 	{
-	  ULONGEST max;
-
-	  get_unsigned_type_max (type, &max);
+	  ULONGEST max = get_unsigned_type_max (type);
 	  if (!scm_is_unsigned_integer (obj, 0, max))
 	    {
 	      *except_scmp
-		= gdbscm_make_out_of_range_error (func_name,
-						  obj_arg_pos, obj,
-					_("value out of range for type"));
+		= gdbscm_make_out_of_range_error
+		    (func_name, obj_arg_pos, obj,
+		     _("value out of range for type"));
 	      return NULL;
 	    }
 	  return value_from_longest (type, gdbscm_scm_to_ulongest (obj));
@@ -550,13 +546,26 @@ vlscm_convert_typed_number (const char *func_name, int obj_arg_pos, SCM obj,
 	  if (!scm_is_signed_integer (obj, min, max))
 	    {
 	      *except_scmp
-		= gdbscm_make_out_of_range_error (func_name,
-						  obj_arg_pos, obj,
-					_("value out of range for type"));
+		= gdbscm_make_out_of_range_error
+		    (func_name, obj_arg_pos, obj,
+		     _("value out of range for type"));
 	      return NULL;
 	    }
 	  return value_from_longest (type, gdbscm_scm_to_longest (obj));
 	}
+    }
+  else if (type->code () == TYPE_CODE_PTR)
+    {
+      CORE_ADDR max = get_pointer_type_max (type);
+      if (!scm_is_unsigned_integer (obj, 0, max))
+	{
+	  *except_scmp
+	    = gdbscm_make_out_of_range_error
+		(func_name, obj_arg_pos, obj,
+		 _("value out of range for type"));
+	  return NULL;
+	}
+      return value_from_pointer (type, gdbscm_scm_to_ulongest (obj));
     }
   else if (type->code () == TYPE_CODE_FLT)
     return value_from_host_double (type, scm_to_double (obj));
@@ -575,12 +584,11 @@ vlscm_integer_fits_p (SCM obj, struct type *type)
 {
   if (type->is_unsigned ())
     {
-      ULONGEST max;
-
       /* If scm_is_unsigned_integer can't work with this type, just punt.  */
-      if (TYPE_LENGTH (type) > sizeof (uintmax_t))
+      if (type->length () > sizeof (uintmax_t))
 	return 0;
-      get_unsigned_type_max (type, &max);
+
+      ULONGEST max = get_unsigned_type_max (type);
       return scm_is_unsigned_integer (obj, 0, max);
     }
   else
@@ -588,7 +596,7 @@ vlscm_integer_fits_p (SCM obj, struct type *type)
       LONGEST min, max;
 
       /* If scm_is_signed_integer can't work with this type, just punt.  */
-      if (TYPE_LENGTH (type) > sizeof (intmax_t))
+      if (type->length () > sizeof (intmax_t))
 	return 0;
       get_signed_type_minmax (type, &min, &max);
       return scm_is_signed_integer (obj, min, max);
@@ -672,7 +680,7 @@ vlscm_convert_bytevector (SCM bv, struct type *type, SCM type_scm,
       make_vector_type (type);
     }
   type = check_typedef (type);
-  if (TYPE_LENGTH (type) != length)
+  if (type->length () != length)
     {
       *except_scmp = gdbscm_make_out_of_range_error (func_name, arg_pos,
 						     type_scm,
@@ -735,7 +743,7 @@ vlscm_convert_typed_value_from_scheme (const char *func_name,
 	      value = NULL;
 	    }
 	  else
-	    value = value_copy (vlscm_scm_to_value (obj));
+	    value = vlscm_scm_to_value (obj)->copy ();
 	}
       else if (gdbscm_is_true (scm_bytevector_p (obj)))
 	{
@@ -794,9 +802,7 @@ vlscm_convert_typed_value_from_scheme (const char *func_name,
 					0 /*non-strict*/,
 					&except_scm);
 	      if (s != NULL)
-		value = value_cstring (s.get (), len,
-				       language_string_char_type (language,
-								  gdbarch));
+		value = language->value_string (gdbarch, s.get (), len);
 	      else
 		value = NULL;
 	    }

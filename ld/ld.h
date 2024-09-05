@@ -1,5 +1,5 @@
 /* ld.h -- general linker header file
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -96,10 +96,14 @@ extern sort_type sort_section;
 
 struct wildcard_spec
 {
-  const char *name;
-  struct name_list *exclude_name_list;
-  sort_type sorted;
-  struct flag_info *section_flag_list;
+  const char *        name;
+  struct name_list *  exclude_name_list;
+  struct flag_info *  section_flag_list;
+  size_t              namelen;
+  size_t              prefixlen;
+  size_t              suffixlen;
+  sort_type           sorted;
+  bool                reversed;
 };
 
 struct wildcard_list
@@ -192,6 +196,9 @@ typedef struct
 
   /* Default linker script.  */
   char *default_script;
+
+  /* Linker script fragment provided by the --section-order command line option.  */
+  char *section_ordering_file;
 } args_type;
 
 extern args_type command_line;
@@ -252,8 +259,11 @@ typedef struct
      changes due to the alignment of an input section.  */
   bool warn_section_align;
 
-  /* If TRUE, warning messages are fatal */
+  /* If TRUE, warning messages are fatal.  */
   bool fatal_warnings;
+
+  /* If TRUE, warning and error messages are ignored.  */
+  bool no_warnings;
 
   sort_order sort_common;
 
@@ -276,6 +286,9 @@ typedef struct
   /* If set, code and non-code sections should never be in one segment.  */
   bool separate_code;
 
+  /* If set, generation of ELF section header should be suppressed.  */
+  bool no_section_header;
+
   /* The rpath separation character.  Usually ':'.  */
   char rpath_separator;
 
@@ -290,8 +303,14 @@ typedef struct
   /* The size of the hash table to use.  */
   unsigned long hash_table_size;
 
+  /* If set, store plugin intermediate files permanently.  */
+  bool plugin_save_temps;
+
   /* If set, print discarded sections in map file output.  */
   bool print_map_discarded;
+
+  /* If set, print local symbols in map file output.  */
+  bool print_map_locals;
 
   /* If set, emit the names and types of statically-linked variables
      into the CTF.  */
@@ -300,12 +319,16 @@ typedef struct
   /* If set, share only duplicated types in CTF, rather than sharing
      all types that are not in conflict.  */
   bool ctf_share_duplicated;
+
+  /* Compress DWARF debug sections.  */
+  enum compressed_debug_section_type compress_debug;
 } ld_config_type;
 
 extern ld_config_type config;
 
 extern FILE * saved_script_handle;
 extern bool force_make_executable;
+extern bool in_section_ordering;
 
 extern int yyparse (void);
 extern void add_cref (const char *, bfd *, asection *, bfd_vma);

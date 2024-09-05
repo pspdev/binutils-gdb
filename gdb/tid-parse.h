@@ -1,6 +1,6 @@
 /* TID parsing for GDB, the GNU debugger.
 
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,7 +26,7 @@ struct thread_info;
 
 /* Issue an invalid thread ID error, pointing at STRING, the invalid
    ID.  */
-extern void ATTRIBUTE_NORETURN invalid_thread_id_error (const char *string);
+[[noreturn]] extern void invalid_thread_id_error (const char *string);
 
 /* Parse TIDSTR as a per-inferior thread ID, in either INF_NUM.THR_NUM
    or THR_NUM form.  In the latter case, the missing INF_NUM is filled

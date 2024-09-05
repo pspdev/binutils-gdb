@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,8 +17,6 @@
 
 #ifndef NAT_LINUX_PTRACE_H
 #define NAT_LINUX_PTRACE_H
-
-struct buffer;
 
 #include "nat/gdb_ptrace.h"
 #include "gdbsupport/gdb_wait.h"
@@ -97,9 +95,9 @@ struct buffer;
 #define __WALL          0x40000000 /* Wait for any child.  */
 #endif
 
-/* True if whether a breakpoint/watchpoint triggered can be determined
-   from the si_code of SIGTRAP's siginfo_t (TRAP_BRKPT/TRAP_HWBKPT).
-   That is, if the kernel can tell us whether the thread executed a
+/* Whether a breakpoint/watchpoint triggered can be determined from
+   the si_code of SIGTRAP's siginfo_t (TRAP_BRKPT/TRAP_HWBKPT).  That
+   is, since the kernel can tell us whether the thread executed a
    software breakpoint, we trust it.  The kernel will be determining
    that from the hardware (e.g., from which exception was raised in
    the CPU).  Relying on whether a breakpoint is planted in memory at
@@ -112,10 +110,7 @@ struct buffer;
    architectures.  The moribund location mechanism helps with that
    somewhat but it is an heuristic, and can well fail.  Getting that
    information out of the kernel and ultimately out of the CPU is the
-   way to go.  That said, some architecture may get the si_code wrong,
-   and as such we're leaving fallback code in place.  We'll remove
-   this after a while if no problem is reported.  */
-#define USE_SIGTRAP_SIGINFO 1
+   way to go.  */
 
 /* The x86 kernel gets some of the si_code values backwards, like
    this:
@@ -187,11 +182,6 @@ extern void linux_ptrace_init_warnings (void);
 extern void linux_check_ptrace_features (void);
 extern void linux_enable_event_reporting (pid_t pid, int attached);
 extern void linux_disable_event_reporting (pid_t pid);
-extern int linux_supports_tracefork (void);
-extern int linux_supports_traceexec (void);
-extern int linux_supports_traceclone (void);
-extern int linux_supports_tracevforkdone (void);
-extern int linux_supports_tracesysgood (void);
 extern int linux_ptrace_get_extended_event (int wstat);
 extern int linux_is_extended_waitstatus (int wstat);
 extern int linux_wstatus_maybe_breakpoint (int wstat);

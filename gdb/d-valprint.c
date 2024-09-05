@@ -1,6 +1,6 @@
 /* Support for printing D values for GDB, the GNU debugger.
 
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "gdbtypes.h"
 #include "gdbcore.h"
 #include "d-lang.h"
@@ -36,11 +35,10 @@ dynamic_array_type (struct type *type,
 {
   if (type->num_fields () == 2
       && type->field (0).type ()->code () == TYPE_CODE_INT
-      && strcmp (TYPE_FIELD_NAME (type, 0), "length") == 0
-      && strcmp (TYPE_FIELD_NAME (type, 1), "ptr") == 0
-      && !value_bits_any_optimized_out (val,
-					TARGET_CHAR_BIT * embedded_offset,
-					TARGET_CHAR_BIT * TYPE_LENGTH (type)))
+      && strcmp (type->field (0).name (), "length") == 0
+      && strcmp (type->field (1).name (), "ptr") == 0
+      && !val->bits_any_optimized_out (TARGET_CHAR_BIT * embedded_offset,
+				       TARGET_CHAR_BIT * type->length ()))
     {
       CORE_ADDR addr;
       struct type *elttype;
@@ -48,20 +46,20 @@ dynamic_array_type (struct type *type,
       struct type *ptr_type;
       struct value *ival;
       int length;
-      const gdb_byte *valaddr = value_contents_for_printing (val);
+      const gdb_byte *valaddr = val->contents_for_printing ().data ();
 
       length = unpack_field_as_long (type, valaddr + embedded_offset, 0);
 
       ptr_type = type->field (1).type ();
-      elttype = check_typedef (TYPE_TARGET_TYPE (ptr_type));
+      elttype = check_typedef (ptr_type->target_type ());
       addr = unpack_pointer (ptr_type,
-			     valaddr + TYPE_FIELD_BITPOS (type, 1) / 8
+			     valaddr + type->field (1).loc_bitpos () / 8
 			     + embedded_offset);
       true_type = check_typedef (elttype);
 
       true_type = lookup_array_range_type (true_type, 0, length - 1);
       ival = value_at (true_type, addr);
-      true_type = value_type (ival);
+      true_type = ival->type ();
 
       d_value_print_inner (ival, stream, recurse + 1, options);
       return 0;
@@ -77,16 +75,16 @@ d_value_print_inner (struct value *val, struct ui_file *stream, int recurse,
 {
   int ret;
 
-  struct type *type = check_typedef (value_type (val));
+  struct type *type = check_typedef (val->type ());
   switch (type->code ())
     {
       case TYPE_CODE_STRUCT:
-	ret = dynamic_array_type (type, value_embedded_offset (val),
-				  value_address (val),
+	ret = dynamic_array_type (type, val->embedded_offset (),
+				  val->address (),
 				  stream, recurse, val, options);
 	if (ret == 0)
 	  break;
-	/* Fall through.  */
+	[[fallthrough]];
       default:
 	c_value_print_inner (val, stream, recurse, options);
 	break;

@@ -1,6 +1,6 @@
 /* Target-dependent code for DJGPP/i386.
 
-   Copyright (C) 1988-2021 Free Software Foundation, Inc.
+   Copyright (C) 1988-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "i386-tdep.h"
 #include "gdbsupport/x86-xstate.h"
 #include "target-descriptions.h"
@@ -26,7 +25,7 @@
 static void
 i386_go32_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  i386_gdbarch_tdep *tdep = gdbarch_tdep<i386_gdbarch_tdep> (gdbarch);
 
   /* DJGPP doesn't have any special frames for signal handlers.  */
   tdep->sigtramp_p = NULL;

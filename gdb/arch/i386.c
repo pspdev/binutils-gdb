@@ -1,4 +1,4 @@
-/* Copyright (C) 2017-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2017-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -15,7 +15,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "gdbsupport/common-defs.h"
 #include "i386.h"
 #include "gdbsupport/tdesc.h"
 #include "gdbsupport/x86-xstate.h"
@@ -27,8 +26,8 @@
 #include "../features/i386/32bit-avx.c"
 #include "../features/i386/32bit-avx512.c"
 #include "../features/i386/32bit-mpx.c"
-#include "../features/i386/32bit-pkeys.c"
 #include "../features/i386/32bit-segments.c"
+#include "../features/i386/pkeys.c"
 
 /* Create i386 target descriptions according to XCR0.  */
 
@@ -67,7 +66,7 @@ i386_create_target_description (uint64_t xcr0, bool is_linux, bool segments)
     regnum = create_feature_i386_32bit_avx512 (tdesc.get (), regnum);
 
   if (xcr0 & X86_XSTATE_PKRU)
-    regnum = create_feature_i386_32bit_pkeys (tdesc.get (), regnum);
+    regnum = create_feature_i386_pkeys (tdesc.get (), regnum);
 
   return tdesc.release ();
 }

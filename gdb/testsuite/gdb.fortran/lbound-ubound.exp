@@ -1,4 +1,4 @@
-# Copyright 2021 Free Software Foundation, Inc.
+# Copyright 2021-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 
 # Testing GDB's implementation of LBOUND and UBOUND.
 
-if {[skip_fortran_tests]} { return -1 }
+require allow_fortran_tests
 
 standard_testfile ".F90"
 load_lib fortran.exp
@@ -25,16 +25,18 @@ if {[prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} \
     return -1
 }
 
-
 if ![fortran_runto_main] {
-    untested "could not run to main"
     return -1
 }
 
+# Avoid libc symbols, in particular the 'array' type.
+gdb_test_no_output "nosharedlibrary"
+
 gdb_breakpoint [gdb_get_line_number "Test Breakpoint"]
+gdb_breakpoint [gdb_get_line_number "Breakpoint before deallocate\."]
 gdb_breakpoint [gdb_get_line_number "Final Breakpoint"]
 
-set found_final_breakpoint false
+set found_dealloc_breakpoint false
 
 # We place a limit on the number of tests that can be run, just in
 # case something goes wrong, and GDB gets stuck in an loop here.
@@ -45,30 +47,33 @@ while { $test_count < 500 } {
 
 	set expected_lbound ""
 	set expected_ubound ""
+	set found_prompt false
 	gdb_test_multiple "continue" "continue" {
-	    -re ".*LBOUND = (\[^\r\n\]+)\r\n" {
-		set expected_lbound $expect_out(1,string)
-		exp_continue
+	    -re -wrap "! Test Breakpoint.*" {
+		# We stopped at the next test case.
+		pass $gdb_test_name
 	    }
-	    -re ".*UBOUND = (\[^\r\n\]+)\r\n" {
-		set expected_ubound $expect_out(1,string)
-		exp_continue
-	    }
-	    -re "! Test Breakpoint" {
-		set func_name "show_elem"
-		exp_continue
-	    }
-	    -re "! Final Breakpoint" {
-		set found_final_breakpoint true
-		exp_continue
-	    }
-	    -re "$gdb_prompt $" {
-		# We're done.
+
+	    -re -wrap "! Breakpoint before deallocate.*" {
+		# There are no more test cases.
+		pass $gdb_test_name
+		set found_dealloc_breakpoint true
 	    }
 	}
 
-	if ($found_final_breakpoint) {
+	if ($found_dealloc_breakpoint) {
 	    break
+	}
+
+	set expected_lbound [get_valueof "" "lb" "" "get expected lbound"]
+	set expected_ubound [get_valueof "" "ub" "" "get expected ubound"]
+
+	if { $expected_lbound == "" } {
+	    error "failed to extract expected results for lbound"
+	}
+
+	if { $expected_ubound == "" } {
+	    error "failed to extract expected results for ubound"
 	}
 
 	verbose -log "APB: Run a test here"
@@ -91,19 +96,8 @@ while { $test_count < 500 } {
 	    }
 	}
 
-	# Check we have all the information we need to successfully run one
-	# of these tests.
-	if { $expected_lbound == "" } {
-	    perror "failed to extract expected results for lbound"
-	    return 0
-	}
-	if { $expected_ubound == "" } {
-	    perror "failed to extract expected results for ubound"
-	    return 0
-	}
 	if { $array_name == "" } {
-	    perror "failed to extract array name"
-	    return 0
+	    error "failed to extract array name"
 	}
 
 	# Check GDB can correctly print complete set of upper and
@@ -184,10 +178,31 @@ while { $test_count < 500 } {
     }
 }
 
+gdb_assert {$found_dealloc_breakpoint} "ran all compiled in tests"
+
+# Test the kind parameter of ubound and lbound a few times.
+gdb_test "p lbound(array_1d_1bytes_overflow, 1, 1)" "= 127"
+gdb_test "p lbound(array_1d_1bytes_overflow, 1, 2)" "= -129"
+gdb_test "p ubound(array_1d_1bytes_overflow, 1, 1)" "= -117"
+
+gdb_test "p lbound(array_1d_2bytes_overflow, 1, 2)" "= 32757"
+gdb_test "p ubound(array_1d_2bytes_overflow, 1, 2)" "= -32766"
+gdb_test "p ubound(array_1d_2bytes_overflow, 1, 4)" "= 32770"
+
+# On 32-bit machines most compilers will complain when trying to allocate an
+# array with ranges outside the 4 byte integer range.  As the behavior is
+# compiler implementation dependent, we do not run these test on 32 bit targets.
+if {[is_64_target]} {
+    gdb_test "p lbound(array_1d_4bytes_overflow, 1, 4)" "= 2147483644"
+    gdb_test "p lbound(array_1d_4bytes_overflow, 1, 8)" "= -2147483652"
+    gdb_test "p ubound(array_1d_4bytes_overflow, 1, 4)" "= -2147483637"
+    gdb_test "p lbound(array_1d_4bytes_overflow)" "= \\(2147483644\\)"
+}
+
 # Ensure we reached the final breakpoint.  If more tests have been added
 # to the test script, and this starts failing, then the safety 'while'
 # loop above might need to be increased.
-gdb_assert {$found_final_breakpoint} "reached final breakpoint"
+gdb_continue_to_breakpoint "Final Breakpoint"
 
 # Now for some final tests.  This is mostly testing that GDB gives the
 # correct errors in certain cases.

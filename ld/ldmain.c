@@ -1,5 +1,5 @@
 /* Main program of GNU linker.
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
    Written by Steve Chamberlain steve@cygnus.com
 
    This file is part of the GNU Binutils.
@@ -23,7 +23,6 @@
 #include "bfd.h"
 #include "safe-ctype.h"
 #include "libiberty.h"
-#include "progress.h"
 #include "bfdlink.h"
 #include "ctf-api.h"
 #include "filenames.h"
@@ -90,6 +89,8 @@ bool version_printed;
 
 /* TRUE if we should demangle symbol names.  */
 bool demangling;
+
+bool in_section_ordering;
 
 args_type command_line;
 
@@ -212,7 +213,14 @@ write_dependency_file (void)
 static void
 ld_cleanup (void)
 {
-  bfd_cache_close_all ();
+  bfd *ibfd, *inext;
+  if (link_info.output_bfd)
+    bfd_close_all_done (link_info.output_bfd);
+  for (ibfd = link_info.input_bfds; ibfd; ibfd = inext)
+    {
+      inext = ibfd->link.next;
+      bfd_close_all_done (ibfd);
+    }
 #if BFD_SUPPORTS_PLUGINS
   plugin_call_cleanup ();
 #endif
@@ -240,6 +248,26 @@ ld_bfd_error_handler (const char *fmt, va_list ap)
   (*default_bfd_error_handler) (fmt, ap);
 }
 
+static void
+display_external_script (void)
+{
+  if (saved_script_handle == NULL)
+    return;
+  
+  static const int ld_bufsz = 8193;
+  size_t n;
+  char *buf = (char *) xmalloc (ld_bufsz);
+
+  rewind (saved_script_handle);
+  while ((n = fread (buf, 1, ld_bufsz - 1, saved_script_handle)) > 0)
+    {
+      buf[n] = 0;
+      info_msg ("%s", buf);
+    }
+  rewind (saved_script_handle);
+  free (buf);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -255,8 +283,6 @@ main (int argc, char **argv)
 
   program_name = argv[0];
   xmalloc_set_program_name (program_name);
-
-  START_PROGRESS (program_name, 0);
 
   expandargv (&argc, &argv);
 
@@ -352,7 +378,7 @@ main (int argc, char **argv)
   link_info.spare_dynamic_tags = 5;
   link_info.path_separator = ':';
 #ifdef DEFAULT_FLAG_COMPRESS_DEBUG
-  link_info.compress_debug = COMPRESS_DEBUG_GABI_ZLIB;
+  config.compress_debug = DEFAULT_COMPRESSED_DEBUG_ALGORITHM;
 #endif
 #ifdef DEFAULT_NEW_DTAGS
   link_info.new_dtags = DEFAULT_NEW_DTAGS;
@@ -412,26 +438,13 @@ main (int argc, char **argv)
   if (verbose)
     {
       if (saved_script_handle)
-	info_msg (_("using external linker script:"));
+	info_msg (_("using external linker script: %s"), processed_scripts->name);
       else
 	info_msg (_("using internal linker script:"));
       info_msg ("\n==================================================\n");
 
       if (saved_script_handle)
-	{
-	  static const int ld_bufsz = 8193;
-	  size_t n;
-	  char *buf = (char *) xmalloc (ld_bufsz);
-
-	  rewind (saved_script_handle);
-	  while ((n = fread (buf, 1, ld_bufsz - 1, saved_script_handle)) > 0)
-	    {
-	      buf[n] = 0;
-	      info_msg ("%s", buf);
-	    }
-	  rewind (saved_script_handle);
-	  free (buf);
-	}
+	display_external_script ();
       else
 	{
 	  int isfile;
@@ -440,6 +453,22 @@ main (int argc, char **argv)
 	}
 
       info_msg ("\n==================================================\n");
+    }
+
+  if (command_line.section_ordering_file)
+    {
+      FILE *hold_script_handle;
+
+      hold_script_handle = saved_script_handle;
+      ldfile_open_command_file (command_line.section_ordering_file);
+      if (verbose)
+	display_external_script ();
+      saved_script_handle = hold_script_handle;
+      in_section_ordering = true;
+      parser_input = input_section_ordering_script;
+      yyparse ();
+      in_section_ordering = false;
+
     }
 
   if (command_line.force_group_allocation
@@ -467,6 +496,7 @@ main (int argc, char **argv)
     {
       if (version_printed || command_line.print_output_format)
 	xexit (0);
+      output_unknown_cmdline_warnings ();
       einfo (_("%F%P: no input files\n"));
     }
 
@@ -474,6 +504,8 @@ main (int argc, char **argv)
     info_msg (_("%P: mode %s\n"), emulation);
 
   ldemul_after_parse ();
+
+  output_unknown_cmdline_warnings ();
 
   if (config.map_filename)
     {
@@ -503,12 +535,23 @@ main (int argc, char **argv)
   else
     link_info.output_bfd->flags |= EXEC_P;
 
-  if ((link_info.compress_debug & COMPRESS_DEBUG))
+  flagword flags = 0;
+  switch (config.compress_debug)
     {
-      link_info.output_bfd->flags |= BFD_COMPRESS;
-      if (link_info.compress_debug == COMPRESS_DEBUG_GABI_ZLIB)
-	link_info.output_bfd->flags |= BFD_COMPRESS_GABI;
+    case COMPRESS_DEBUG_GNU_ZLIB:
+      flags = BFD_COMPRESS;
+      break;
+    case COMPRESS_DEBUG_GABI_ZLIB:
+      flags = BFD_COMPRESS | BFD_COMPRESS_GABI;
+      break;
+    case COMPRESS_DEBUG_ZSTD:
+      flags = BFD_COMPRESS | BFD_COMPRESS_GABI | BFD_COMPRESS_ZSTD;
+      break;
+    default:
+      break;
     }
+  link_info.output_bfd->flags
+    |= flags & bfd_applicable_file_flags (link_info.output_bfd);
 
   ldwrite ();
 
@@ -548,8 +591,10 @@ main (int argc, char **argv)
     }
   else
     {
-      if (!bfd_close (link_info.output_bfd))
-	einfo (_("%F%P: %pB: final close failed: %E\n"), link_info.output_bfd);
+      bfd *obfd = link_info.output_bfd;
+      link_info.output_bfd = NULL;
+      if (!bfd_close (obfd))
+	einfo (_("%F%P: %s: final close failed: %E\n"), output_filename);
 
       /* If the --force-exe-suffix is enabled, and we're making an
 	 executable file and it doesn't end in .exe, copy it to one
@@ -598,8 +643,6 @@ main (int argc, char **argv)
 	}
     }
 
-  END_PROGRESS (program_name);
-
   if (config.stats)
     {
       long run_time = get_run_time () - start_time;
@@ -610,7 +653,7 @@ main (int argc, char **argv)
       fflush (stderr);
     }
 
-  /* Prevent ld_cleanup from doing anything, after a successful link.  */
+  /* Prevent ld_cleanup from deleting the output file.  */
   output_filename = NULL;
 
   xexit (0);
@@ -884,7 +927,10 @@ add_archive_element (struct bfd_link_info *info,
      BFD, but we still want to output the original BFD filename.  */
   orig_input = *input;
 #if BFD_SUPPORTS_PLUGINS
-  if (link_info.lto_plugin_active)
+  /* Don't claim a fat IR object if no IR object should be claimed.  */
+  if (link_info.lto_plugin_active
+      && (!no_more_claiming
+	  || bfd_get_lto_type (abfd) != lto_fat_ir_object))
     {
       /* We must offer this archive member to the plugins to claim.  */
       plugin_maybe_claim (input);
@@ -990,11 +1036,7 @@ add_archive_element (struct bfd_link_info *info,
 	  print_nl ();
 	  len = 0;
 	}
-      while (len < 30)
-	{
-	  print_space ();
-	  ++len;
-	}
+      print_spaces (30 - len);
 
       if (from != NULL)
 	minfo ("%pB ", from);
@@ -1383,7 +1425,7 @@ warning_find_reloc (bfd *abfd, asection *sec, void *iarg)
 	  && strcmp (bfd_asymbol_name (*q->sym_ptr_ptr), info->symbol) == 0)
 	{
 	  /* We found a reloc for the symbol we are looking for.  */
-	  einfo ("%P: %C: %s%s\n", abfd, sec, q->address, _("warning: "),
+	  einfo ("%P: %H: %s%s\n", abfd, sec, q->address, _("warning: "),
 		 info->warning);
 	  info->found = true;
 	  break;
@@ -1473,10 +1515,10 @@ undefined_symbol (struct bfd_link_info *info,
       if (error_count < MAX_ERRORS_IN_A_ROW)
 	{
 	  if (error)
-	    einfo (_("%X%P: %C: undefined reference to `%pT'\n"),
+	    einfo (_("%X%P: %H: undefined reference to `%pT'\n"),
 		   abfd, section, address, name);
 	  else
-	    einfo (_("%P: %C: warning: undefined reference to `%pT'\n"),
+	    einfo (_("%P: %H: warning: undefined reference to `%pT'\n"),
 		   abfd, section, address, name);
 	}
       else if (error_count == MAX_ERRORS_IN_A_ROW)

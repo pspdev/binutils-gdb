@@ -1,7 +1,7 @@
 /* Support for connecting Guile's stdio to GDB's.
    as well as r/w memory via ports.
 
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,12 +21,11 @@
 /* See README file in this directory for implementation notes, coding
    conventions, et.al.  */
 
-#include "defs.h"
 #include "gdbsupport/gdb_select.h"
-#include "top.h"
+#include "ui.h"
 #include "target.h"
 #include "guile-internal.h"
-#include "gdbsupport/gdb_optional.h"
+#include <optional>
 
 #ifdef HAVE_POLL
 #if defined (HAVE_POLL_H)
@@ -139,7 +138,7 @@ static const unsigned min_memory_port_buf_size = 1;
 static const unsigned max_memory_port_buf_size = 4096;
 
 /* "out of range" error message for buf sizes.  */
-static char *out_of_range_buf_size;
+static gdb::unique_xmalloc_ptr<char> out_of_range_buf_size;
 
 #else
 
@@ -191,8 +190,8 @@ ioscm_open_port (scm_t_port_type *port_type, long mode_bits, scm_t_bits stream)
 
 /* Support for connecting Guile's stdio ports to GDB's stdio ports.  */
 
-/* Like fputstrn_filtered, but don't escape characters, except nul.
-   Also like fputs_filtered, but a length is specified.  */
+/* Print a string S, length SIZE, but don't escape characters, except
+   nul.  */
 
 static void
 fputsn_filtered (const char *s, size_t size, struct ui_file *stream)
@@ -202,9 +201,9 @@ fputsn_filtered (const char *s, size_t size, struct ui_file *stream)
   for (i = 0; i < size; ++i)
     {
       if (s[i] == '\0')
-	fputs_filtered ("\\000", stream);
+	gdb_puts ("\\000", stream);
       else
-	fputc_filtered (s[i], stream);
+	gdb_putc (s[i], stream);
     }
 }
 
@@ -602,13 +601,12 @@ ioscm_with_output_to_port_worker (SCM port, SCM thunk, enum oport oport,
 						  ? &gdb_stderr : &gdb_stdout);
 
   {
-    gdb::optional<ui_out_redirect_pop> redirect_popper;
+    std::optional<ui_out_redirect_pop> redirect_popper;
     if (oport == GDB_STDERR)
       gdb_stderr = port_file.get ();
     else
       {
-	current_uiout->redirect (port_file.get ());
-	redirect_popper.emplace (current_uiout);
+	redirect_popper.emplace (current_uiout, port_file.get ());
 
 	gdb_stdout = port_file.get ();
       }
@@ -1447,7 +1445,7 @@ gdbscm_set_memory_port_read_buffer_size_x (SCM port, SCM size)
 				max_memory_port_buf_size))
     {
       gdbscm_out_of_range_error (FUNC_NAME, SCM_ARG2, size,
-				 out_of_range_buf_size);
+				 out_of_range_buf_size.get ());
     }
 
   iomem = (ioscm_memory_port *) SCM_STREAM (port);
@@ -1497,7 +1495,7 @@ gdbscm_set_memory_port_write_buffer_size_x (SCM port, SCM size)
 				max_memory_port_buf_size))
     {
       gdbscm_out_of_range_error (FUNC_NAME, SCM_ARG2, size,
-				 out_of_range_buf_size);
+				 out_of_range_buf_size.get ());
     }
 
   iomem = (ioscm_memory_port *) SCM_STREAM (port);

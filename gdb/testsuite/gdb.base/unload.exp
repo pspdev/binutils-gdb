@@ -1,4 +1,4 @@
-#   Copyright 2003-2021 Free Software Foundation, Inc.
+#   Copyright 2003-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,9 +19,7 @@
 # test running programs
 #
 
-if {[skip_shlib_tests]} {
-    return 0
-}
+require allow_shlib_tests
 
 set testfile "unload"
 set libfile "unloadshr"
@@ -42,10 +40,6 @@ set lib_dlopen2 [shlib_target_file ${libname2}]
 set lib_syms [shlib_symbol_file ${libname}]
 set lib_syms2 [shlib_symbol_file ${libname2}]
 
-if [get_compiler_info] {
-    return -1
-}
-
 set lib_opts debug
 set exec_opts [list debug shlib_load additional_flags=-DSHLIB_NAME=\"${lib_dlopen}\" additional_flags=-DSHLIB_NAME2=\"${lib_dlopen2}\"]
 
@@ -56,12 +50,7 @@ if { [gdb_compile_shlib $libsrc $lib_sl $lib_opts] != ""
     return -1
 }
 
-# Start with a fresh gdb.
-
-gdb_exit
-gdb_start
-gdb_reinitialize_dir $srcdir/$subdir
-gdb_load ${binfile}
+clean_restart $binfile
 gdb_load_shlib $lib_sl
 gdb_load_shlib $lib_sl2
 
@@ -119,7 +108,7 @@ gdb_breakpoint "$testfile.c:[gdb_get_line_number "y-set-1" $testfile.c]" tempora
 
 gdb_test "continue" \
 "Continuing.*warning: Temporarily disabling breakpoints for.*${lib_syms}.*y-set-1.*" \
-"continuing to unloaded libfile"
+"continuing to unloaded libfile, two"
 
 set unloadshr_line2 [gdb_get_line_number "unloadshr2 break" ${libsrcfile2}]
 

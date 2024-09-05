@@ -3,7 +3,7 @@
 
 #include "sim-main.h"
 #include "sim-options.h"
-#include "v850_sim.h"
+#include "v850-sim.h"
 #include "sim-assert.h"
 #include "itable.h"
 
@@ -11,6 +11,8 @@
 #include <string.h>
 
 #include "bfd.h"
+
+#include "target-newlib-syscall.h"
 
 static const char * get_insn_name (sim_cpu *, int);
 
@@ -48,6 +50,8 @@ const char *interrupt_names[] =
 static void
 do_interrupt (SIM_DESC sd, void *data)
 {
+  sim_cpu *cpu = STATE_CPU (sd, 0);
+  struct v850_sim_cpu *v850_cpu = V850_SIM_CPU (cpu);
   const char **interrupt_name = (const char**)data;
   enum interrupt_type inttype;
   inttype = (interrupt_name - STATE_WATCHPOINTS (sd)->interrupt_names);
@@ -72,9 +76,9 @@ do_interrupt (SIM_DESC sd, void *data)
 	     ignores subsequent NMIs, so we don't need to count them.
 	     Just keep re-scheduling a single NMI until it manages to
 	     be delivered */
-	  if (STATE_CPU (sd, 0)->pending_nmi != NULL)
-	    sim_events_deschedule (sd, STATE_CPU (sd, 0)->pending_nmi);
-	  STATE_CPU (sd, 0)->pending_nmi =
+	  if (v850_cpu->pending_nmi != NULL)
+	    sim_events_deschedule (sd, v850_cpu->pending_nmi);
+	  v850_cpu->pending_nmi =
 	    sim_events_schedule (sd, 1, do_interrupt, data);
 	  return;
 	}
@@ -168,7 +172,7 @@ get_insn_name (sim_cpu *cpu, int i)
 
 /* These default values correspond to expected usage for the chip.  */
 
-uint32 OP[4];
+uint32_t OP[4];
 
 static sim_cia
 v850_pc_get (sim_cpu *cpu)
@@ -182,8 +186,8 @@ v850_pc_set (sim_cpu *cpu, sim_cia pc)
   PC = pc;
 }
 
-static int v850_reg_fetch (SIM_CPU *, int, unsigned char *, int);
-static int v850_reg_store (SIM_CPU *, int, unsigned char *, int);
+static int v850_reg_fetch (SIM_CPU *, int, void *, int);
+static int v850_reg_store (SIM_CPU *, int, const void *, int);
 
 SIM_DESC
 sim_open (SIM_OPEN_KIND    kind,
@@ -199,9 +203,11 @@ sim_open (SIM_OPEN_KIND    kind,
 
   /* Set default options before parsing user options.  */
   current_target_byte_order = BFD_ENDIAN_LITTLE;
+  cb->syscall_map = cb_v850_syscall_map;
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
-  if (sim_cpu_alloc_all (sd, 1) != SIM_RC_OK)
+  if (sim_cpu_alloc_all_extra (sd, 0, sizeof (struct v850_sim_cpu))
+      != SIM_RC_OK)
     return 0;
 
   /* for compatibility */
@@ -239,11 +245,7 @@ sim_open (SIM_OPEN_KIND    kind,
     }
 
   /* check for/establish the a reference program image */
-  if (sim_analyze_program (sd,
-			   (STATE_PROG_ARGV (sd) != NULL
-			    ? *STATE_PROG_ARGV (sd)
-			    : NULL),
-			   abfd) != SIM_RC_OK)
+  if (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
       sim_module_uninstall (sd);
       return 0;
@@ -282,8 +284,8 @@ sim_open (SIM_OPEN_KIND    kind,
     case bfd_mach_v850e2:
     case bfd_mach_v850e2v3:
     case bfd_mach_v850e3v5:
-      STATE_CPU (sd, 0)->psw_mask = (PSW_NP | PSW_EP | PSW_ID | PSW_SAT
-				     | PSW_CY | PSW_OV | PSW_S | PSW_Z);
+      V850_SIM_CPU (STATE_CPU (sd, 0))->psw_mask =
+	(PSW_NP | PSW_EP | PSW_ID | PSW_SAT | PSW_CY | PSW_OV | PSW_S | PSW_Z);
       break;
     }
 
@@ -314,15 +316,15 @@ sim_create_inferior (SIM_DESC      sd,
 }
 
 static int
-v850_reg_fetch (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
+v850_reg_fetch (SIM_CPU *cpu, int rn, void *memory, int length)
 {
-  *(unsigned32*)memory = H2T_4 (State.regs[rn]);
+  *(uint32_t*)memory = H2T_4 (State.regs[rn]);
   return -1;
 }
 
 static int
-v850_reg_store (SIM_CPU *cpu, int rn, unsigned char *memory, int length)
+v850_reg_store (SIM_CPU *cpu, int rn, const void *memory, int length)
 {
-  State.regs[rn] = T2H_4 (*(unsigned32 *) memory);
+  State.regs[rn] = T2H_4 (*(uint32_t *) memory);
   return length;
 }

@@ -1,11 +1,10 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: mips64-linux.xml */
 
-#include "defs.h"
 #include "osabi.h"
 #include "target-descriptions.h"
 
-struct target_desc *tdesc_mips64_linux;
+const struct target_desc *tdesc_mips64_linux;
 static void
 initialize_tdesc_mips64_linux (void)
 {

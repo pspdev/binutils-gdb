@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux, architecture independent.
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -72,7 +72,7 @@ extern displaced_step_prepare_status linux_displaced_step_prepare
 /* Implementation of gdbarch_displaced_step_finish.  */
 
 extern displaced_step_finish_status linux_displaced_step_finish
-  (gdbarch *arch, thread_info *thread, gdb_signal sig);
+  (gdbarch *arch, thread_info *thread, const target_waitstatus &status);
 
 /* Implementation of gdbarch_displaced_step_copy_insn_closure_by_addr.  */
 
@@ -90,12 +90,31 @@ extern void linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch,
 
 extern int linux_is_uclinux (void);
 
-/* Fetch the AT_HWCAP entry from the auxv vector for the given TARGET.  On
-   error, 0 is returned.  */
-extern CORE_ADDR linux_get_hwcap (struct target_ops *target);
+/* Fetch the AT_HWCAP entry from auxv data AUXV.  Use TARGET and GDBARCH to
+   parse auxv entries.
 
-/* Fetch the AT_HWCAP2 entry from the auxv vector for the given TARGET.  On
-   error, 0 is returned.  */
-extern CORE_ADDR linux_get_hwcap2 (struct target_ops *target);
+   On error, 0 is returned.  */
+extern CORE_ADDR linux_get_hwcap (const std::optional<gdb::byte_vector> &auxv,
+				  struct target_ops *target, gdbarch *gdbarch);
+
+/* Same as the above, but obtain all the inputs from the current inferior.  */
+
+extern CORE_ADDR linux_get_hwcap ();
+
+/* Fetch the AT_HWCAP2 entry from auxv data AUXV.  Use TARGET and GDBARCH to
+   parse auxv entries.
+
+   On error, 0 is returned.  */
+extern CORE_ADDR linux_get_hwcap2 (const std::optional<gdb::byte_vector> &auxv,
+				   struct target_ops *target, gdbarch *gdbarch);
+
+/* Same as the above, but obtain all the inputs from the current inferior.  */
+
+extern CORE_ADDR linux_get_hwcap2 ();
+
+/* Fetch (and possibly build) an appropriate `struct link_map_offsets'
+   for ILP32 and LP64 Linux systems.  */
+extern struct link_map_offsets *linux_ilp32_fetch_link_map_offsets ();
+extern struct link_map_offsets *linux_lp64_fetch_link_map_offsets ();
 
 #endif /* linux-tdep.h */

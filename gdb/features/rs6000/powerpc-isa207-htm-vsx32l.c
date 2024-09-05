@@ -1,11 +1,10 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: powerpc-isa207-htm-vsx32l.xml */
 
-#include "defs.h"
 #include "osabi.h"
 #include "target-descriptions.h"
 
-struct target_desc *tdesc_powerpc_isa207_htm_vsx32l;
+const struct target_desc *tdesc_powerpc_isa207_htm_vsx32l;
 static void
 initialize_tdesc_powerpc_isa207_htm_vsx32l (void)
 {

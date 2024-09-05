@@ -1,4 +1,3 @@
-#as:
 #objdump: -d
 #name: x86_64 AMX insns
 #source: x86-64-amx.s
@@ -29,7 +28,7 @@ Disassembly of section \.text:
 [ 	]*[a-f0-9]+:[ 	]*c4 e2 79 4b 2c 11[ 	]*tileloaddt1 \(%rcx,%rdx,1\),%tmm5
 [ 	]*[a-f0-9]+:[ 	]*67 c4 e2 79 4b 0c 51[ 	]*tileloaddt1 \(%ecx,%edx,2\),%tmm1
 [ 	]*[a-f0-9]+:[ 	]*c4 e2 79 4b 0c 61[ 	]*tileloaddt1 \(%rcx,%riz,2\),%tmm1
-[ 	]*[a-f0-9]+:[ 	]*c4 e2 78 49 c0[ 	]*tilerelease *
+[ 	]*[a-f0-9]+:[ 	]*c4 e2 78 49 c0[ 	]*tilerelease
 [ 	]*[a-f0-9]+:[ 	]*c4 e2 7a 4b 2c 21[ 	]*tilestored %tmm5,\(%rcx,%riz,1\)
 [ 	]*[a-f0-9]+:[ 	]*67 c4 e2 7a 4b 2c 21[ 	]*tilestored %tmm5,\(%ecx,%eiz,1\)
 [ 	]*[a-f0-9]+:[ 	]*c4 e2 7a 4b 2c 11[ 	]*tilestored %tmm5,\(%rcx,%rdx,1\)
@@ -59,7 +58,7 @@ Disassembly of section \.text:
 [ 	]*[a-f0-9]+:[ 	]*c4 e2 79 4b 2c 11[ 	]*tileloaddt1 \(%rcx,%rdx,1\),%tmm5
 [ 	]*[a-f0-9]+:[ 	]*67 c4 e2 79 4b 0c 51[ 	]*tileloaddt1 \(%ecx,%edx,2\),%tmm1
 [ 	]*[a-f0-9]+:[ 	]*c4 e2 79 4b 0c 61[ 	]*tileloaddt1 \(%rcx,%riz,2\),%tmm1
-[ 	]*[a-f0-9]+:[ 	]*c4 e2 78 49 c0[ 	]*tilerelease *
+[ 	]*[a-f0-9]+:[ 	]*c4 e2 78 49 c0[ 	]*tilerelease
 [ 	]*[a-f0-9]+:[ 	]*c4 e2 7a 4b 2c 21[ 	]*tilestored %tmm5,\(%rcx,%riz,1\)
 [ 	]*[a-f0-9]+:[ 	]*67 c4 e2 7a 4b 2c 21[ 	]*tilestored %tmm5,\(%ecx,%eiz,1\)
 [ 	]*[a-f0-9]+:[ 	]*c4 e2 7a 4b 2c 11[ 	]*tilestored %tmm5,\(%rcx,%rdx,1\)

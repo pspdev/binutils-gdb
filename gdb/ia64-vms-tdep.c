@@ -1,6 +1,6 @@
 /* Target-dependent code for OpenVMS IA-64.
 
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "frame-unwind.h"
 #include "ia64-tdep.h"
 #include "osabi.h"
@@ -34,7 +33,7 @@ ia64_vms_find_proc_info_x (unw_addr_space_t as, unw_word_t ip,
 			   unw_proc_info_t *pi,
 			   int need_unwind_info, void *arg)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  bfd_endian byte_order = gdbarch_byte_order (current_inferior ()->arch ());
   gdb_byte buf[32];
   const char *annex = core_addr_to_string (ip);
   LONGEST res;
@@ -132,7 +131,7 @@ static struct libunwind_descr ia64_vms_libunwind_descr;
 static void
 ia64_openvms_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  set_gdbarch_long_double_format (gdbarch, floatformats_ia64_quad);
+  set_gdbarch_long_double_format (gdbarch, floatformats_ieee_quad);
 
 #ifdef HAVE_LIBUNWIND_IA64_H
   /* Override the default descriptor.  */

@@ -1,6 +1,6 @@
 /* Common target-dependent code for NetBSD systems.
 
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Wasabi Systems, Inc.
   
@@ -19,7 +19,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "auxv.h"
 #include "solib-svr4.h"
 #include "netbsd-tdep.h"
@@ -43,21 +42,6 @@
 #define	KINFO_VME_FLAG_PAGEABLE		0x00000008
 #define	KINFO_VME_FLAG_GROWS_UP		0x00000010
 #define	KINFO_VME_FLAG_GROWS_DOWN	0x00000020
-
-/* FIXME: kettenis/20060115: We should really eliminate the next two
-   functions completely.  */
-
-struct link_map_offsets *
-nbsd_ilp32_solib_svr4_fetch_link_map_offsets (void)
-{
-  return svr4_ilp32_fetch_link_map_offsets ();
-}
-
-struct link_map_offsets *
-nbsd_lp64_solib_svr4_fetch_link_map_offsets (void)
-{
-  return svr4_lp64_fetch_link_map_offsets ();
-}
 
 int
 nbsd_pc_in_sigtramp (CORE_ADDR pc, const char *func_name)
@@ -364,33 +348,29 @@ nbsd_gdb_signal_to_target (struct gdbarch *gdbarch,
 static CORE_ADDR
 nbsd_skip_solib_resolver (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
-  struct bound_minimal_symbol msym;
-
-  msym = lookup_minimal_symbol ("_rtld_bind_start", NULL, NULL);
-  if (msym.minsym && BMSYMBOL_VALUE_ADDRESS (msym) == pc)
+  bound_minimal_symbol msym
+    = lookup_minimal_symbol (current_program_space, "_rtld_bind_start");
+  if (msym.minsym && msym.value_address () == pc)
     return frame_unwind_caller_pc (get_current_frame ());
   else
     return find_solib_trampoline_target (get_current_frame (), pc);
 }
 
-static struct gdbarch_data *nbsd_gdbarch_data_handle;
-
 struct nbsd_gdbarch_data
 {
-  struct type *siginfo_type;
+  struct type *siginfo_type = nullptr;
 };
 
-static void *
-init_nbsd_gdbarch_data (struct gdbarch *gdbarch)
-{
-  return GDBARCH_OBSTACK_ZALLOC (gdbarch, struct nbsd_gdbarch_data);
-}
+static const registry<gdbarch>::key<nbsd_gdbarch_data>
+     nbsd_gdbarch_data_handle;
 
 static struct nbsd_gdbarch_data *
 get_nbsd_gdbarch_data (struct gdbarch *gdbarch)
 {
-  return ((struct nbsd_gdbarch_data *)
-	  gdbarch_data (gdbarch, nbsd_gdbarch_data_handle));
+  struct nbsd_gdbarch_data *result = nbsd_gdbarch_data_handle.get (gdbarch);
+  if (result == nullptr)
+    result = nbsd_gdbarch_data_handle.emplace (gdbarch);
+  return result;
 }
 
 /* Implement the "get_siginfo_type" gdbarch method.  */
@@ -413,29 +393,33 @@ nbsd_get_siginfo_type (struct gdbarch *gdbarch)
   type *uint32_type = builtin_type (gdbarch)->builtin_uint32;
   type *uint64_type = builtin_type (gdbarch)->builtin_uint64;
 
-  bool lp64 = TYPE_LENGTH (void_ptr_type) == 8;
+  bool lp64 = void_ptr_type->length () == 8;
   size_t char_bits = gdbarch_addressable_memory_unit_size (gdbarch) * 8;
 
   /* pid_t */
-  type *pid_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-			      TYPE_LENGTH (int32_type) * char_bits, "pid_t");
-  TYPE_TARGET_TYPE (pid_type) = int32_type;
+  type_allocator alloc (gdbarch);
+  type *pid_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+				   int32_type->length () * char_bits,
+				   "pid_t");
+  pid_type->set_target_type (int32_type);
 
   /* uid_t */
-  type *uid_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-			      TYPE_LENGTH (uint32_type) * char_bits, "uid_t");
-  TYPE_TARGET_TYPE (uid_type) = uint32_type;
+  type *uid_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+				   uint32_type->length () * char_bits,
+				   "uid_t");
+  uid_type->set_target_type (uint32_type);
 
   /* clock_t */
-  type *clock_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-				TYPE_LENGTH (int_type) * char_bits, "clock_t");
-  TYPE_TARGET_TYPE (clock_type) = int_type;
+  type *clock_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+				     int_type->length () * char_bits,
+				     "clock_t");
+  clock_type->set_target_type (int_type);
 
   /* lwpid_t */
-  type *lwpid_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-				TYPE_LENGTH (int32_type) * char_bits,
-				"lwpid_t");
-  TYPE_TARGET_TYPE (lwpid_type) = int32_type;
+  type *lwpid_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+				     int32_type->length () * char_bits,
+				     "lwpid_t");
+  lwpid_type->set_target_type (int32_type);
 
   /* union sigval */
   type *sigval_type = arch_composite_type (gdbarch, NULL, TYPE_CODE_UNION);
@@ -525,20 +509,20 @@ nbsd_get_siginfo_type (struct gdbarch *gdbarch)
 void
 nbsd_info_proc_mappings_header (int addr_bit)
 {
-  printf_filtered (_("Mapped address spaces:\n\n"));
+  gdb_printf (_("Mapped address spaces:\n\n"));
   if (addr_bit == 64)
     {
-      printf_filtered ("  %18s %18s %10s %10s %9s %s\n",
-		       "Start Addr",
-		       "  End Addr",
-		       "      Size", "    Offset", "Flags  ", "File");
+      gdb_printf ("  %18s %18s %10s %10s %9s %s\n",
+		  "Start Addr",
+		  "  End Addr",
+		  "      Size", "    Offset", "Flags  ", "File");
     }
   else
     {
-      printf_filtered ("\t%10s %10s %10s %10s %9s %s\n",
-		       "Start Addr",
-		       "  End Addr",
-		       "      Size", "    Offset", "Flags  ", "File");
+      gdb_printf ("\t%10s %10s %10s %10s %9s %s\n",
+		  "Start Addr",
+		  "  End Addr",
+		  "      Size", "    Offset", "Flags  ", "File");
     }
 }
 
@@ -572,23 +556,23 @@ nbsd_info_proc_mappings_entry (int addr_bit, ULONGEST kve_start,
 {
   if (addr_bit == 64)
     {
-      printf_filtered ("  %18s %18s %10s %10s %9s %s\n",
-		       hex_string (kve_start),
-		       hex_string (kve_end),
-		       hex_string (kve_end - kve_start),
-		       hex_string (kve_offset),
-		       nbsd_vm_map_entry_flags (kve_flags, kve_protection),
-		       kve_path);
+      gdb_printf ("  %18s %18s %10s %10s %9s %s\n",
+		  hex_string (kve_start),
+		  hex_string (kve_end),
+		  hex_string (kve_end - kve_start),
+		  hex_string (kve_offset),
+		  nbsd_vm_map_entry_flags (kve_flags, kve_protection),
+		  kve_path);
     }
   else
     {
-      printf_filtered ("\t%10s %10s %10s %10s %9s %s\n",
-		       hex_string (kve_start),
-		       hex_string (kve_end),
-		       hex_string (kve_end - kve_start),
-		       hex_string (kve_offset),
-		       nbsd_vm_map_entry_flags (kve_flags, kve_protection),
-		       kve_path);
+      gdb_printf ("\t%10s %10s %10s %10s %9s %s\n",
+		  hex_string (kve_start),
+		  hex_string (kve_end),
+		  hex_string (kve_end - kve_start),
+		  hex_string (kve_offset),
+		  nbsd_vm_map_entry_flags (kve_flags, kve_protection),
+		  kve_path);
     }
 }
 
@@ -604,7 +588,7 @@ nbsd_get_syscall_number (struct gdbarch *gdbarch, thread_info *thread)
      However, system call catching requires this function to be
      set.  */
 
-  internal_error (__FILE__, __LINE__, _("nbsd_get_sycall_number called"));
+  internal_error (_("nbsd_get_sycall_number called"));
 }
 
 /* See netbsd-tdep.h.  */
@@ -621,12 +605,4 @@ nbsd_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   /* `catch syscall' */
   set_xml_syscall_file_name (gdbarch, "syscalls/netbsd.xml");
   set_gdbarch_get_syscall_number (gdbarch, nbsd_get_syscall_number);
-}
-
-void _initialize_nbsd_tdep ();
-void
-_initialize_nbsd_tdep ()
-{
-  nbsd_gdbarch_data_handle
-    = gdbarch_data_register_post_init (init_nbsd_gdbarch_data);
 }

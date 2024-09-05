@@ -1,4 +1,4 @@
-# Copyright 2004-2021 Free Software Foundation, Inc.
+# Copyright 2004-2024 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,6 +12,10 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+if { [is_remote host] } {
+    gdb_remote_download host $srcdir/$subdir/sep-proc.c
+}
 
 standard_testfile .c
 
@@ -41,10 +45,7 @@ gdb_test "list sep-proc.c:$location" \
 # Try the same, but this time with a breakpoint.  We need to exit
 # GDB to make sure that we havn't loaded the full symbols yet when
 # we test the breakpoint insertion.
-gdb_exit
-gdb_start
-gdb_reinitialize_dir $srcdir/$subdir
-gdb_load ${binfile}
+clean_restart $binfile
 
 set test "breakpoint inside included file"
 gdb_test_multiple "break sep-proc.c:$location" "$test" {

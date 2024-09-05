@@ -1,5 +1,5 @@
 /* This module handles expression trees.
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
    Written by Steve Chamberlain of Cygnus Support <sac@cygnus.com>.
 
    This file is part of the GNU Binutils.
@@ -94,6 +94,7 @@ exp_print_token (token_code_type code, int infix_p)
     { RSHIFTEQ, ">>=" },
     { ANDEQ, "&=" },
     { OREQ, "|=" },
+    { XOREQ, "^=" },
     { OROR, "||" },
     { ANDAND, "&&" },
     { EQ, "==" },
@@ -340,8 +341,10 @@ update_definedness (const char *name, struct bfd_link_hash_entry *h)
 }
 
 static void
-fold_segment_end (seg_align_type *seg)
+fold_segment_end (void)
 {
+  seg_align_type *seg = &expld.dataseg;
+
   if (expld.phase == lang_first_phase_enum
       || expld.section != bfd_abs_section_ptr)
     {
@@ -410,7 +413,7 @@ fold_unary (etree_type *tree)
 	  break;
 
 	case DATA_SEGMENT_END:
-	  fold_segment_end (&expld.dataseg);
+	  fold_segment_end ();
 	  break;
 
 	default:
@@ -447,8 +450,10 @@ arith_result_section (const etree_value_type *lhs)
 }
 
 static void
-fold_segment_align (seg_align_type *seg, etree_value_type *lhs)
+fold_segment_align (etree_value_type *lhs)
 {
+  seg_align_type *seg = &expld.dataseg;
+
   seg->relro = exp_seg_relro_start;
   if (expld.phase == lang_first_phase_enum
       || expld.section != bfd_abs_section_ptr)
@@ -469,7 +474,8 @@ fold_segment_align (seg_align_type *seg, etree_value_type *lhs)
 	}
       else
 	{
-	  expld.result.value += expld.dot & (maxpage - 1);
+	  if (!link_info.relro)
+	    expld.result.value += expld.dot & (maxpage - 1);
 	  if (seg->phase == exp_seg_done)
 	    {
 	      /* OK.  */
@@ -478,8 +484,9 @@ fold_segment_align (seg_align_type *seg, etree_value_type *lhs)
 	    {
 	      seg->phase = exp_seg_align_seen;
 	      seg->base = expld.result.value;
-	      seg->pagesize = commonpage;
+	      seg->commonpagesize = commonpage;
 	      seg->maxpagesize = maxpage;
+	      seg->relropagesize = maxpage;
 	      seg->relro_end = 0;
 	    }
 	  else
@@ -489,8 +496,10 @@ fold_segment_align (seg_align_type *seg, etree_value_type *lhs)
 }
 
 static void
-fold_segment_relro_end (seg_align_type *seg, etree_value_type *lhs)
+fold_segment_relro_end (etree_value_type *lhs)
 {
+  seg_align_type *seg = &expld.dataseg;
+
   /* Operands swapped!  XXX_SEGMENT_RELRO_END(offset,exp) has offset
      in expld.result and exp in lhs.  */
   seg->relro = exp_seg_relro_end;
@@ -508,10 +517,10 @@ fold_segment_relro_end (seg_align_type *seg, etree_value_type *lhs)
 	seg->relro_end = lhs->value + expld.result.value;
 
       if (seg->phase == exp_seg_relro_adjust
-	  && (seg->relro_end & (seg->pagesize - 1)))
+	  && (seg->relro_end & (seg->relropagesize - 1)))
 	{
-	  seg->relro_end += seg->pagesize - 1;
-	  seg->relro_end &= ~(seg->pagesize - 1);
+	  seg->relro_end += seg->relropagesize - 1;
+	  seg->relro_end &= ~(seg->relropagesize - 1);
 	  expld.result.value = seg->relro_end - expld.result.value;
 	}
       else
@@ -657,11 +666,11 @@ fold_binary (etree_type *tree)
 	  break;
 
 	case DATA_SEGMENT_ALIGN:
-	  fold_segment_align (&expld.dataseg, &lhs);
+	  fold_segment_align (&lhs);
 	  break;
 
 	case DATA_SEGMENT_RELRO_END:
-	  fold_segment_relro_end (&expld.dataseg, &lhs);
+	  fold_segment_relro_end (&lhs);
 	  break;
 
 	default:
@@ -681,6 +690,24 @@ fold_trinary (etree_type *tree)
     exp_fold_tree_1 (expld.result.value
 		     ? tree->trinary.lhs
 		     : tree->trinary.rhs);
+}
+
+static lang_output_section_statement_type *
+output_section_find (const char *name)
+{
+  lang_output_section_statement_type *os = lang_output_section_find (name);
+
+  if (os == NULL && strcmp (name, "NEXT_SECTION") == 0)
+    {
+      os = expld.last_os;
+      if (os != NULL)
+	while ((os = os->next) != NULL)
+	  if (os->constraint >= 0 && os->bfd_section != NULL)
+	    break;
+      if (os == NULL)
+	os = abs_output_section;
+    }
+  return os;
 }
 
 static void
@@ -842,7 +869,7 @@ fold_name (etree_type *tree)
 	{
 	  lang_output_section_statement_type *os;
 
-	  os = lang_output_section_find (tree->name.name);
+	  os = output_section_find (tree->name.name);
 	  if (os == NULL)
 	    {
 	      if (expld.phase == lang_final_phase_enum)
@@ -856,9 +883,17 @@ fold_name (etree_type *tree)
 	      bfd_vma val;
 
 	      if (tree->type.node_code == SIZEOF)
-		val = (os->bfd_section->size
-		       / bfd_octets_per_byte (link_info.output_bfd,
-					      os->bfd_section));
+		{
+		  if (os->processed_vma)
+		    val = os->bfd_section->size;
+		  else
+		    /* If we've just called lang_reset_memory_regions,
+		       size will be zero and a previous estimate of
+		       size will be in rawsize.  */
+		    val = os->bfd_section->rawsize;
+		  val /= bfd_octets_per_byte (link_info.output_bfd,
+					      os->bfd_section);
+		}
 	      else
 		val = (bfd_vma)1 << os->bfd_section->alignment_power;
 
@@ -1254,29 +1289,32 @@ exp_fold_tree_1 (etree_type *tree)
 }
 
 void
-exp_fold_tree (etree_type *tree, asection *current_section, bfd_vma *dotp)
+exp_fold_tree (etree_type *tree, lang_output_section_statement_type *os,
+	       asection *current_section, bfd_vma *dotp)
 {
   expld.rel_from_abs = false;
   expld.dot = *dotp;
   expld.dotp = dotp;
   expld.section = current_section;
+  expld.last_os = os;
   exp_fold_tree_1 (tree);
 }
 
 void
-exp_fold_tree_no_dot (etree_type *tree)
+exp_fold_tree_no_dot (etree_type *tree, lang_output_section_statement_type *os)
 {
   expld.rel_from_abs = false;
   expld.dot = 0;
   expld.dotp = NULL;
   expld.section = bfd_abs_section_ptr;
+  expld.last_os = os;
   exp_fold_tree_1 (tree);
 }
 
 static void
 exp_value_fold (etree_type *tree)
 {
-  exp_fold_tree_no_dot (tree);
+  exp_fold_tree_no_dot (tree, NULL);
   if (expld.result.valid_p)
     {
       tree->type.node_code = INT;
@@ -1531,11 +1569,12 @@ exp_print_tree (etree_type *tree)
 }
 
 bfd_vma
-exp_get_vma (etree_type *tree, bfd_vma def, char *name)
+exp_get_vma (etree_type *tree, lang_output_section_statement_type *os,
+	     bfd_vma def, char *name)
 {
   if (tree != NULL)
     {
-      exp_fold_tree_no_dot (tree);
+      exp_fold_tree_no_dot (tree, os);
       if (expld.result.valid_p)
 	return expld.result.value;
       else if (name != NULL && expld.phase != lang_mark_phase_enum)
@@ -1551,9 +1590,10 @@ exp_get_vma (etree_type *tree, bfd_vma def, char *name)
    NULL or cannot be resolved, return -1.  */
 
 int
-exp_get_power (etree_type *tree, char *name)
+exp_get_power (etree_type *tree, lang_output_section_statement_type *os,
+	       char *name)
 {
-  bfd_vma x = exp_get_vma (tree, -1, name);
+  bfd_vma x = exp_get_vma (tree, os, -1, name);
   bfd_vma p2;
   int n;
 
@@ -1577,7 +1617,7 @@ exp_get_fill (etree_type *tree, fill_type *def, char *name)
   if (tree == NULL)
     return def;
 
-  exp_fold_tree_no_dot (tree);
+  exp_fold_tree_no_dot (tree, NULL);
   if (!expld.result.valid_p)
     {
       if (name != NULL && expld.phase != lang_mark_phase_enum)
@@ -1631,7 +1671,7 @@ exp_get_abs_int (etree_type *tree, int def, char *name)
 {
   if (tree != NULL)
     {
-      exp_fold_tree_no_dot (tree);
+      exp_fold_tree_no_dot (tree, NULL);
 
       if (expld.result.valid_p)
 	{

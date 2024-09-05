@@ -1,6 +1,6 @@
 /* Blackfin Ethernet Media Access Controller (EMAC) model.
 
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2024 Free Software Foundation, Inc.
    Contributed by Analog Devices, Inc.
 
    This file is part of simulators.
@@ -185,7 +185,7 @@ bfin_emac_io_write_buffer (struct hw *me, const void *source,
   value = dv_load_4 (source);
 
   mmr_off = addr - emac->base;
-  valuep = (void *)((unsigned long)emac + mmr_base() + mmr_off);
+  valuep = (void *)((uintptr_t)emac + mmr_base() + mmr_off);
 
   HW_TRACE_WRITE ();
 
@@ -286,7 +286,7 @@ bfin_emac_io_read_buffer (struct hw *me, void *dest,
     return 0;
 
   mmr_off = addr - emac->base;
-  valuep = (void *)((unsigned long)emac + mmr_base() + mmr_off);
+  valuep = (void *)((uintptr_t)emac + mmr_base() + mmr_off);
 
   HW_TRACE_READ ();
 
@@ -539,10 +539,7 @@ bfin_emac_tap_init (struct hw *me)
 {
 #if WITH_TUN
   struct bfin_emac *emac = hw_data (me);
-  const hw_unit *unit;
   int flags;
-
-  unit = hw_unit_address (me);
 
   emac->tap = open ("/dev/net/tun", O_RDWR);
   if (emac->tap == -1)

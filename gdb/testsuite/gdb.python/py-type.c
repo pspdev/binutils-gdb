@@ -1,6 +1,6 @@
 /* This testcase is part of GDB, the GNU debugger.
 
-   Copyright 2009-2021 Free Software Foundation, Inc.
+   Copyright 2009-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -31,6 +31,13 @@ typedef struct s TS;
 TS ts;
 
 int aligncheck;
+
+union UU
+{
+  int i;
+  float f;
+  int a[5];
+};
 
 #ifdef __cplusplus
 struct C
@@ -72,6 +79,14 @@ Temargs<D, 23, &C::c> temvar;
 
 #endif
 
+unsigned char global_unsigned_char;
+char global_char;
+signed char global_signed_char;
+
+unsigned int global_unsigned_int;
+int global_int;
+signed int global_signed_int;
+
 enum E
 { v1, v2, v3
 };
@@ -91,6 +106,7 @@ main ()
   int ar[2] = {1,2};
   struct s st;
   struct SS ss;
+  union UU uu;
 #ifdef __cplusplus
   C c;
   c.c = 1;
@@ -102,6 +118,11 @@ main ()
   c.a_method (0, 1);
   c.a_const_method (0, 1);
   C::a_static_method (0, 1);
+
+  struct Local { int g; } l;
+  l.g = 5;
+  typedef int IntType;
+  IntType it = 6;
 #endif
   enum E e;
 

@@ -1,6 +1,6 @@
 /* Basic C++ demangling support for GDB.
 
-   Copyright (C) 1991-2021 Free Software Foundation, Inc.
+   Copyright (C) 1991-2024 Free Software Foundation, Inc.
 
    Written by Fred Fish at Cygnus Support.
 
@@ -23,10 +23,9 @@
 /*  This file contains support code for C++ demangling that is common
    to a styles of demangling, and GDB specific.  */
 
-#include "defs.h"
-#include "cli/cli-utils.h" /* for skip_to_space */
+#include "cli/cli-utils.h"
 #include "command.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "demangle.h"
 #include "gdb-demangle.h"
 #include "language.h"
@@ -50,10 +49,10 @@ static void
 show_demangle (struct ui_file *file, int from_tty,
 	       struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file,
-		    _("Demangling of encoded C++/ObjC names "
-		      "when displaying symbols is %s.\n"),
-		    value);
+  gdb_printf (file,
+	      _("Demangling of encoded C++/ObjC names "
+		"when displaying symbols is %s.\n"),
+	      value);
 }
 
 /* See documentation in gdb-demangle.h.  */
@@ -63,10 +62,10 @@ static void
 show_asm_demangle (struct ui_file *file, int from_tty,
 		   struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file,
-		    _("Demangling of C++/ObjC names in "
-		      "disassembly listings is %s.\n"),
-		    value);
+  gdb_printf (file,
+	      _("Demangling of C++/ObjC names in "
+		"disassembly listings is %s.\n"),
+	      value);
 }
 
 /* String name for the current demangling style.  Set by the
@@ -83,8 +82,8 @@ static void
 show_demangling_style_names(struct ui_file *file, int from_tty,
 			    struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("The current C++ demangling style is \"%s\".\n"),
-		    value);
+  gdb_printf (file, _("The current C++ demangling style is \"%s\".\n"),
+	      value);
 }
 
 /* Set current demangling style.  Called by the "set demangle-style"
@@ -160,7 +159,6 @@ is_cplus_marker (int c)
 static void
 demangle_command (const char *args, int from_tty)
 {
-  char *demangled;
   const char *name;
   const char *arg_start;
   int processing_args = 1;
@@ -202,12 +200,10 @@ demangle_command (const char *args, int from_tty)
   else
     lang = current_language;
 
-  demangled = language_demangle (lang, name, DMGL_ANSI | DMGL_PARAMS);
+  gdb::unique_xmalloc_ptr<char> demangled
+    = lang->demangle_symbol (name, DMGL_ANSI | DMGL_PARAMS);
   if (demangled != NULL)
-    {
-      printf_filtered ("%s\n", demangled);
-      xfree (demangled);
-    }
+    gdb_printf ("%s\n", demangled.get ());
   else
     error (_("Can't demangle \"%s\""), name);
 }

@@ -1,5 +1,5 @@
 /* input_file.c - Deal with Input Files -
-   Copyright (C) 1987-2021 Free Software Foundation, Inc.
+   Copyright (C) 1987-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -164,34 +164,38 @@ input_file_open (const char *filename,
     }
   gas_assert (c != EOF);
 
-  if (c == '#')
+  if (strchr (line_comment_chars, '#')
+      ? c == '#'
+      : c && strchr (line_comment_chars, c))
     {
       /* Begins with comment, may not want to preprocess.  */
+      int lead = c;
+
       c = getc (f_in);
       if (c == 'N')
 	{
-	  if (fgets (buf, sizeof (buf), f_in)
-	      && startswith (buf, "O_APP") && ISSPACE (buf[5]))
+	  char *p = fgets (buf, sizeof (buf), f_in);
+	  if (p && startswith (p, "O_APP") && is_end_of_line (p[5]))
 	    preprocess = 0;
-	  if (!strchr (buf, '\n'))
-	    ungetc ('#', f_in);	/* It was longer.  */
+	  if (!p || !strchr (p, '\n'))
+	    ungetc (lead, f_in);
 	  else
 	    ungetc ('\n', f_in);
 	}
       else if (c == 'A')
 	{
-	  if (fgets (buf, sizeof (buf), f_in)
-	      && startswith (buf, "PP") && ISSPACE (buf[2]))
+	  char *p = fgets (buf, sizeof (buf), f_in);
+	  if (p && startswith (p, "PP") && is_end_of_line (p[2]))
 	    preprocess = 1;
-	  if (!strchr (buf, '\n'))
-	    ungetc ('#', f_in);
+	  if (!p || !strchr (p, '\n'))
+	    ungetc (lead, f_in);
 	  else
 	    ungetc ('\n', f_in);
 	}
       else if (c == '\n')
 	ungetc ('\n', f_in);
       else
-	ungetc ('#', f_in);
+	ungetc (lead, f_in);
     }
   else
     ungetc (c, f_in);
@@ -240,9 +244,20 @@ input_file_give_next_buffer (char *where /* Where to place 1st character of new 
      Since the assembler shouldn't do any output to stdout, we
      don't bother to synch output and input.  */
   if (preprocess)
-    size = do_scrub_chars (input_file_get, where, BUFFER_SIZE);
+    size = do_scrub_chars (input_file_get, where, BUFFER_SIZE,
+                           multibyte_handling == multibyte_warn);
   else
-    size = input_file_get (where, BUFFER_SIZE);
+    {
+      size = input_file_get (where, BUFFER_SIZE);
+
+      if (multibyte_handling == multibyte_warn)
+	{
+	  const unsigned char *start = (const unsigned char *) where;
+
+	  (void) scan_for_multibyte_characters (start, start + size,
+						true /* Generate warnings */);
+	}
+    }
 
   if (size)
     return_value = where + size;

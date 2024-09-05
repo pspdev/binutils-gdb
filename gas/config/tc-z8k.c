@@ -1,5 +1,5 @@
 /* tc-z8k.c -- Assemble code for the Zilog Z800n
-   Copyright (C) 1992-2021 Free Software Foundation, Inc.
+   Copyright (C) 1992-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -116,7 +116,7 @@ const pseudo_typeS md_pseudo_table[] = {
   {"segm"   , s_segm          , 1},
   {"unsegm" , s_segm          , 0},
   {"unseg"  , s_segm          , 0},
-  {"name"   , s_app_file      , 0},
+  {"name"   , s_file          , 0},
   {"global" , s_globl         , 0},
   {"wval"   , cons            , 2},
   {"lval"   , cons            , 4},

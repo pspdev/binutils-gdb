@@ -1,4 +1,4 @@
-# Copyright 2002-2021 Free Software Foundation, Inc.
+# Copyright 2002-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,10 +26,10 @@ set endian "auto"
 
 set formats {binary ihex srec tekhex  verilog}
 
-if [istarget "alpha*-*-*"] then {
+if {[istarget "alpha*-*-*"]} {
     # SREC etc cannot handle 64-bit addresses.  Force the test
     # program into the low 31 bits of the address space.
-    lappend options "additional_flags=-Wl,-taso"
+    lappend options "ldflags=-Wl,-taso"
 }
 
 # Runs the command 'print zero_all ()'.  Uses the PRINT_ZERO_ALL_COUNT
@@ -52,11 +52,7 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable ${op
      return -1
 }
 
-# Start with a fresh gdb.
-
-gdb_exit
-gdb_start
-gdb_reinitialize_dir $srcdir/$subdir
+clean_restart $binfile
 
 gdb_test "dump mem /dev/null 0x10 0x20" "Cannot access memory at address 0x10" \
 	 "inaccessible memory is reported"
@@ -68,7 +64,7 @@ gdb_load ${binfile}
 # IHEX and TEKHEX.  We skip those tests then.
 set max_32bit_address "0xffffffff"
 set data_address [get_hexadecimal_valueof "&intarray" 0x100000000]
-if {${data_address} > ${max_32bit_address}} then {
+if {${data_address} > ${max_32bit_address}} {
     set is64bitonly "yes"
 }
 
@@ -105,7 +101,7 @@ remote_exec host "rm -f $filenames"
 
 # Run target program until data structs are initialized.
 
-if { ! [ runto checkpoint1 ] } then {
+if {![runto checkpoint1]} {
     untested "couldn't run to checkpoint"
     return -1
 }
@@ -145,11 +141,14 @@ make_dump_file "dump srec val [set intarr1.srec] intarray" \
 make_dump_file "dump srec val [set intstr1.srec] intstruct" \
 	"dump struct as value, srec"
 
-make_dump_file "dump ihex val [set intarr1.ihex] intarray" \
-	"dump array as value, intel hex"
+# 64-bit address out of range for Intel Hex file
+if {![string compare $is64bitonly "no"]} {
+    make_dump_file "dump ihex val [set intarr1.ihex] intarray" \
+	    "dump array as value, intel hex"
 
-make_dump_file "dump ihex val [set intstr1.ihex] intstruct" \
-	"dump struct as value, intel hex"
+    make_dump_file "dump ihex val [set intstr1.ihex] intstruct" \
+	    "dump struct as value, intel hex"
+}
 
 make_dump_file "dump tekhex val [set intarr1.tekhex] intarray" \
 	"dump array as value, tekhex"
@@ -246,11 +245,14 @@ make_dump_file "dump srec mem [set intarr2.srec] $array_start $array_end" \
 make_dump_file "dump srec mem [set intstr2.srec] $struct_start $struct_end" \
 	"dump struct as memory, srec"
 
-make_dump_file "dump ihex mem [set intarr2.ihex] $array_start $array_end" \
-	"dump array as memory, ihex"
+# 64-bit address out of range for Intel Hex file
+if {![string compare $is64bitonly "no"]} {
+    make_dump_file "dump ihex mem [set intarr2.ihex] $array_start $array_end" \
+	    "dump array as memory, ihex"
 
-make_dump_file "dump ihex mem [set intstr2.ihex] $struct_start $struct_end" \
-	"dump struct as memory, ihex"
+    make_dump_file "dump ihex mem [set intstr2.ihex] $struct_start $struct_end" \
+	    "dump struct as memory, ihex"
+}
 
 make_dump_file "dump tekhex mem [set intarr2.tekhex] $array_start $array_end" \
 	"dump array as memory, tekhex"
@@ -283,7 +285,7 @@ proc test_restore_saved_value { restore_args msg oldval newval } {
     }
 }
 
-if ![string compare $is64bitonly "no"] then {
+if {![string compare $is64bitonly "no"]} {
 
 
   test_restore_saved_value "[set intarr1.srec]" "array as value, srec" \
@@ -365,7 +367,7 @@ set struct2_offset \
 print_zero_all
 
 
-if ![string compare $is64bitonly "no"] then {
+if {![string compare $is64bitonly "no"]} {
   test_restore_saved_value "[set intarr1.srec] $array2_offset" \
 	"array copy, srec" \
 	$array_val "intarray2"
@@ -421,7 +423,7 @@ set element3_offset \
 set element4_offset \
 	[capture_value "/x (char *) &intarray\[4\] - (char *) &intarray\[0\]"]
 
-if ![string compare $is64bitonly "no"] then {
+if {![string compare $is64bitonly "no"]} {
   print_zero_all
 
   test_restore_saved_value "[set intarr1.srec] 0 $element3_start $element4_start" \
@@ -456,7 +458,7 @@ test_restore_saved_value \
 gdb_test "print intarray\[2\] == 0" " = 1" "element 2 not changed - 4"
 gdb_test "print intarray\[4\] == 0" " = 1" "element 4 not changed - 4"
 
-if ![string compare $is64bitonly "no"] then {
+if {![string compare $is64bitonly "no"]} {
   print_zero_all
 
   # restore with expressions 
@@ -479,8 +481,7 @@ foreach_with_prefix format $formats {
 
 # Now start a fresh gdb session, and reload the saved value files.
 
-gdb_exit
-gdb_start
+clean_restart
 gdb_file_cmd ${binfile}
 
 # Now fix the endianness at the correct state.
@@ -520,7 +521,7 @@ proc test_reload_saved_value { filename msg oldval newval } {
 }
 
 # srec format can not be loaded for 64-bit-only platforms
-if ![string compare $is64bitonly "no"] then {
+if {![string compare $is64bitonly "no"]} {
   test_reload_saved_value "[set intarr1.srec]" "reload array as value, srec" \
 	$array_val "\*$array_ptr_type"
   test_reload_saved_value "[set intstr1.srec]" "reload struct as value, srec" \
@@ -532,7 +533,7 @@ if ![string compare $is64bitonly "no"] then {
 }
 
 # ihex format can not be loaded for 64-bit-only platforms
-if ![string compare $is64bitonly "no"] then {
+if {![string compare $is64bitonly "no"]} {
 
   test_reload_saved_value "[set intarr1.ihex]" \
       "reload array as value, intel hex" \
@@ -549,7 +550,7 @@ if ![string compare $is64bitonly "no"] then {
 }
 
 # tekhex format can not be loaded for 64-bit-only platforms
-if ![string compare $is64bitonly "no"] then {
+if {![string compare $is64bitonly "no"]} {
   test_reload_saved_value "[set intarr1.tekhex]" \
       "reload array as value, tekhex" \
 	$array_val "\*$array_ptr_type"

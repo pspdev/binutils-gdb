@@ -1,6 +1,6 @@
 /* Blackfin Real Time Clock (RTC) model.
 
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2024 Free Software Foundation, Inc.
    Contributed by Analog Devices, Inc.
 
    This file is part of simulators.
@@ -59,7 +59,6 @@ bfin_rtc_io_write_buffer (struct hw *me, const void *source,
   bu32 mmr_off;
   bu32 value;
   bu16 *value16p;
-  bu32 *value32p;
   void *valuep;
 
   /* Invalid access mode is higher priority than missing register.  */
@@ -72,9 +71,8 @@ bfin_rtc_io_write_buffer (struct hw *me, const void *source,
     value = dv_load_2 (source);
 
   mmr_off = addr - rtc->base;
-  valuep = (void *)((unsigned long)rtc + mmr_base() + mmr_off);
+  valuep = (void *)((uintptr_t)rtc + mmr_base() + mmr_off);
   value16p = valuep;
-  value32p = valuep;
 
   HW_TRACE_WRITE ();
 
@@ -114,7 +112,7 @@ bfin_rtc_io_read_buffer (struct hw *me, void *dest,
     return 0;
 
   mmr_off = addr - rtc->base;
-  valuep = (void *)((unsigned long)rtc + mmr_base() + mmr_off);
+  valuep = (void *)((uintptr_t)rtc + mmr_base() + mmr_off);
   value16p = valuep;
   value32p = valuep;
 

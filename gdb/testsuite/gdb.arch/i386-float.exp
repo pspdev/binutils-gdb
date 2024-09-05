@@ -1,4 +1,4 @@
-# Copyright (C) 2009-2021 Free Software Foundation, Inc.
+# Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,10 +18,7 @@
 
 # Test the x87 floating point information printout.
 
-if { ![istarget "i?86-*-*"] && ![istarget "x86_64-*-*"] } then {
-    verbose "Skipping i386 tests for x87 floating point support."
-    return
-}
+require {is_any_target "i?86-*-*" "x86_64-*-*"}
 
 standard_testfile .S
 
@@ -32,8 +29,7 @@ if { [prepare_for_testing "failed to prepare" $testfile $srcfile [list debug nop
     return -1
 }
 
-if ![runto_main] then {
-    fail "can't run to main"
+if {![runto_main]} {
     return 0
 }
 

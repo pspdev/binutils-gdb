@@ -1,6 +1,6 @@
 /* Support for printing Go values for GDB, the GNU debugger.
 
-   Copyright (C) 2012-2021 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,7 +23,6 @@
    Strings are handled specially here, at least for now, in case the Python
    support is unavailable.  */
 
-#include "defs.h"
 #include "gdbtypes.h"
 #include "gdbcore.h"
 #include "go-lang.h"
@@ -45,14 +44,14 @@ print_go_string (struct type *type,
 {
   struct gdbarch *gdbarch = type->arch ();
   struct type *elt_ptr_type = type->field (0).type ();
-  struct type *elt_type = TYPE_TARGET_TYPE (elt_ptr_type);
+  struct type *elt_type = elt_ptr_type->target_type ();
   LONGEST length;
   /* TODO(dje): The encapsulation of what a pointer is belongs in value.c.
      I.e. If there's going to be unpack_pointer, there should be
      unpack_value_field_as_pointer.  Do this until we can get
      unpack_value_field_as_pointer.  */
   LONGEST addr;
-  const gdb_byte *valaddr = value_contents_for_printing (val);
+  const gdb_byte *valaddr = val->contents_for_printing ().data ();
 
 
   if (! unpack_value_field_as_long (type, valaddr, embedded_offset, 0,
@@ -66,15 +65,15 @@ print_go_string (struct type *type,
   /* TODO(dje): Print address of struct or actual string?  */
   if (options->addressprint)
     {
-      fputs_filtered (paddress (gdbarch, addr), stream);
-      fputs_filtered (" ", stream);
+      gdb_puts (paddress (gdbarch, addr), stream);
+      gdb_puts (" ", stream);
     }
 
   if (length < 0)
     {
-      printf_filtered (_("<invalid length: %ps>"),
-		       styled_string (metadata_style.style (),
-				      plongest (addr)));
+      gdb_printf (_("<invalid length: %ps>"),
+		  styled_string (metadata_style.style (),
+				 plongest (addr)));
       return;
     }
 
@@ -91,7 +90,7 @@ go_language::value_print_inner (struct value *val, struct ui_file *stream,
 				int recurse,
 				const struct value_print_options *options) const
 {
-  struct type *type = check_typedef (value_type (val));
+  struct type *type = check_typedef (val->type ());
 
   switch (type->code ())
     {
@@ -104,8 +103,8 @@ go_language::value_print_inner (struct value *val, struct ui_file *stream,
 	    case GO_TYPE_STRING:
 	      if (! options->raw)
 		{
-		  print_go_string (type, value_embedded_offset (val),
-				   value_address (val),
+		  print_go_string (type, val->embedded_offset (),
+				   val->address (),
 				   stream, recurse, val, options);
 		  return;
 		}
@@ -114,7 +113,7 @@ go_language::value_print_inner (struct value *val, struct ui_file *stream,
 	      break;
 	    }
 	}
-	/* Fall through.  */
+	[[fallthrough]];
 
       default:
 	c_value_print_inner (val, stream, recurse, options);

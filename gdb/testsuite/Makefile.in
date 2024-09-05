@@ -1,5 +1,5 @@
 # Makefile for regression testing the GNU debugger.
-# Copyright 1992-2021 Free Software Foundation, Inc.
+# Copyright 1992-2024 Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -39,6 +39,8 @@ CC=@CC@
 
 EXPECT = `if [ "$${READ1}" != "" ] ; then \
             echo $${rootme}/expect-read1; \
+          elif [ "$${READMORE}" != "" ] ; then \
+            echo $${rootme}/expect-readmore; \
           elif [ -f $${rootme}/../../expect/expect ] ; then \
             echo $${rootme}/../../expect/expect ; \
           else \
@@ -103,6 +105,7 @@ INFODIRS=doc
 info:
 install-info:
 dvi:
+install-dvi:
 pdf:
 install-pdf:
 html:
@@ -161,6 +164,9 @@ check: all $(abs_builddir)/site.exp
 check-read1: read1.so expect-read1
 	$(MAKE) READ1="1" check
 
+check-readmore: readmore.so expect-readmore
+	$(MAKE) READMORE="1" check
+
 # Check whether we need to print the timestamp for each line of
 # status.
 TIMESTAMP = $(if $(TS),| $(srcdir)/print-ts.py $(if $(TS_FORMAT),$(TS_FORMAT),),)
@@ -198,12 +204,35 @@ expanded_tests := $(patsubst $(srcdir)/%,%,$(wildcard $(addprefix $(srcdir)/,$(T
 expanded_tests_or_none := $(or $(expanded_tests),no-matching-tests-found)
 endif
 
+# With check-single, if TESTS was expanded to "no-matching-tests-found" then
+# this will be passed to DejaGnu, resuling in an error.  With check-parallel
+# in the same situation, we avoid invoking DejaGnu, and instead just call
+# the check/no-matching-tests-found rule (which prints a helpful message).
+#
+# To get the same behaviour for check-single we decide here, based on how
+# TESTS expanded, whether check-single should redirect to do-check-single or
+# to check/no-matching-tests-found.
+ifeq ($(expanded_tests_or_none),no-matching-tests-found)
+CHECK_SINGLE_DEP=check/no-matching-tests-found
+else
+CHECK_SINGLE_DEP=do-check-single
+endif
+
 # Shorthand for running all the tests in a single directory.
 check-gdb.%:
 	$(MAKE) check TESTS="gdb.$*/*.exp"
 
-check-single:
-	$(DO_RUNTEST) $(RUNTESTFLAGS) $(expanded_tests_or_none) $(TIMESTAMP)
+do-check-single:
+	-rm -f *core* gdb.sum gdb.log
+	$(DO_RUNTEST) $(RUNTESTFLAGS) $(expanded_tests_or_none) $(TIMESTAMP); \
+	result=$$?; \
+	if test -e gdb.sum; then \
+	  $(SHELL) $(srcdir)/lib/dg-add-core-file-count.sh; \
+	  sed -n '/=== gdb Summary ===/,$$ p' gdb.sum; \
+	fi; \
+	exit $$result
+
+check-single: $(CHECK_SINGLE_DEP)
 
 check-single-racy:
 	-rm -rf cache racy_outputs temp
@@ -226,14 +255,18 @@ check-single-racy:
 	sed -n '/=== gdb Summary ===/,$$ p' racy.sum
 
 check-parallel:
+	-rm -f *core*
 	-rm -rf cache outputs temp
 	$(MAKE) -k do-check-parallel; \
 	result=$$?; \
-	$(SHELL) $(srcdir)/../../contrib/dg-extract-results.sh \
-	  `find outputs -name gdb.sum -print` > gdb.sum; \
-	$(SHELL) $(srcdir)/../../contrib/dg-extract-results.sh -L \
-	  `find outputs -name gdb.log -print` > gdb.log; \
-	sed -n '/=== gdb Summary ===/,$$ p' gdb.sum; \
+	if test -d outputs; then \
+	  $(SHELL) $(srcdir)/../../contrib/dg-extract-results.sh \
+	    `find outputs -name gdb.sum -print` > gdb.sum; \
+	  $(SHELL) $(srcdir)/../../contrib/dg-extract-results.sh -L \
+	    `find outputs -name gdb.log -print` > gdb.log; \
+	  $(SHELL) $(srcdir)/lib/dg-add-core-file-count.sh; \
+	  sed -n '/=== gdb Summary ===/,$$ p' gdb.sum; \
+	fi; \
 	exit $$result
 
 check-parallel-racy:
@@ -336,6 +369,25 @@ check-perf: all $(abs_builddir)/site.exp
 	@if test ! -d gdb.perf; then mkdir gdb.perf; fi
 	$(DO_RUNTEST) --directory=gdb.perf --outdir gdb.perf GDB_PERFTEST_MODE=$(GDB_PERFTEST_MODE) $(RUNTESTFLAGS) $(TIMESTAMP)
 
+
+check-all-boards: all $(abs_builddir)/site.exp
+	@if [ -z "$(GDB_TARGET_USERNAME)" ]; then \
+		echo "Must define GDB_TARGET_USERNAME"; \
+		false; \
+	fi
+	@if [ -z "$(GDB_HOST_USERNAME)" ]; then \
+		echo "Must define GDB_HOST_USERNAME"; \
+		false; \
+	fi
+	@if [ -z "$(TESTS)" ]; then \
+		echo "Must define TESTS"; \
+		false; \
+	fi
+	${abs_srcdir}/make-check-all.sh --keep-results \
+		--host-user "$(GDB_HOST_USERNAME)" \
+		--target-user "$(GDB_TARGET_USERNAME)" \
+		"$(TESTS)"
+
 force:;
 
 clean mostlyclean:
@@ -344,11 +396,11 @@ clean mostlyclean:
 	-rm -f *.dwo *.dwp
 	-rm -rf outputs temp cache
 	-rm -rf gdb.perf/workers gdb.perf/outputs gdb.perf/temp gdb.perf/cache
-	-rm -f read1.so expect-read1
+	-rm -f read1.so expect-read1 readmore.so expect-readmore
 
 distclean maintainer-clean realclean: clean
 	-rm -f *~ core
-	-rm -f Makefile config.status *-init.exp
+	-rm -f Makefile config.status *-init.exp lib/pdtrace
 	-rm -fr *.log summary detail *.plog *.sum *.psum site.*
 
 Makefile : Makefile.in config.status $(host_makefile_frag)
@@ -367,18 +419,22 @@ TAGS: force
 		-
 
 # Build the expect wrapper script that preloads the read1.so library.
-expect-read1:
+expect-read1 expect-readmore:
 	$(ECHO_GEN) \
-	rm -f expect-read1-tmp; \
-	touch expect-read1-tmp; \
-	echo "# THIS FILE IS GENERATED -*- buffer-read-only: t -*- \n" >>expect-read1-tmp; \
-	echo "# vi:set ro: */\n\n" >>expect-read1-tmp; \
-	echo "# To regenerate this file, run:\n" >>expect-read1-tmp; \
-	echo "#      make clean; make/\n" >>expect-read1-tmp; \
-	echo "export LD_PRELOAD=`pwd`/read1.so" >>expect-read1-tmp; \
-	echo 'exec expect "$$@"' >>expect-read1-tmp; \
-	chmod +x expect-read1-tmp; \
-	mv expect-read1-tmp expect-read1
+	rm -f $@-tmp; \
+	touch $@-tmp; \
+	echo "# THIS FILE IS GENERATED -*- buffer-read-only: t -*- \n" >>$@-tmp; \
+	echo "# vi:set ro: */\n\n" >>$@-tmp; \
+	echo "# To regenerate this file, run:\n" >>$@-tmp; \
+	echo "#      make clean; make/\n" >>$@-tmp; \
+	if [ $@ = expect-read1 ]; then \
+	  echo "export LD_PRELOAD=`pwd`/read1.so" >>$@-tmp; \
+	else \
+	  echo "export LD_PRELOAD=`pwd`/readmore.so" >>$@-tmp; \
+	fi; \
+	echo 'exec expect "$$@"' >>$@-tmp; \
+	chmod +x $@-tmp; \
+	mv $@-tmp $@
 
 # Build the read1.so preload library.  This overrides the `read'
 # function, making it read one byte at a time.  Running the testsuite
@@ -386,9 +442,17 @@ expect-read1:
 read1.so: lib/read1.c
 	$(ECHO_CC) $(CC) -o $@ ${srcdir}/lib/read1.c -Wall -g -shared -fPIC $(CFLAGS)
 
+# Build the readmore.so preload library.  This overrides the `read'
+# function, making it try harder to read more at a time.  Running the
+# testsuite with this catches racy tests.
+readmore.so: lib/read1.c
+	$(ECHO_CC) $(CC) -o $@ ${srcdir}/lib/read1.c -Wall -g -shared -fPIC \
+	  $(CFLAGS) -DREADMORE
+
 # Build the read1 machinery.
-.PHONY: read1
+.PHONY: read1 readmore
 read1: read1.so expect-read1
+readmore: readmore.so expect-readmore
 
 # Disable implicit make rules.
 include $(srcdir)/../disable-implicit-rules.mk

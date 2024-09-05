@@ -1,5 +1,5 @@
 /* Inferior process information for the remote server for GDB.
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -70,11 +70,18 @@ struct process_info
   /* Private target data.  */
   struct process_info_private *priv = NULL;
 
-  /* DLLs thats are loaded for this proc.  */
+  /* DLLs that are loaded for this proc.  */
   std::list<dll_info> all_dlls;
 
   /* Flag to mark that the DLL list has changed.  */
   bool dlls_changed = false;
+
+  /* True if the inferior is starting up (inside startup_inferior),
+     and we're nursing it along (through the shell) until it is ready
+     to execute its first instruction.  Until that is done, we must
+     not access inferior memory or registers, as we haven't determined
+     the target architecture/description.  */
+  bool starting_up = false;
 };
 
 /* Get the pid of PROC.  */

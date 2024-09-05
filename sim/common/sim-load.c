@@ -1,5 +1,5 @@
 /* Utility to load a file into the simulator.
-   Copyright (C) 1997-2021 Free Software Foundation, Inc.
+   Copyright (C) 1997-2024 Free Software Foundation, Inc.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,25 +21,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 /* This must come before any other includes.  */
 #include "defs.h"
 
-#include "ansidecl.h"
-#include <stdio.h> /* for NULL */
 #include <stdarg.h>
+#include <stdio.h> /* for NULL */
 #include <stdlib.h>
 #include <time.h>
 
-#include "sim-basics.h"
+#include "ansidecl.h"
 #include "bfd.h"
-#include "sim-utils.h"
 
 #include "sim/callback.h"
 #include "sim/sim.h"
+#include "sim-utils.h"
 
 static void eprintf (host_callback *, const char *, ...);
 static void xprintf (host_callback *, const char *, ...);
 static void report_transfer_performance
   (host_callback *, unsigned long, time_t, time_t);
 
-/* Load program PROG into the simulator using the function DO_LOAD.
+/* Load program PROG into the simulator using the function DO_WRITE.
    If PROG_BFD is non-NULL, the file has already been opened.
    If VERBOSE_P is non-zero statistics are printed of each loaded section
    and the transfer rate (for consistency with gdb).
@@ -122,11 +121,10 @@ sim_load_file (SIM_DESC sd, const char *myname, host_callback *callback,
 	      if (verbose_p)
 		{
 		  xprintf (callback,
-			   "Loading section %s, size 0x%lx %s "
-			   "%" BFD_VMA_FMT "x\n",
-			   bfd_section_name (s),
-			   (unsigned long) size,
-			   (lma_p ? "lma" : "vma"), lma);
+			   "Loading section %s, size 0x%" PRIx64
+			   " %s %" PRIx64 "\n",
+			   bfd_section_name (s), (uint64_t) size,
+			   lma_p ? "lma" : "vma", (uint64_t) lma);
 		}
 	      data_count += size;
 	      bfd_get_section_contents (result_bfd, s, buffer, 0, size);
@@ -148,8 +146,8 @@ sim_load_file (SIM_DESC sd, const char *myname, host_callback *callback,
   if (verbose_p)
     {
       end_time = time (NULL);
-      xprintf (callback, "Start address %" BFD_VMA_FMT "x\n",
-	       bfd_get_start_address (result_bfd));
+      xprintf (callback, "Start address %" PRIx64 "\n",
+	       (uint64_t) bfd_get_start_address (result_bfd));
       report_transfer_performance (callback, data_count, start_time, end_time);
     }
 

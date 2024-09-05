@@ -1,5 +1,5 @@
 /* Motorola 68k series support for 32-bit ELF
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -33,33 +33,33 @@ elf_m68k_discard_copies (struct elf_link_hash_entry *, void *);
 
 static reloc_howto_type howto_table[] =
 {
-  HOWTO(R_68K_NONE,	  0, 3, 0, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_NONE",	  false, 0, 0x00000000,false),
-  HOWTO(R_68K_32,	  0, 2,32, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_32",	  false, 0, 0xffffffff,false),
-  HOWTO(R_68K_16,	  0, 1,16, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_16",	  false, 0, 0x0000ffff,false),
-  HOWTO(R_68K_8,	  0, 0, 8, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_8",	  false, 0, 0x000000ff,false),
-  HOWTO(R_68K_PC32,	  0, 2,32, true, 0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_PC32",	  false, 0, 0xffffffff,true),
-  HOWTO(R_68K_PC16,	  0, 1,16, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PC16",	  false, 0, 0x0000ffff,true),
-  HOWTO(R_68K_PC8,	  0, 0, 8, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PC8",	  false, 0, 0x000000ff,true),
-  HOWTO(R_68K_GOT32,	  0, 2,32, true, 0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_GOT32",	  false, 0, 0xffffffff,true),
-  HOWTO(R_68K_GOT16,	  0, 1,16, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_GOT16",	  false, 0, 0x0000ffff,true),
-  HOWTO(R_68K_GOT8,	  0, 0, 8, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_GOT8",	  false, 0, 0x000000ff,true),
-  HOWTO(R_68K_GOT32O,	  0, 2,32, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_GOT32O",	  false, 0, 0xffffffff,false),
-  HOWTO(R_68K_GOT16O,	  0, 1,16, false,0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_GOT16O",	  false, 0, 0x0000ffff,false),
-  HOWTO(R_68K_GOT8O,	  0, 0, 8, false,0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_GOT8O",	  false, 0, 0x000000ff,false),
-  HOWTO(R_68K_PLT32,	  0, 2,32, true, 0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_PLT32",	  false, 0, 0xffffffff,true),
-  HOWTO(R_68K_PLT16,	  0, 1,16, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PLT16",	  false, 0, 0x0000ffff,true),
-  HOWTO(R_68K_PLT8,	  0, 0, 8, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PLT8",	  false, 0, 0x000000ff,true),
-  HOWTO(R_68K_PLT32O,	  0, 2,32, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_PLT32O",	  false, 0, 0xffffffff,false),
-  HOWTO(R_68K_PLT16O,	  0, 1,16, false,0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PLT16O",	  false, 0, 0x0000ffff,false),
-  HOWTO(R_68K_PLT8O,	  0, 0, 8, false,0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PLT8O",	  false, 0, 0x000000ff,false),
+  HOWTO(R_68K_NONE,	  0, 0, 0, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_NONE",	  false, 0, 0x00000000,false),
+  HOWTO(R_68K_32,	  0, 4,32, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_32",	  false, 0, 0xffffffff,false),
+  HOWTO(R_68K_16,	  0, 2,16, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_16",	  false, 0, 0x0000ffff,false),
+  HOWTO(R_68K_8,	  0, 1, 8, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_8",	  false, 0, 0x000000ff,false),
+  HOWTO(R_68K_PC32,	  0, 4,32, true, 0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_PC32",	  false, 0, 0xffffffff,true),
+  HOWTO(R_68K_PC16,	  0, 2,16, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PC16",	  false, 0, 0x0000ffff,true),
+  HOWTO(R_68K_PC8,	  0, 1, 8, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PC8",	  false, 0, 0x000000ff,true),
+  HOWTO(R_68K_GOT32,	  0, 4,32, true, 0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_GOT32",	  false, 0, 0xffffffff,true),
+  HOWTO(R_68K_GOT16,	  0, 2,16, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_GOT16",	  false, 0, 0x0000ffff,true),
+  HOWTO(R_68K_GOT8,	  0, 1, 8, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_GOT8",	  false, 0, 0x000000ff,true),
+  HOWTO(R_68K_GOT32O,	  0, 4,32, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_GOT32O",	  false, 0, 0xffffffff,false),
+  HOWTO(R_68K_GOT16O,	  0, 2,16, false,0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_GOT16O",	  false, 0, 0x0000ffff,false),
+  HOWTO(R_68K_GOT8O,	  0, 1, 8, false,0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_GOT8O",	  false, 0, 0x000000ff,false),
+  HOWTO(R_68K_PLT32,	  0, 4,32, true, 0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_PLT32",	  false, 0, 0xffffffff,true),
+  HOWTO(R_68K_PLT16,	  0, 2,16, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PLT16",	  false, 0, 0x0000ffff,true),
+  HOWTO(R_68K_PLT8,	  0, 1, 8, true, 0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PLT8",	  false, 0, 0x000000ff,true),
+  HOWTO(R_68K_PLT32O,	  0, 4,32, false,0, complain_overflow_bitfield, bfd_elf_generic_reloc, "R_68K_PLT32O",	  false, 0, 0xffffffff,false),
+  HOWTO(R_68K_PLT16O,	  0, 2,16, false,0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PLT16O",	  false, 0, 0x0000ffff,false),
+  HOWTO(R_68K_PLT8O,	  0, 1, 8, false,0, complain_overflow_signed,	bfd_elf_generic_reloc, "R_68K_PLT8O",	  false, 0, 0x000000ff,false),
   HOWTO(R_68K_COPY,	  0, 0, 0, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_COPY",	  false, 0, 0xffffffff,false),
-  HOWTO(R_68K_GLOB_DAT,	  0, 2,32, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_GLOB_DAT",  false, 0, 0xffffffff,false),
-  HOWTO(R_68K_JMP_SLOT,	  0, 2,32, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_JMP_SLOT",  false, 0, 0xffffffff,false),
-  HOWTO(R_68K_RELATIVE,	  0, 2,32, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_RELATIVE",  false, 0, 0xffffffff,false),
+  HOWTO(R_68K_GLOB_DAT,	  0, 4,32, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_GLOB_DAT",  false, 0, 0xffffffff,false),
+  HOWTO(R_68K_JMP_SLOT,	  0, 4,32, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_JMP_SLOT",  false, 0, 0xffffffff,false),
+  HOWTO(R_68K_RELATIVE,	  0, 4,32, false,0, complain_overflow_dont,	bfd_elf_generic_reloc, "R_68K_RELATIVE",  false, 0, 0xffffffff,false),
   /* GNU extension to record C++ vtable hierarchy.  */
   HOWTO (R_68K_GNU_VTINHERIT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -73,7 +73,7 @@ static reloc_howto_type howto_table[] =
   /* GNU extension to record C++ vtable member usage.  */
   HOWTO (R_68K_GNU_VTENTRY,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -88,7 +88,7 @@ static reloc_howto_type howto_table[] =
   /* TLS general dynamic variable reference.  */
   HOWTO (R_68K_TLS_GD32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -102,7 +102,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_GD16,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -116,7 +116,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_GD8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -131,7 +131,7 @@ static reloc_howto_type howto_table[] =
   /* TLS local dynamic variable reference.  */
   HOWTO (R_68K_TLS_LDM32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -145,7 +145,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_LDM16,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -159,7 +159,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_LDM8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -173,7 +173,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_LDO32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -187,7 +187,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_LDO16,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -201,7 +201,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_LDO8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -216,7 +216,7 @@ static reloc_howto_type howto_table[] =
   /* TLS initial execution variable reference.  */
   HOWTO (R_68K_TLS_IE32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -230,7 +230,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_IE16,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -244,7 +244,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_IE8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -259,7 +259,7 @@ static reloc_howto_type howto_table[] =
   /* TLS local execution variable reference.  */
   HOWTO (R_68K_TLS_LE32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -273,7 +273,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_LE16,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -287,7 +287,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_LE8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -302,7 +302,7 @@ static reloc_howto_type howto_table[] =
   /* TLS GD/LD dynamic relocations.  */
   HOWTO (R_68K_TLS_DTPMOD32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -316,7 +316,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_DTPREL32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -330,7 +330,7 @@ static reloc_howto_type howto_table[] =
 
   HOWTO (R_68K_TLS_TPREL32,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -2934,7 +2934,7 @@ elf_m68k_get_plt_info (bfd *output_bfd)
    It's a convenient place to determine the PLT style.  */
 
 static bool
-elf_m68k_always_size_sections (bfd *output_bfd, struct bfd_link_info *info)
+elf_m68k_early_size_sections (bfd *output_bfd, struct bfd_link_info *info)
 {
   /* Bind input BFDs to GOTs and calculate sizes of .got and .rela.got
      sections.  */
@@ -3107,15 +3107,16 @@ elf_m68k_adjust_dynamic_symbol (struct bfd_link_info *info,
 /* Set the sizes of the dynamic sections.  */
 
 static bool
-elf_m68k_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
-				struct bfd_link_info *info)
+elf_m68k_late_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
+			     struct bfd_link_info *info)
 {
   bfd *dynobj;
   asection *s;
   bool relocs;
 
   dynobj = elf_hash_table (info)->dynobj;
-  BFD_ASSERT (dynobj != NULL);
+  if (dynobj == NULL)
+    return true;
 
   if (elf_hash_table (info)->dynamic_sections_created)
     {
@@ -4628,12 +4629,11 @@ elf_m68k_grok_psinfo (bfd *abfd, Elf_Internal_Note *note)
 #define bfd_elf32_bfd_final_link	bfd_elf_final_link
 
 #define elf_backend_check_relocs	elf_m68k_check_relocs
-#define elf_backend_always_size_sections \
-					elf_m68k_always_size_sections
+#define elf_backend_early_size_sections \
+					elf_m68k_early_size_sections
 #define elf_backend_adjust_dynamic_symbol \
 					elf_m68k_adjust_dynamic_symbol
-#define elf_backend_size_dynamic_sections \
-					elf_m68k_size_dynamic_sections
+#define elf_backend_late_size_sections	elf_m68k_late_size_sections
 #define elf_backend_final_write_processing	elf_m68k_final_write_processing
 #define elf_backend_init_index_section	_bfd_elf_init_1_index_section
 #define elf_backend_relocate_section	elf_m68k_relocate_section

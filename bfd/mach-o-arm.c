@@ -1,5 +1,5 @@
 /* ARM Mach-O support for BFD.
-   Copyright (C) 2015-2021 Free Software Foundation, Inc.
+   Copyright (C) 2015-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -72,75 +72,75 @@ bfd_mach_o_arm_mkobject (bfd *abfd)
 static reloc_howto_type arm_howto_table[]=
 {
   /* 0 */
-  HOWTO (BFD_RELOC_32, 0, 2, 32, false, 0,
+  HOWTO (BFD_RELOC_32, 0, 4, 32, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "32",
 	 false, 0xffffffff, 0xffffffff, false),
-  HOWTO (BFD_RELOC_16, 0, 1, 16, false, 0,
+  HOWTO (BFD_RELOC_16, 0, 2, 16, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "16",
 	 false, 0xffff, 0xffff, false),
-  HOWTO (BFD_RELOC_8, 0, 0, 8, false, 0,
+  HOWTO (BFD_RELOC_8, 0, 1, 8, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "8",
 	 false, 0xff, 0xff, false),
-  HOWTO (BFD_RELOC_32_PCREL, 0, 2, 32, true, 0,
+  HOWTO (BFD_RELOC_32_PCREL, 0, 4, 32, true, 0,
 	 complain_overflow_bitfield,
 	 NULL, "DISP32",
 	 false, 0xffffffff, 0xffffffff, true),
   /* 4 */
-  HOWTO (BFD_RELOC_16_PCREL, 0, 1, 16, true, 0,
+  HOWTO (BFD_RELOC_16_PCREL, 0, 2, 16, true, 0,
 	 complain_overflow_bitfield,
 	 NULL, "DISP16",
 	 false, 0xffff, 0xffff, true),
-  HOWTO (BFD_RELOC_MACH_O_SECTDIFF, 0, 2, 32, false, 0,
+  HOWTO (BFD_RELOC_MACH_O_SECTDIFF, 0, 4, 32, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "SECTDIFF_32",
 	 false, 0xffffffff, 0xffffffff, false),
-  HOWTO (BFD_RELOC_MACH_O_LOCAL_SECTDIFF, 0, 2, 32, false, 0,
+  HOWTO (BFD_RELOC_MACH_O_LOCAL_SECTDIFF, 0, 4, 32, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "LSECTDIFF_32",
 	 false, 0xffffffff, 0xffffffff, false),
-  HOWTO (BFD_RELOC_MACH_O_PAIR, 0, 2, 32, false, 0,
+  HOWTO (BFD_RELOC_MACH_O_PAIR, 0, 4, 32, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "PAIR_32",
 	 false, 0xffffffff, 0xffffffff, false),
   /* 8 */
-  HOWTO (BFD_RELOC_MACH_O_SECTDIFF, 0, 1, 16, false, 0,
+  HOWTO (BFD_RELOC_MACH_O_SECTDIFF, 0, 2, 16, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "SECTDIFF_16",
 	 false, 0xffff, 0xffff, false),
-  HOWTO (BFD_RELOC_MACH_O_LOCAL_SECTDIFF, 0, 1, 16, false, 0,
+  HOWTO (BFD_RELOC_MACH_O_LOCAL_SECTDIFF, 0, 2, 16, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "LSECTDIFF_16",
 	 false, 0xffff, 0xffff, false),
-  HOWTO (BFD_RELOC_MACH_O_PAIR, 0, 1, 16, false, 0,
+  HOWTO (BFD_RELOC_MACH_O_PAIR, 0, 2, 16, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "PAIR_16",
 	 false, 0xffff, 0xffff, false),
-  HOWTO (BFD_RELOC_ARM_PCREL_CALL, 2, 2, 24, true, 0,
+  HOWTO (BFD_RELOC_ARM_PCREL_CALL, 2, 4, 24, true, 0,
 	 complain_overflow_signed,
 	 NULL, "BR24",
 	 false, 0x00ffffff, 0x00ffffff, true),
   /* 12 */
-  HOWTO (BFD_RELOC_ARM_MOVW, 0,	2, 16, false, 0,
+  HOWTO (BFD_RELOC_ARM_MOVW, 0,	4, 16, false, 0,
 	 complain_overflow_dont,
 	 NULL, "MOVW",
 	 false, 0x000f0fff, 0x000f0fff, false),
-  HOWTO (BFD_RELOC_MACH_O_PAIR, 0, 2, 16, false, 0,
+  HOWTO (BFD_RELOC_MACH_O_PAIR, 0, 4, 16, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "PAIR_W",
 	 false, 0x000f0fff, 0x000f0fff, false),
-  HOWTO (BFD_RELOC_ARM_MOVT, 0, 2, 16, false, 0,
+  HOWTO (BFD_RELOC_ARM_MOVT, 0, 4, 16, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "MOVT",
 	 false, 0x000f0fff, 0x000f0fff, false),
-  HOWTO (BFD_RELOC_MACH_O_PAIR, 0, 2, 16, false, 0,
+  HOWTO (BFD_RELOC_MACH_O_PAIR, 0, 4, 16, false, 0,
 	 complain_overflow_bitfield,
 	 NULL, "PAIR_T",
 	 false, 0x000f0fff, 0x000f0fff, false),
   /* 16 */
-  HOWTO (BFD_RELOC_THUMB_PCREL_BLX, 2, 2, 24, true, 0,
+  HOWTO (BFD_RELOC_THUMB_PCREL_BLX, 2, 4, 24, true, 0,
 	 complain_overflow_signed,
 	 NULL, "TBR22",
 	 false, 0x07ff2fff, 0x07ff2fff, true)
@@ -156,10 +156,7 @@ bfd_mach_o_arm_canonicalize_one_reloc (bfd *       abfd,
   bfd_mach_o_reloc_info reloc;
 
   if (!bfd_mach_o_pre_canonicalize_one_reloc (abfd, raw, &reloc, res, syms))
-    {
-fprintf (stderr, "ARm 1\n");
     return false;
-    }
 
   if (reloc.r_scattered)
     {
@@ -169,9 +166,9 @@ fprintf (stderr, "ARm 1\n");
 	  /* PR 21813: Check for a corrupt PAIR reloc at the start.  */
 	  if (res == res_base)
 	    {
-	      _bfd_error_handler (_("\
-malformed mach-o ARM reloc pair: reloc is first reloc"));
-	    return false;
+	      _bfd_error_handler (_("malformed mach-o ARM reloc pair: "
+				    "reloc is first reloc"));
+	      return false;
 	    }
 	  if (reloc.r_length == 2)
 	    {
@@ -185,8 +182,8 @@ malformed mach-o ARM reloc pair: reloc is first reloc"));
 	      res->address = res[-1].address;
 	      return true;
 	    }
-	  _bfd_error_handler (_("\
-malformed mach-o ARM reloc pair: invalid length: %d"), reloc.r_length);
+	  _bfd_error_handler (_("malformed mach-o ARM reloc pair: "
+				"invalid length: %d"), reloc.r_length);
 	  return false;
 
 	case BFD_MACH_O_ARM_RELOC_SECTDIFF:
@@ -200,8 +197,8 @@ malformed mach-o ARM reloc pair: invalid length: %d"), reloc.r_length);
 	      res->howto = &arm_howto_table[8];
 	      return true;
 	    }
-	  _bfd_error_handler (_("\
-malformed mach-o ARM sectdiff reloc: invalid length: %d"), reloc.r_length);
+	  _bfd_error_handler (_("malformed mach-o ARM sectdiff reloc: "
+				"invalid length: %d"), reloc.r_length);
 	  return false;
 
 	case BFD_MACH_O_ARM_RELOC_LOCAL_SECTDIFF:
@@ -215,8 +212,8 @@ malformed mach-o ARM sectdiff reloc: invalid length: %d"), reloc.r_length);
 	      res->howto = &arm_howto_table[9];
 	      return true;
 	    }
-	  _bfd_error_handler (_("\
-malformed mach-o ARM local sectdiff reloc: invalid length: %d"),
+	  _bfd_error_handler (_("malformed mach-o ARM local sectdiff reloc: "
+				"invalid length: %d"),
 			      reloc.r_length);
 	  return false;
 
@@ -230,8 +227,8 @@ malformed mach-o ARM local sectdiff reloc: invalid length: %d"),
 	      res->howto = &arm_howto_table[14];
 	      return true;
 	    }
-	  _bfd_error_handler (_("\
-malformed mach-o ARM half sectdiff reloc: invalid length: %d"),
+	  _bfd_error_handler (_("malformed mach-o ARM half sectdiff reloc: "
+				"invalid length: %d"),
 			      reloc.r_length);
 	  return false;
 
@@ -262,8 +259,8 @@ malformed mach-o ARM half sectdiff reloc: invalid length: %d"),
 	      res->howto = &arm_howto_table[3];
 	      return true;
 	    default:
-	      _bfd_error_handler (_("\
-malformed mach-o ARM vanilla reloc: invalid length: %d (pcrel: %d)"),
+	      _bfd_error_handler (_("malformed mach-o ARM vanilla reloc: "
+				    "invalid length: %d (pcrel: %d)"),
 				  reloc.r_length, reloc.r_pcrel);
 	      return false;
 	    }
@@ -299,6 +296,12 @@ malformed mach-o ARM vanilla reloc: invalid length: %d (pcrel: %d)"),
 	  break;
 
 	case BFD_MACH_O_ARM_RELOC_PAIR:
+	  if (res == res_base)
+	    {
+	      _bfd_error_handler (_("malformed mach-o ARM reloc pair: "
+				    "reloc is first reloc"));
+	      return false;
+	    }
 	  if (res[-1].howto == &arm_howto_table[12]
 	      && reloc.r_length == 0)
 	    {
@@ -326,8 +329,8 @@ malformed mach-o ARM vanilla reloc: invalid length: %d (pcrel: %d)"),
 	}
     }
 
-  _bfd_error_handler (_("\
-malformed mach-o ARM reloc: unknown reloc type: %d"), reloc.r_length);
+  _bfd_error_handler (_("malformed mach-o ARM reloc: "
+			"unknown reloc type: %d"), reloc.r_length);
   return false;
 }
 

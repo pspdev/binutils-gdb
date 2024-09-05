@@ -1,6 +1,6 @@
 /* Exception (throw catch) mechanism, for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "common-defs.h"
 #include "common-exceptions.h"
 #include <forward_list>
 
@@ -74,13 +73,13 @@ exceptions_state_mc (enum catcher_action action)
 	  catchers.front ().state = CATCHER_RUNNING;
 	  return 1;
 	default:
-	  internal_error (__FILE__, __LINE__, _("bad state"));
+	  internal_error (_("bad state"));
 	}
     case CATCHER_RUNNING:
       switch (action)
 	{
 	case CATCH_ITER:
-	  /* No error/quit has occured.  */
+	  /* No error/quit has occurred.  */
 	  return 0;
 	case CATCH_ITER_1:
 	  catchers.front ().state = CATCHER_RUNNING_1;
@@ -90,7 +89,7 @@ exceptions_state_mc (enum catcher_action action)
 	  /* See also throw_exception.  */
 	  return 1;
 	default:
-	  internal_error (__FILE__, __LINE__, _("bad switch"));
+	  internal_error (_("bad switch"));
 	}
     case CATCHER_RUNNING_1:
       switch (action)
@@ -106,7 +105,7 @@ exceptions_state_mc (enum catcher_action action)
 	  /* See also throw_exception.  */
 	  return 1;
 	default:
-	  internal_error (__FILE__, __LINE__, _("bad switch"));
+	  internal_error (_("bad switch"));
 	}
     case CATCHER_ABORTING:
       switch (action)
@@ -119,10 +118,10 @@ exceptions_state_mc (enum catcher_action action)
 	    return 0;
 	  }
 	default:
-	  internal_error (__FILE__, __LINE__, _("bad state"));
+	  internal_error (_("bad state"));
 	}
     default:
-      internal_error (__FILE__, __LINE__, _("bad switch"));
+      internal_error (_("bad switch"));
     }
 }
 
@@ -184,18 +183,22 @@ throw_exception (gdb_exception &&exception)
 {
   if (exception.reason == RETURN_QUIT)
     throw gdb_exception_quit (std::move (exception));
+  else if (exception.reason == RETURN_FORCED_QUIT)
+    throw gdb_exception_forced_quit (std::move (exception));
   else if (exception.reason == RETURN_ERROR)
     throw gdb_exception_error (std::move (exception));
   else
     gdb_assert_not_reached ("invalid return reason");
 }
 
-static void ATTRIBUTE_NORETURN ATTRIBUTE_PRINTF (3, 0)
+[[noreturn]] static void ATTRIBUTE_PRINTF (3, 0)
 throw_it (enum return_reason reason, enum errors error, const char *fmt,
 	  va_list ap)
 {
   if (reason == RETURN_QUIT)
     throw gdb_exception_quit (fmt, ap);
+  else if (reason == RETURN_FORCED_QUIT)
+    throw gdb_exception_forced_quit (fmt, ap);
   else if (reason == RETURN_ERROR)
     throw gdb_exception_error (error, fmt, ap);
   else
@@ -231,5 +234,15 @@ throw_quit (const char *fmt, ...)
 
   va_start (args, fmt);
   throw_vquit (fmt, args);
+  va_end (args);
+}
+
+void
+throw_forced_quit (const char *fmt, ...)
+{
+  va_list args;
+
+  va_start (args, fmt);
+  throw_it (RETURN_FORCED_QUIT, GDB_NO_ERROR, fmt, args);
   va_end (args);
 }

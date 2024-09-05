@@ -1,6 +1,6 @@
 /* Example synacor simulator.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
    Contributed by Mike Frysinger.
 
    This file is part of simulators.
@@ -28,8 +28,11 @@
 /* This must come before any other includes.  */
 #include "defs.h"
 
+#include "sim/callback.h"
 #include "sim-main.h"
 #include "sim-options.h"
+
+#include "example-synacor-sim.h"
 
 /* This function is the main loop.  It should process ticks and decode+execute
    a single instruction.
@@ -87,7 +90,8 @@ sim_open (SIM_OPEN_KIND kind, host_callback *callback,
   current_target_byte_order = BFD_ENDIAN_LITTLE;
 
   /* The cpu data is kept in a separately allocated chunk of memory.  */
-  if (sim_cpu_alloc_all (sd, 1) != SIM_RC_OK)
+  if (sim_cpu_alloc_all_extra (sd, 0, sizeof (struct example_sim_cpu))
+      != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -111,10 +115,7 @@ sim_open (SIM_OPEN_KIND kind, host_callback *callback,
     }
 
   /* Check for/establish the a reference program image.  */
-  if (sim_analyze_program (sd,
-			   (STATE_PROG_ARGV (sd) != NULL
-			    ? *STATE_PROG_ARGV (sd)
-			    : NULL), abfd) != SIM_RC_OK)
+  if (sim_analyze_program (sd, STATE_PROG_FILE (sd), abfd) != SIM_RC_OK)
     {
       free_state (sd);
       return 0;
@@ -158,6 +159,7 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
 		     char * const *argv, char * const *env)
 {
   SIM_CPU *cpu = STATE_CPU (sd, 0);
+  host_callback *cb = STATE_CALLBACK (sd);
   sim_cia addr;
 
   /* Set the PC.  */
@@ -176,6 +178,15 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
       freeargv (STATE_PROG_ARGV (sd));
       STATE_PROG_ARGV (sd) = dupargv (argv);
     }
+
+  if (STATE_PROG_ENVP (sd) != env)
+    {
+      freeargv (STATE_PROG_ENVP (sd));
+      STATE_PROG_ENVP (sd) = dupargv (env);
+    }
+
+  cb->argv = STATE_PROG_ARGV (sd);
+  cb->envp = STATE_PROG_ENVP (sd);
 
   return SIM_RC_OK;
 }

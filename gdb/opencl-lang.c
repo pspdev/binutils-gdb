@@ -1,5 +1,5 @@
 /* OpenCL language support for GDB, the GNU debugger.
-   Copyright (C) 2010-2021 Free Software Foundation, Inc.
+   Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
    Contributed by Ken Werner <ken.werner@de.ibm.com>.
 
@@ -18,7 +18,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "gdbtypes.h"
 #include "symtab.h"
 #include "expression.h"
@@ -53,10 +52,10 @@ lookup_opencl_vector_type (struct gdbarch *gdbarch, enum type_code code,
 
     return (type->code () == TYPE_CODE_ARRAY && type->is_vector ()
 	    && get_array_bounds (type, &lowb, &highb)
-	    && TYPE_TARGET_TYPE (type)->code () == code
-	    && TYPE_TARGET_TYPE (type)->is_unsigned () == flag_unsigned
-	    && TYPE_LENGTH (TYPE_TARGET_TYPE (type)) == el_length
-	    && TYPE_LENGTH (type) == length
+	    && type->target_type ()->code () == code
+	    && type->target_type ()->is_unsigned () == flag_unsigned
+	    && type->target_type ()->length () == el_length
+	    && type->length () == length
 	    && highb - lowb + 1 == n);
   };
   const struct language_defn *lang = language_def (language_opencl);
@@ -110,7 +109,7 @@ allocate_lval_closure (int *indices, int n, struct value *val)
   c->n = n;
   c->indices = XCNEWVEC (int, n);
   memcpy (c->indices, indices, n * sizeof (int));
-  value_incref (val); /* Increment the reference counter of the value.  */
+  val->incref (); /* Increment the reference counter of the value.  */
   c->val = val;
 
   return c;
@@ -119,11 +118,11 @@ allocate_lval_closure (int *indices, int n, struct value *val)
 static void
 lval_func_read (struct value *v)
 {
-  struct lval_closure *c = (struct lval_closure *) value_computed_closure (v);
-  struct type *type = check_typedef (value_type (v));
-  struct type *eltype = TYPE_TARGET_TYPE (check_typedef (value_type (c->val)));
-  LONGEST offset = value_offset (v);
-  LONGEST elsize = TYPE_LENGTH (eltype);
+  struct lval_closure *c = (struct lval_closure *) v->computed_closure ();
+  struct type *type = check_typedef (v->type ());
+  struct type *eltype = check_typedef (c->val->type ())->target_type ();
+  LONGEST offset = v->offset ();
+  LONGEST elsize = eltype->length ();
   int n, i, j = 0;
   LONGEST lowb = 0;
   LONGEST highb = 0;
@@ -139,20 +138,21 @@ lval_func_read (struct value *v)
   gdb_assert (n <= c->n);
 
   for (i = offset; i < n; i++)
-    memcpy (value_contents_raw (v) + j++ * elsize,
-	    value_contents (c->val) + c->indices[i] * elsize,
+    memcpy (v->contents_raw ().data () + j++ * elsize,
+	    c->val->contents ().data () + c->indices[i] * elsize,
 	    elsize);
 }
 
 static void
 lval_func_write (struct value *v, struct value *fromval)
 {
-  struct value *mark = value_mark ();
-  struct lval_closure *c = (struct lval_closure *) value_computed_closure (v);
-  struct type *type = check_typedef (value_type (v));
-  struct type *eltype = TYPE_TARGET_TYPE (check_typedef (value_type (c->val)));
-  LONGEST offset = value_offset (v);
-  LONGEST elsize = TYPE_LENGTH (eltype);
+  scoped_value_mark mark;
+
+  struct lval_closure *c = (struct lval_closure *) v->computed_closure ();
+  struct type *type = check_typedef (v->type ());
+  struct type *eltype = check_typedef (c->val->type ())->target_type ();
+  LONGEST offset = v->offset ();
+  LONGEST elsize = eltype->length ();
   int n, i, j = 0;
   LONGEST lowb = 0;
   LONGEST highb = 0;
@@ -176,29 +176,27 @@ lval_func_write (struct value *v, struct value *fromval)
 
   for (i = offset; i < n; i++)
     {
-      struct value *from_elm_val = allocate_value (eltype);
+      struct value *from_elm_val = value::allocate (eltype);
       struct value *to_elm_val = value_subscript (c->val, c->indices[i]);
 
-      memcpy (value_contents_writeable (from_elm_val),
-	      value_contents (fromval) + j++ * elsize,
+      memcpy (from_elm_val->contents_writeable ().data (),
+	      fromval->contents ().data () + j++ * elsize,
 	      elsize);
       value_assign (to_elm_val, from_elm_val);
     }
-
-  value_free_to_mark (mark);
 }
 
-/* Return nonzero if bits in V from OFFSET and LENGTH represent a
+/* Return true if bits in V from OFFSET and LENGTH represent a
    synthetic pointer.  */
 
-static int
+static bool
 lval_func_check_synthetic_pointer (const struct value *v,
 				   LONGEST offset, int length)
 {
-  struct lval_closure *c = (struct lval_closure *) value_computed_closure (v);
+  struct lval_closure *c = (struct lval_closure *) v->computed_closure ();
   /* Size of the target type in bits.  */
   int elsize =
-      TYPE_LENGTH (TYPE_TARGET_TYPE (check_typedef (value_type (c->val)))) * 8;
+    check_typedef (c->val->type ())->target_type ()->length () * 8;
   int startrest = offset % elsize;
   int start = offset / elsize;
   int endrest = (offset + length) % elsize;
@@ -209,26 +207,25 @@ lval_func_check_synthetic_pointer (const struct value *v,
     end++;
 
   if (end > c->n)
-    return 0;
+    return false;
 
   for (i = start; i < end; i++)
     {
       int comp_offset = (i == start) ? startrest : 0;
       int comp_length = (i == end) ? endrest : elsize;
 
-      if (!value_bits_synthetic_pointer (c->val,
-					 c->indices[i] * elsize + comp_offset,
-					 comp_length))
-	return 0;
+      if (!c->val->bits_synthetic_pointer (c->indices[i] * elsize + comp_offset,
+					   comp_length))
+	return false;
     }
 
-  return 1;
+  return true;
 }
 
 static void *
 lval_func_copy_closure (const struct value *v)
 {
-  struct lval_closure *c = (struct lval_closure *) value_computed_closure (v);
+  struct lval_closure *c = (struct lval_closure *) v->computed_closure ();
 
   ++c->refc;
 
@@ -238,13 +235,13 @@ lval_func_copy_closure (const struct value *v)
 static void
 lval_func_free_closure (struct value *v)
 {
-  struct lval_closure *c = (struct lval_closure *) value_computed_closure (v);
+  struct lval_closure *c = (struct lval_closure *) v->computed_closure ();
 
   --c->refc;
 
   if (c->refc == 0)
     {
-      value_decref (c->val); /* Decrement the reference counter of the value.  */
+      c->val->decref (); /* Decrement the reference counter of the value.  */
       xfree (c->indices);
       xfree (c);
     }
@@ -254,6 +251,7 @@ static const struct lval_funcs opencl_value_funcs =
   {
     lval_func_read,
     lval_func_write,
+    nullptr,
     NULL,	/* indirect */
     NULL,	/* coerce_ref */
     lval_func_check_synthetic_pointer,
@@ -269,8 +267,8 @@ static struct value *
 create_value (struct gdbarch *gdbarch, struct value *val, enum noside noside,
 	      int *indices, int n)
 {
-  struct type *type = check_typedef (value_type (val));
-  struct type *elm_type = TYPE_TARGET_TYPE (type);
+  struct type *type = check_typedef (val->type ());
+  struct type *elm_type = type->target_type ();
   struct value *ret;
 
   /* Check if a single component of a vector is requested which means
@@ -278,7 +276,7 @@ create_value (struct gdbarch *gdbarch, struct value *val, enum noside noside,
   if (n == 1)
     {
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
-	ret = value_zero (elm_type, not_lval);
+	ret = value::zero (elm_type, not_lval);
       else
 	ret = value_subscript (val, indices[0]);
     }
@@ -288,7 +286,7 @@ create_value (struct gdbarch *gdbarch, struct value *val, enum noside noside,
 	 resulting type is a vector as well.  */
       struct type *dst_type =
 	lookup_opencl_vector_type (gdbarch, elm_type->code (),
-				   TYPE_LENGTH (elm_type),
+				   elm_type->length (),
 				   elm_type->is_unsigned (), n);
 
       if (dst_type == NULL)
@@ -297,28 +295,28 @@ create_value (struct gdbarch *gdbarch, struct value *val, enum noside noside,
       make_cv_type (TYPE_CONST (type), TYPE_VOLATILE (type), dst_type, NULL);
 
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
-	ret = allocate_value (dst_type);
+	ret = value::allocate (dst_type);
       else
 	{
 	  /* Check whether to create a lvalue or not.  */
-	  if (VALUE_LVAL (val) != not_lval && !array_has_dups (indices, n))
+	  if (val->lval () != not_lval && !array_has_dups (indices, n))
 	    {
 	      struct lval_closure *c = allocate_lval_closure (indices, n, val);
-	      ret = allocate_computed_value (dst_type, &opencl_value_funcs, c);
+	      ret = value::allocate_computed (dst_type, &opencl_value_funcs, c);
 	    }
 	  else
 	    {
 	      int i;
 
-	      ret = allocate_value (dst_type);
+	      ret = value::allocate (dst_type);
 
 	      /* Copy src val contents into the destination value.  */
 	      for (i = 0; i < n; i++)
-		memcpy (value_contents_writeable (ret)
-			+ (i * TYPE_LENGTH (elm_type)),
-			value_contents (val)
-			+ (indices[i] * TYPE_LENGTH (elm_type)),
-			TYPE_LENGTH (elm_type));
+		memcpy (ret->contents_writeable ().data ()
+			+ (i * elm_type->length ()),
+			val->contents ().data ()
+			+ (indices[i] * elm_type->length ()),
+			elm_type->length ());
 	    }
 	}
     }
@@ -337,7 +335,7 @@ opencl_component_ref (struct expression *exp, struct value *val,
   int indices[16], i;
   int dst_len;
 
-  if (!get_array_bounds (check_typedef (value_type (val)), &lowb, &highb))
+  if (!get_array_bounds (check_typedef (val->type ()), &lowb, &highb))
     error (_("Could not determine the vector bounds"));
 
   src_len = highb - lowb + 1;
@@ -446,13 +444,13 @@ opencl_logical_not (struct type *expect_type, struct expression *exp,
 		    enum noside noside, enum exp_opcode op,
 		    struct value *arg)
 {
-  struct type *type = check_typedef (value_type (arg));
+  struct type *type = check_typedef (arg->type ());
   struct type *rettype;
   struct value *ret;
 
   if (type->code () == TYPE_CODE_ARRAY && type->is_vector ())
     {
-      struct type *eltype = check_typedef (TYPE_TARGET_TYPE (type));
+      struct type *eltype = check_typedef (type->target_type ());
       LONGEST lowb, highb;
       int i;
 
@@ -462,9 +460,9 @@ opencl_logical_not (struct type *expect_type, struct expression *exp,
       /* Determine the resulting type of the operation and allocate the
 	 value.  */
       rettype = lookup_opencl_vector_type (exp->gdbarch, TYPE_CODE_INT,
-					   TYPE_LENGTH (eltype), 0,
+					   eltype->length (), 0,
 					   highb - lowb + 1);
-      ret = allocate_value (rettype);
+      ret = value::allocate (rettype);
 
       for (i = 0; i < highb - lowb + 1; i++)
 	{
@@ -472,8 +470,9 @@ opencl_logical_not (struct type *expect_type, struct expression *exp,
 	  value of its operand compares unequal to 0, and -1 (i.e. all bits
 	  set) if the value of its operand compares equal to 0.  */
 	  int tmp = value_logical_not (value_subscript (arg, i)) ? -1 : 0;
-	  memset (value_contents_writeable (ret) + i * TYPE_LENGTH (eltype),
-		  tmp, TYPE_LENGTH (eltype));
+	  memset ((ret->contents_writeable ().data ()
+		   + i * eltype->length ()),
+		  tmp, eltype->length ());
 	}
     }
   else
@@ -536,8 +535,8 @@ vector_relop (struct expression *exp, struct value *val1, struct value *val2,
   int t1_is_vec, t2_is_vec, i;
   LONGEST lowb1, lowb2, highb1, highb2;
 
-  type1 = check_typedef (value_type (val1));
-  type2 = check_typedef (value_type (val2));
+  type1 = check_typedef (val1->type ());
+  type2 = check_typedef (val2->type ());
 
   t1_is_vec = (type1->code () == TYPE_CODE_ARRAY && type1->is_vector ());
   t2_is_vec = (type2->code () == TYPE_CODE_ARRAY && type2->is_vector ());
@@ -545,8 +544,8 @@ vector_relop (struct expression *exp, struct value *val1, struct value *val2,
   if (!t1_is_vec || !t2_is_vec)
     error (_("Vector operations are not supported on scalar types"));
 
-  eltype1 = check_typedef (TYPE_TARGET_TYPE (type1));
-  eltype2 = check_typedef (TYPE_TARGET_TYPE (type2));
+  eltype1 = check_typedef (type1->target_type ());
+  eltype2 = check_typedef (type2->target_type ());
 
   if (!get_array_bounds (type1,&lowb1, &highb1)
       || !get_array_bounds (type2, &lowb2, &highb2))
@@ -554,16 +553,16 @@ vector_relop (struct expression *exp, struct value *val1, struct value *val2,
 
   /* Check whether the vector types are compatible.  */
   if (eltype1->code () != eltype2->code ()
-      || TYPE_LENGTH (eltype1) != TYPE_LENGTH (eltype2)
+      || eltype1->length () != eltype2->length ()
       || eltype1->is_unsigned () != eltype2->is_unsigned ()
       || lowb1 != lowb2 || highb1 != highb2)
     error (_("Cannot perform operation on vectors with different types"));
 
   /* Determine the resulting type of the operation and allocate the value.  */
   rettype = lookup_opencl_vector_type (exp->gdbarch, TYPE_CODE_INT,
-				       TYPE_LENGTH (eltype1), 0,
+				       eltype1->length (), 0,
 				       highb1 - lowb1 + 1);
-  ret = allocate_value (rettype);
+  ret = value::allocate (rettype);
 
   for (i = 0; i < highb1 - lowb1 + 1; i++)
     {
@@ -572,8 +571,9 @@ vector_relop (struct expression *exp, struct value *val1, struct value *val2,
 	 if the specified relation is true.  */
       int tmp = scalar_relop (value_subscript (val1, i),
 			      value_subscript (val2, i), op) ? -1 : 0;
-      memset (value_contents_writeable (ret) + i * TYPE_LENGTH (eltype1),
-	      tmp, TYPE_LENGTH (eltype1));
+      memset ((ret->contents_writeable ().data ()
+	       + i * eltype1->length ()),
+	      tmp, eltype1->length ());
      }
 
   return ret;
@@ -587,7 +587,7 @@ vector_relop (struct expression *exp, struct value *val1, struct value *val2,
 struct value *
 opencl_value_cast (struct type *type, struct value *arg)
 {
-  if (type != value_type (arg))
+  if (type != arg->type ())
     {
       /* Casting scalar to vector is a special case for OpenCL, scalar
 	 is cast to element type of vector then replicated into each
@@ -601,10 +601,10 @@ opencl_value_cast (struct type *type, struct value *arg)
       to_type = check_typedef (type);
 
       code1 = to_type->code ();
-      code2 = check_typedef (value_type (arg))->code ();
+      code2 = check_typedef (arg->type ())->code ();
 
       if (code2 == TYPE_CODE_REF)
-	code2 = check_typedef (value_type (coerce_ref(arg)))->code ();
+	code2 = check_typedef (coerce_ref(arg)->type ())->code ();
 
       scalar = (code2 == TYPE_CODE_INT || code2 == TYPE_CODE_BOOL
 		|| code2 == TYPE_CODE_CHAR || code2 == TYPE_CODE_FLT
@@ -619,7 +619,7 @@ opencl_value_cast (struct type *type, struct value *arg)
 	     value_vector_widen will error if the scalar value is
 	     truncated by the cast.  To avoid the error, cast (and
 	     possibly truncate) here.  */
-	  eltype = check_typedef (TYPE_TARGET_TYPE (to_type));
+	  eltype = check_typedef (to_type->target_type ());
 	  arg = value_cast (eltype, arg);
 
 	  return value_vector_widen (arg, type);
@@ -639,8 +639,8 @@ opencl_relop (struct type *expect_type, struct expression *exp,
 	      struct value *arg1, struct value *arg2)
 {
   struct value *val;
-  struct type *type1 = check_typedef (value_type (arg1));
-  struct type *type2 = check_typedef (value_type (arg2));
+  struct type *type1 = check_typedef (arg1->type ());
+  struct type *type2 = check_typedef (arg2->type ());
   int t1_is_vec = (type1->code () == TYPE_CODE_ARRAY
 		   && type1->is_vector ());
   int t2_is_vec = (type2->code () == TYPE_CODE_ARRAY
@@ -684,9 +684,9 @@ eval_opencl_assign (struct type *expect_type, struct expression *exp,
   if (noside == EVAL_AVOID_SIDE_EFFECTS)
     return arg1;
 
-  struct type *type1 = value_type (arg1);
-  if (deprecated_value_modifiable (arg1)
-      && VALUE_LVAL (arg1) != lval_internalvar)
+  struct type *type1 = arg1->type ();
+  if (arg1->deprecated_modifiable ()
+      && arg1->lval () != lval_internalvar)
     arg2 = opencl_value_cast (type1, arg2);
 
   return value_assign (arg1, arg2);
@@ -701,7 +701,7 @@ opencl_structop_operation::evaluate (struct type *expect_type,
 				     enum noside noside)
 {
   value *arg1 = std::get<0> (m_storage)->evaluate (nullptr, exp, noside);
-  struct type *type1 = check_typedef (value_type (arg1));
+  struct type *type1 = check_typedef (arg1->type ());
 
   if (type1->code () == TYPE_CODE_ARRAY && type1->is_vector ())
     return opencl_component_ref (exp, arg1, std::get<1> (m_storage).c_str (),
@@ -713,7 +713,7 @@ opencl_structop_operation::evaluate (struct type *expect_type,
 					  NULL, "structure");
 
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
-	v = value_zero (value_type (v), VALUE_LVAL (v));
+	v = value::zero (v->type (), v->lval ());
       return v;
     }
 }
@@ -733,8 +733,8 @@ opencl_logical_binop_operation::evaluate (struct type *expect_type,
      Therefore we evaluate it once using EVAL_AVOID_SIDE_EFFECTS.  */
   value *arg2 = std::get<2> (m_storage)->evaluate (nullptr, exp,
 						   EVAL_AVOID_SIDE_EFFECTS);
-  struct type *type1 = check_typedef (value_type (arg1));
-  struct type *type2 = check_typedef (value_type (arg2));
+  struct type *type1 = check_typedef (arg1->type ());
+  struct type *type2 = check_typedef (arg2->type ());
 
   if ((type1->code () == TYPE_CODE_ARRAY && type1->is_vector ())
       || (type2->code () == TYPE_CODE_ARRAY && type2->is_vector ()))
@@ -748,7 +748,7 @@ opencl_logical_binop_operation::evaluate (struct type *expect_type,
       /* For scalar built-in types, only evaluate the right
 	 hand operand if the left hand operand compares
 	 unequal(&&)/equal(||) to 0.  */
-      int tmp = value_logical_not (arg1);
+      bool tmp = value_logical_not (arg1);
 
       if (op == BINOP_LOGICAL_OR)
 	tmp = !tmp;
@@ -772,7 +772,7 @@ opencl_ternop_cond_operation::evaluate (struct type *expect_type,
 					enum noside noside)
 {
   value *arg1 = std::get<0> (m_storage)->evaluate (nullptr, exp, noside);
-  struct type *type1 = check_typedef (value_type (arg1));
+  struct type *type1 = check_typedef (arg1->type ());
   if (type1->code () == TYPE_CODE_ARRAY && type1->is_vector ())
     {
       struct value *arg2, *arg3, *tmp, *ret;
@@ -782,8 +782,8 @@ opencl_ternop_cond_operation::evaluate (struct type *expect_type,
 
       arg2 = std::get<1> (m_storage)->evaluate (nullptr, exp, noside);
       arg3 = std::get<2> (m_storage)->evaluate (nullptr, exp, noside);
-      type2 = check_typedef (value_type (arg2));
-      type3 = check_typedef (value_type (arg3));
+      type2 = check_typedef (arg2->type ());
+      type3 = check_typedef (arg3->type ());
       t2_is_vec
 	= type2->code () == TYPE_CODE_ARRAY && type2->is_vector ();
       t3_is_vec
@@ -793,12 +793,12 @@ opencl_ternop_cond_operation::evaluate (struct type *expect_type,
       if (t2_is_vec || !t3_is_vec)
 	{
 	  arg3 = opencl_value_cast (type2, arg3);
-	  type3 = value_type (arg3);
+	  type3 = arg3->type ();
 	}
       else if (!t2_is_vec || t3_is_vec)
 	{
 	  arg2 = opencl_value_cast (type3, arg2);
-	  type2 = value_type (arg2);
+	  type2 = arg2->type ();
 	}
       else if (!t2_is_vec || !t3_is_vec)
 	{
@@ -807,8 +807,8 @@ opencl_ternop_cond_operation::evaluate (struct type *expect_type,
 Cannot perform conditional operation on incompatible types"));
 	}
 
-      eltype2 = check_typedef (TYPE_TARGET_TYPE (type2));
-      eltype3 = check_typedef (TYPE_TARGET_TYPE (type3));
+      eltype2 = check_typedef (type2->target_type ());
+      eltype3 = check_typedef (type3->target_type ());
 
       if (!get_array_bounds (type1, &lowb1, &highb1)
 	  || !get_array_bounds (type2, &lowb2, &highb2)
@@ -817,7 +817,7 @@ Cannot perform conditional operation on incompatible types"));
 
       /* Throw an error if the types of arg2 or arg3 are incompatible.  */
       if (eltype2->code () != eltype3->code ()
-	  || TYPE_LENGTH (eltype2) != TYPE_LENGTH (eltype3)
+	  || eltype2->length () != eltype3->length ()
 	  || eltype2->is_unsigned () != eltype3->is_unsigned ()
 	  || lowb2 != lowb3 || highb2 != highb3)
 	error (_("\
@@ -829,15 +829,15 @@ Cannot perform operation on vectors with different types"));
 	error (_("\
 Cannot perform conditional operation on vectors with different sizes"));
 
-      ret = allocate_value (type2);
+      ret = value::allocate (type2);
 
       for (i = 0; i < highb1 - lowb1 + 1; i++)
 	{
 	  tmp = value_logical_not (value_subscript (arg1, i)) ?
 	    value_subscript (arg3, i) : value_subscript (arg2, i);
-	  memcpy (value_contents_writeable (ret) +
-		  i * TYPE_LENGTH (eltype2), value_contents_all (tmp),
-		  TYPE_LENGTH (eltype2));
+	  memcpy (ret->contents_writeable ().data () +
+		  i * eltype2->length (), tmp->contents_all ().data (),
+		  eltype2->length ());
 	}
 
       return ret;
@@ -896,7 +896,7 @@ public:
 	tmp->set_name (OCL_STRING(TYPE ## 2));			\
 	tmp = add (init_vector_type (ELEMENT_TYPE, 3));		\
 	tmp->set_name (OCL_STRING(TYPE ## 3));			\
-	TYPE_LENGTH (tmp) = 4 * TYPE_LENGTH (ELEMENT_TYPE);	\
+	tmp->set_length (4 * (ELEMENT_TYPE)->length ());	\
 	tmp = add (init_vector_type (ELEMENT_TYPE, 4));		\
 	tmp->set_name (OCL_STRING(TYPE ## 4));			\
 	tmp = add (init_vector_type (ELEMENT_TYPE, 8));		\
@@ -908,45 +908,53 @@ public:
 
     struct type *el_type, *char_type, *int_type;
 
-    char_type = el_type = add (arch_integer_type (gdbarch, 8, 0, "char"));
+    type_allocator alloc (gdbarch);
+    char_type = el_type = add (init_integer_type (alloc, 8, 0, "char"));
     BUILD_OCL_VTYPES (char, el_type);
-    el_type = add (arch_integer_type (gdbarch, 8, 1, "uchar"));
+    el_type = add (init_integer_type (alloc, 8, 1, "uchar"));
     BUILD_OCL_VTYPES (uchar, el_type);
-    el_type = add (arch_integer_type (gdbarch, 16, 0, "short"));
+    el_type = add (init_integer_type (alloc, 16, 0, "short"));
     BUILD_OCL_VTYPES (short, el_type);
-    el_type = add (arch_integer_type (gdbarch, 16, 1, "ushort"));
+    el_type = add (init_integer_type (alloc, 16, 1, "ushort"));
     BUILD_OCL_VTYPES (ushort, el_type);
-    int_type = el_type = add (arch_integer_type (gdbarch, 32, 0, "int"));
+    int_type = el_type = add (init_integer_type (alloc, 32, 0, "int"));
     BUILD_OCL_VTYPES (int, el_type);
-    el_type = add (arch_integer_type (gdbarch, 32, 1, "uint"));
+    el_type = add (init_integer_type (alloc, 32, 1, "uint"));
     BUILD_OCL_VTYPES (uint, el_type);
-    el_type = add (arch_integer_type (gdbarch, 64, 0, "long"));
+    el_type = add (init_integer_type (alloc, 64, 0, "long"));
     BUILD_OCL_VTYPES (long, el_type);
-    el_type = add (arch_integer_type (gdbarch, 64, 1, "ulong"));
+    el_type = add (init_integer_type (alloc, 64, 1, "ulong"));
     BUILD_OCL_VTYPES (ulong, el_type);
-    el_type = add (arch_float_type (gdbarch, 16, "half", floatformats_ieee_half));
+    el_type = add (init_float_type (alloc, 16, "half", floatformats_ieee_half));
     BUILD_OCL_VTYPES (half, el_type);
-    el_type = add (arch_float_type (gdbarch, 32, "float", floatformats_ieee_single));
+    el_type = add (init_float_type (alloc, 32, "float", floatformats_ieee_single));
     BUILD_OCL_VTYPES (float, el_type);
-    el_type = add (arch_float_type (gdbarch, 64, "double", floatformats_ieee_double));
+    el_type = add (init_float_type (alloc, 64, "double", floatformats_ieee_double));
     BUILD_OCL_VTYPES (double, el_type);
 
-    add (arch_boolean_type (gdbarch, 8, 1, "bool"));
-    add (arch_integer_type (gdbarch, 8, 1, "unsigned char"));
-    add (arch_integer_type (gdbarch, 16, 1, "unsigned short"));
-    add (arch_integer_type (gdbarch, 32, 1, "unsigned int"));
-    add (arch_integer_type (gdbarch, 64, 1, "unsigned long"));
-    add (arch_integer_type (gdbarch, gdbarch_ptr_bit (gdbarch), 1, "size_t"));
-    add (arch_integer_type (gdbarch, gdbarch_ptr_bit (gdbarch), 0, "ptrdiff_t"));
-    add (arch_integer_type (gdbarch, gdbarch_ptr_bit (gdbarch), 0, "intptr_t"));
-    add (arch_integer_type (gdbarch, gdbarch_ptr_bit (gdbarch), 1, "uintptr_t"));
-    add (arch_type (gdbarch, TYPE_CODE_VOID, TARGET_CHAR_BIT, "void"));
+    add (init_boolean_type (alloc, 8, 1, "bool"));
+    add (init_integer_type (alloc, 8, 1, "unsigned char"));
+    add (init_integer_type (alloc, 16, 1, "unsigned short"));
+    add (init_integer_type (alloc, 32, 1, "unsigned int"));
+    add (init_integer_type (alloc, 64, 1, "unsigned long"));
+    add (init_integer_type (alloc, gdbarch_ptr_bit (gdbarch), 1, "size_t"));
+    add (init_integer_type (alloc, gdbarch_ptr_bit (gdbarch), 0, "ptrdiff_t"));
+    add (init_integer_type (alloc, gdbarch_ptr_bit (gdbarch), 0, "intptr_t"));
+    add (init_integer_type (alloc, gdbarch_ptr_bit (gdbarch), 1, "uintptr_t"));
+    add (builtin_type (gdbarch)->builtin_void);
 
     /* Type of elements of strings.  */
     lai->set_string_char_type (char_type);
 
     /* Specifies the return type of logical and relational operations.  */
     lai->set_bool_type (int_type, "int");
+  }
+
+  /* See language.h.  */
+
+  bool can_print_type_offsets () const override
+  {
+    return true;
   }
 
   /* See language.h.  */
@@ -966,7 +974,7 @@ public:
 	  show = 0;
       }
 
-    c_print_type (type, varstring, stream, show, level, flags);
+    c_print_type (type, varstring, stream, show, level, la_language, flags);
   }
 
   /* See language.h.  */

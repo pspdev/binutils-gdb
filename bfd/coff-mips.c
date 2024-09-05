@@ -1,5 +1,5 @@
 /* BFD back-end for MIPS Extended-Coff files.
-   Copyright (C) 1990-2021 Free Software Foundation, Inc.
+   Copyright (C) 1990-2024 Free Software Foundation, Inc.
    Original version by Per Bothner.
    Full support added by Ian Lance Taylor, ian@cygnus.com.
 
@@ -84,7 +84,7 @@ static reloc_howto_type mips_howto_table[] =
      bfd_perform_relocation to do nothing.  */
   HOWTO (MIPS_R_IGNORE,	/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -99,7 +99,7 @@ static reloc_howto_type mips_howto_table[] =
   /* A 16 bit reference to a symbol, normally from a data section.  */
   HOWTO (MIPS_R_REFHALF,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -114,7 +114,7 @@ static reloc_howto_type mips_howto_table[] =
   /* A 32 bit reference to a symbol, normally from a data section.  */
   HOWTO (MIPS_R_REFWORD,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -129,7 +129,7 @@ static reloc_howto_type mips_howto_table[] =
   /* A 26 bit absolute jump address.  */
   HOWTO (MIPS_R_JMPADDR,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 26,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -148,7 +148,7 @@ static reloc_howto_type mips_howto_table[] =
      mips_refhi_reloc.  */
   HOWTO (MIPS_R_REFHI,		/* type */
 	 16,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -163,7 +163,7 @@ static reloc_howto_type mips_howto_table[] =
   /* The low 16 bits of a symbol value.  */
   HOWTO (MIPS_R_REFLO,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -179,7 +179,7 @@ static reloc_howto_type mips_howto_table[] =
      function mips_gprel_reloc.  */
   HOWTO (MIPS_R_GPREL,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -195,7 +195,7 @@ static reloc_howto_type mips_howto_table[] =
      Handled by the function mips_gprel_reloc.  */
   HOWTO (MIPS_R_LITERAL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -217,7 +217,7 @@ static reloc_howto_type mips_howto_table[] =
      be removed.  (It used to be used for embedded-PIC support.)  */
   HOWTO (MIPS_R_PCREL16,	/* type */
 	 2,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -351,7 +351,14 @@ mips_adjust_reloc_in (bfd *abfd,
 		      arelent *rptr)
 {
   if (intern->r_type > MIPS_R_PCREL16)
-    abort ();
+    {
+      /* xgettext:c-format */
+      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+			  abfd, intern->r_type);
+      bfd_set_error (bfd_error_bad_value);
+      rptr->howto  = NULL;
+      return;
+    }
 
   if (! intern->r_extern
       && (intern->r_type == MIPS_R_GPREL
@@ -416,19 +423,8 @@ mips_generic_reloc (bfd *abfd ATTRIBUTE_UNUSED,
    reloc.  This extension permits gcc to output the HI and LO relocs
    itself.  */
 
-struct mips_hi
-{
-  struct mips_hi *next;
-  bfd_byte *addr;
-  bfd_vma addend;
-};
-
-/* FIXME: This should not be a static variable.  */
-
-static struct mips_hi *mips_refhi_list;
-
 static bfd_reloc_status_type
-mips_refhi_reloc (bfd *abfd ATTRIBUTE_UNUSED,
+mips_refhi_reloc (bfd *abfd,
 		  arelent *reloc_entry,
 		  asymbol *symbol,
 		  void * data,
@@ -473,8 +469,8 @@ mips_refhi_reloc (bfd *abfd ATTRIBUTE_UNUSED,
     return bfd_reloc_outofrange;
   n->addr = (bfd_byte *) data + reloc_entry->address;
   n->addend = relocation;
-  n->next = mips_refhi_list;
-  mips_refhi_list = n;
+  n->next = ecoff_data (abfd)->mips_refhi_list;
+  ecoff_data (abfd)->mips_refhi_list = n;
 
   if (output_bfd != (bfd *) NULL)
     reloc_entry->address += input_section->output_offset;
@@ -495,11 +491,11 @@ mips_reflo_reloc (bfd *abfd,
 		  bfd *output_bfd,
 		  char **error_message)
 {
-  if (mips_refhi_list != NULL)
+  if (ecoff_data (abfd)->mips_refhi_list != NULL)
     {
       struct mips_hi *l;
 
-      l = mips_refhi_list;
+      l = ecoff_data (abfd)->mips_refhi_list;
       while (l != NULL)
 	{
 	  unsigned long insn;
@@ -542,7 +538,7 @@ mips_reflo_reloc (bfd *abfd,
 	  l = next;
 	}
 
-      mips_refhi_list = NULL;
+      ecoff_data (abfd)->mips_refhi_list = NULL;
     }
 
   /* Now do the REFLO reloc in the usual way.  */
@@ -586,10 +582,9 @@ mips_gprel_reloc (bfd *abfd ATTRIBUTE_UNUSED,
     {
       relocatable = false;
       output_bfd = symbol->section->output_section->owner;
+      if (output_bfd == NULL)
+	return bfd_reloc_undefined;
     }
-
-  if (bfd_is_und_section (symbol->section) && ! relocatable)
-    return bfd_reloc_undefined;
 
   /* We have to figure out the gp value, so that we can adjust the
      symbol value correctly.  We look up the symbol _gp in the output
@@ -1400,10 +1395,6 @@ static const struct ecoff_backend_data mips_ecoff_backend_data =
 /* Getting relocated section contents is generic.  */
 #define _bfd_ecoff_bfd_get_relocated_section_contents \
   bfd_generic_get_relocated_section_contents
-
-/* Handling file windows is generic.  */
-#define _bfd_ecoff_get_section_contents_in_window \
-  _bfd_generic_get_section_contents_in_window
 
 /* Relaxing sections is MIPS specific.  */
 #define _bfd_ecoff_bfd_relax_section bfd_generic_relax_section

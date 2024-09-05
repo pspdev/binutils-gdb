@@ -3,7 +3,7 @@
    (Implements POSIX draft P1003.2/D11.2, except for some of the
    internationalization features.)
 
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -28,6 +28,10 @@
 /* AIX requires this to be the first thing in the file. */
 #if defined _AIX && !defined __GNUC__ && !defined REGEX_MALLOC
   #pragma alloca
+#endif
+
+#if __GNUC__ >= 12
+#  pragma GCC diagnostic ignored "-Wuse-after-free"
 #endif
 
 #undef	_GNU_SOURCE
@@ -5593,7 +5597,7 @@ byte_re_match_2_internal (struct re_pattern_buffer *bufp,
      to resume scanning the pattern; the second one is where to resume
      scanning the strings.  If the latter is zero, the failure point is
      a ``dummy''; if a failure happens and the failure point is a dummy,
-     it gets discarded and the next next one is tried.  */
+     it gets discarded and the next one is tried.  */
 #ifdef MATCH_MAY_ALLOCATE /* otherwise, this is global.  */
   PREFIX(fail_stack_type) fail_stack;
 #endif

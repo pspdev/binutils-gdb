@@ -1,5 +1,5 @@
 /* BFD back-end for OSF/1 core files.
-   Copyright (C) 1993-2021 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -80,7 +80,7 @@ osf_core_core_file_p (bfd *abfd)
   size_t amt;
 
   amt = sizeof core_header;
-  val = bfd_bread (& core_header, amt, abfd);
+  val = bfd_read (& core_header, amt, abfd);
   if (val != sizeof core_header)
     return NULL;
 
@@ -101,7 +101,7 @@ osf_core_core_file_p (bfd *abfd)
       flagword flags;
 
       amt = sizeof core_scnhdr;
-      val = bfd_bread (& core_scnhdr, amt, abfd);
+      val = bfd_read (& core_scnhdr, amt, abfd);
       if (val != sizeof core_scnhdr)
 	break;
 
@@ -169,9 +169,9 @@ swap_abort (void)
 #define	NO_GET ((bfd_vma (*) (const void *)) swap_abort)
 #define	NO_PUT ((void (*) (bfd_vma, void *)) swap_abort)
 #define	NO_GETS ((bfd_signed_vma (*) (const void *)) swap_abort)
-#define	NO_GET64 ((bfd_uint64_t (*) (const void *)) swap_abort)
-#define	NO_PUT64 ((void (*) (bfd_uint64_t, void *)) swap_abort)
-#define	NO_GETS64 ((bfd_int64_t (*) (const void *)) swap_abort)
+#define	NO_GET64 ((uint64_t (*) (const void *)) swap_abort)
+#define	NO_PUT64 ((void (*) (uint64_t, void *)) swap_abort)
+#define	NO_GETS64 ((int64_t (*) (const void *)) swap_abort)
 
 const bfd_target core_osf_vec =
   {

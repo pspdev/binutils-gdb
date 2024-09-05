@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in.
 #
-#   Copyright (C) 2019-2021 Free Software Foundation, Inc.
+#   Copyright (C) 2019-2024 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,7 +19,17 @@
 
 ACLOCAL_AMFLAGS = -I .. -I ../config -I ../bfd
 
-AUTOMAKE_OPTIONS = dejagnu foreign no-texinfo.tex
+AUTOMAKE_OPTIONS = dejagnu foreign info-in-builddir no-texinfo.tex
+
+# Suppress 'configure.ac: error: AM_GNU_GETTEXT used but SUBDIRS not defined'
+# from Automake, as libctf uses AM_GNU_GETTEXT (through
+# ZW_GNU_GETTEXT_SISTER_DIR) but has no po/ subdir (currently).
+SUBDIRS =
+
+# Variables that we might accumulate conditionally or in subdirs.
+info_TEXINFOS =
+DISTCLEANFILES =
+MAINTAINERCLEANFILES =
 
 # This is where we get zlib from.  zlibdir is -L../zlib and zlibinc is
 # -I../zlib, unless we were configured with --with-system-zlib, in which
@@ -42,7 +52,8 @@ noinst_LTLIBRARIES = libctf.la libctf-nobfd.la
 endif
 
 libctf_nobfd_la_LIBADD = @CTF_LIBADD@ $(ZLIB)
-libctf_nobfd_la_LDFLAGS = -version-info 0:0:0 @SHARED_LDFLAGS@ @VERSION_FLAGS@
+libctf_ldflags_nover = -version-info 0:0:0 @SHARED_LDFLAGS@
+libctf_nobfd_la_LDFLAGS = $(libctf_ldflags_nover) @VERSION_FLAGS_NOBFD@
 libctf_nobfd_la_CPPFLAGS = $(AM_CPPFLAGS) -DNOBFD=1
 libctf_nobfd_la_SOURCES = ctf-archive.c ctf-dump.c ctf-create.c ctf-decl.c ctf-error.c \
 			  ctf-hash.c ctf-labels.c ctf-dedup.c ctf-link.c ctf-lookup.c \
@@ -52,9 +63,13 @@ if NEED_CTF_QSORT_R
 libctf_nobfd_la_SOURCES += ctf-qsort_r.c
 endif
 
-libctf_la_LIBADD = ../bfd/libbfd.la $(libctf_nobfd_la_LIBADD)
+# @CTF_LIBADD@ appears here twice: once, to force libiberty to get searched before
+# install-time libbfd adds a -L to the install dir (possibly pointing at an
+# incompatible libiberty), and once via lictf_nobfd_la_LIBADD so that the
+# references in there get picked up.
+libctf_la_LIBADD =  @CTF_LIBADD@ ../bfd/libbfd.la $(libctf_nobfd_la_LIBADD)
 libctf_la_CPPFLAGS = $(AM_CPPFLAGS) -DNOBFD=0
-libctf_la_LDFLAGS = $(libctf_nobfd_la_LDFLAGS)
+libctf_la_LDFLAGS = $(libctf_ldflags_nover) @VERSION_FLAGS@
 libctf_la_SOURCES = $(libctf_nobfd_la_SOURCES) ctf-open-bfd.c
 
 # Setup the testing framework, if you have one
@@ -62,7 +77,6 @@ EXPECT = expect
 RUNTEST = runtest
 RUNTESTFLAGS =
 
-if TCL_TRY
 CC_FOR_TARGET = ` \
   if [ -f $$r/../gcc/xgcc ] ; then \
     if [ -f $$r/../newlib/Makefile ] ; then \
@@ -83,22 +97,30 @@ check-DEJAGNU: site.exp development.exp
 	r=`pwd`; export r; \
 	LC_ALL=C; export LC_ALL; \
 	EXPECT=$(EXPECT); export EXPECT; \
+	if [ "@host@" = "@target@" ] ; then \
+	  TEST_CROSS=no; \
+	else \
+	  TEST_CROSS=yes; \
+	fi; \
 	runtest=$(RUNTEST); \
 	if $(SHELL) -c "$$runtest --version" > /dev/null 2>&1; then \
 	  $$runtest --tool $(DEJATOOL) --srcdir $${srcroot}/testsuite \
-		CC="$(CC_FOR_TARGET)" CFLAGS="$(CFLAGS) -I$(INCDIR) -I$(srcdir) -I$(builddir) -I$(builddir)/../bfd $(ZLIBINC)" \
-		CC_FOR_HOST="$(CC)" LIBS="$(libctf_nobfd_la_LIBADD) $(LIBS)" $(RUNTESTFLAGS); \
+		CC="$(CC)" CC_FOR_TARGET="$(CC_FOR_TARGET)" TEST_CROSS="$${TEST_CROSS}" \
+		CFLAGS="$(CFLAGS) -I$(INCDIR) -I$(srcdir) -I$(builddir) -I$(builddir)/../bfd $(ZLIBINC)" \
+		LIBS="$(libctf_nobfd_la_LIBADD) $(LIBS)" $(RUNTESTFLAGS); \
 	else echo "WARNING: could not find \`runtest'" 1>&2; :;\
 	fi
 
 development.exp: $(BFDDIR)/development.sh
-	$(EGREP) "(development|experimental)=" $(BFDDIR)/development.sh  \
+	$(AM_V_GEN)$(EGREP) "(development|experimental)=" $(BFDDIR)/development.sh  \
 	  | $(AWK) -F= '{ print "set " $$1 " " $$2 }' > $@
+	echo "set have_tcl_try @HAVE_TCL_TRY@" >> $@
 
 # development.sh is used to determine -Werror default.
 CONFIG_STATUS_DEPENDENCIES = $(BFDDIR)/development.sh
 
 EXTRA_DEJAGNU_SITE_CONFIG = development.exp
 
-DISTCLEANFILES = site.exp development.exp
-endif
+DISTCLEANFILES += site.exp development.exp
+
+include doc/local.mk

@@ -1,4 +1,4 @@
-/* Copyright (C) 2008-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -15,24 +15,24 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "windows-tdep.h"
-#include "gdb_obstack.h"
+#include "extract-store-integer.h"
+#include "gdbsupport/gdb_obstack.h"
 #include "xml-support.h"
 #include "gdbarch.h"
 #include "target.h"
 #include "value.h"
 #include "inferior.h"
 #include "command.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "gdbthread.h"
 #include "objfiles.h"
 #include "symfile.h"
 #include "coff-pe-read.h"
 #include "gdb_bfd.h"
-#include "complaints.h"
 #include "solib.h"
 #include "solib-target.h"
+#include "frame-unwind.h"
 #include "gdbcore.h"
 #include "coff/internal.h"
 #include "libcoff.h"
@@ -176,29 +176,25 @@ static const int FULL_TIB_SIZE = 0x1000;
 
 static bool maint_display_all_tib = false;
 
-static struct gdbarch_data *windows_gdbarch_data_handle;
-
 struct windows_gdbarch_data
 {
-  struct type *siginfo_type;
-  struct type *tib_ptr_type; /* Type of thread information block */
+  struct type *siginfo_type = nullptr;
+  /* Type of thread information block.  */
+  struct type *tib_ptr_type = nullptr;
 };
 
-/* Allocate windows_gdbarch_data for an arch.  */
-
-static void *
-init_windows_gdbarch_data (struct gdbarch *gdbarch)
-{
-  return GDBARCH_OBSTACK_ZALLOC (gdbarch, struct windows_gdbarch_data);
-}
+static const registry<gdbarch>::key<windows_gdbarch_data>
+     windows_gdbarch_data_handle;
 
 /* Get windows_gdbarch_data of an arch.  */
 
 static struct windows_gdbarch_data *
 get_windows_gdbarch_data (struct gdbarch *gdbarch)
 {
-  return ((struct windows_gdbarch_data *)
-	  gdbarch_data (gdbarch, windows_gdbarch_data_handle));
+  windows_gdbarch_data *result = windows_gdbarch_data_handle.get (gdbarch);
+  if (result == nullptr)
+    result = windows_gdbarch_data_handle.emplace (gdbarch);
+  return result;
 }
 
 /* Define Thread Local Base pointer type.  */
@@ -219,17 +215,19 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   if (windows_gdbarch_data->tib_ptr_type != nullptr)
     return windows_gdbarch_data->tib_ptr_type;
 
-  dword_ptr_type = arch_integer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
+  type_allocator alloc (gdbarch);
+
+  dword_ptr_type = init_integer_type (alloc, gdbarch_ptr_bit (gdbarch),
 				 1, "DWORD_PTR");
-  dword32_type = arch_integer_type (gdbarch, 32,
+  dword32_type = init_integer_type (alloc, 32,
 				 1, "DWORD32");
-  word_type = arch_integer_type (gdbarch, 16,
+  word_type = init_integer_type (alloc, 16,
 				 1, "WORD");
-  wchar_type = arch_integer_type (gdbarch, 16,
+  wchar_type = init_integer_type (alloc, 16,
 				  1, "wchar_t");
   void_ptr_type = lookup_pointer_type (builtin_type (gdbarch)->builtin_void);
-  wchar_ptr_type = arch_pointer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
-				      NULL, wchar_type);
+  wchar_ptr_type = init_pointer_type (alloc, gdbarch_ptr_bit (gdbarch),
+				      nullptr, wchar_type);
 
   /* list entry */
 
@@ -248,10 +246,10 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   seh_type = arch_composite_type (gdbarch, NULL, TYPE_CODE_STRUCT);
   seh_type->set_name (xstrdup ("seh"));
 
-  seh_ptr_type = arch_type (gdbarch, TYPE_CODE_PTR,
-			    TYPE_LENGTH (void_ptr_type) * TARGET_CHAR_BIT,
-			    NULL);
-  TYPE_TARGET_TYPE (seh_ptr_type) = seh_type;
+  seh_ptr_type = alloc.new_type (TYPE_CODE_PTR,
+				 void_ptr_type->length () * TARGET_CHAR_BIT,
+				 NULL);
+  seh_ptr_type->set_target_type (seh_type);
 
   append_composite_type_field (seh_type, "next_seh", seh_ptr_type);
   append_composite_type_field (seh_type, "handler",
@@ -269,10 +267,10 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (peb_ldr_type, "in_init_order", list_type);
   append_composite_type_field (peb_ldr_type, "entry_in_progress",
 			       void_ptr_type);
-  peb_ldr_ptr_type = arch_type (gdbarch, TYPE_CODE_PTR,
-				TYPE_LENGTH (void_ptr_type) * TARGET_CHAR_BIT,
-				NULL);
-  TYPE_TARGET_TYPE (peb_ldr_ptr_type) = peb_ldr_type;
+  peb_ldr_ptr_type = alloc.new_type (TYPE_CODE_PTR,
+				     void_ptr_type->length () * TARGET_CHAR_BIT,
+				     NULL);
+  peb_ldr_ptr_type->set_target_type (peb_ldr_type);
 
   /* struct UNICODE_STRING */
   uni_str_type = arch_composite_type (gdbarch, "unicode_string",
@@ -282,7 +280,7 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (uni_str_type, "maximum_length", word_type);
   append_composite_type_field_aligned (uni_str_type, "buffer",
 				       wchar_ptr_type,
-				       TYPE_LENGTH (wchar_ptr_type));
+				       wchar_ptr_type->length ());
 
   /* struct _RTL_USER_PROCESS_PARAMETERS */
   rupp_type = arch_composite_type (gdbarch, "rtl_user_process_parameters",
@@ -296,7 +294,7 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (rupp_type, "console_flags", dword32_type);
   append_composite_type_field_aligned (rupp_type, "standard_input",
 				       void_ptr_type,
-				       TYPE_LENGTH (void_ptr_type));
+				       void_ptr_type->length ());
   append_composite_type_field (rupp_type, "standard_output", void_ptr_type);
   append_composite_type_field (rupp_type, "standard_error", void_ptr_type);
   append_composite_type_field (rupp_type, "current_directory", uni_str_type);
@@ -317,13 +315,13 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (rupp_type, "show_window_flags", dword32_type);
   append_composite_type_field_aligned (rupp_type, "window_title",
 				       uni_str_type,
-				       TYPE_LENGTH (void_ptr_type));
+				       void_ptr_type->length ());
   append_composite_type_field (rupp_type, "desktop_info", uni_str_type);
   append_composite_type_field (rupp_type, "shell_info", uni_str_type);
   append_composite_type_field (rupp_type, "runtime_data", uni_str_type);
 
-  rupp_ptr_type = arch_pointer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
-				     NULL, rupp_type);
+  rupp_ptr_type = init_pointer_type (alloc, gdbarch_ptr_bit (gdbarch),
+				     nullptr, rupp_type);
 
 
   /* struct process environment block */
@@ -339,10 +337,10 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (peb_type, "sub_system_data", void_ptr_type);
   append_composite_type_field (peb_type, "process_heap", void_ptr_type);
   append_composite_type_field (peb_type, "fast_peb_lock", void_ptr_type);
-  peb_ptr_type = arch_type (gdbarch, TYPE_CODE_PTR,
-			    TYPE_LENGTH (void_ptr_type) * TARGET_CHAR_BIT,
-			    NULL);
-  TYPE_TARGET_TYPE (peb_ptr_type) = peb_type;
+  peb_ptr_type = alloc.new_type (TYPE_CODE_PTR,
+				 void_ptr_type->length () * TARGET_CHAR_BIT,
+				 NULL);
+  peb_ptr_type->set_target_type (peb_type);
 
 
   /* struct thread information block */
@@ -383,10 +381,10 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   /* uint32_t last_error_number;		%fs:0x0034 */
   append_composite_type_field (tib_type, "last_error_number", dword_ptr_type);
 
-  tib_ptr_type = arch_type (gdbarch, TYPE_CODE_PTR,
-			    TYPE_LENGTH (void_ptr_type) * TARGET_CHAR_BIT,
-			    NULL);
-  TYPE_TARGET_TYPE (tib_ptr_type) = tib_type;
+  tib_ptr_type = alloc.new_type (TYPE_CODE_PTR,
+				 void_ptr_type->length () * TARGET_CHAR_BIT,
+				 NULL);
+  tib_ptr_type->set_target_type (tib_type);
 
   windows_gdbarch_data->tib_ptr_type = tib_ptr_type;
 
@@ -405,11 +403,11 @@ static void
 tlb_value_read (struct value *val)
 {
   CORE_ADDR tlb;
-  struct type *type = check_typedef (value_type (val));
+  struct type *type = check_typedef (val->type ());
 
   if (!target_get_tib_address (inferior_ptid, &tlb))
     error (_("Unable to read tlb"));
-  store_typed_address (value_contents_raw (val), type, tlb);
+  store_typed_address (val->contents_raw ().data (), type, tlb);
 }
 
 /* This function implements the lval_computed support for writing a
@@ -438,10 +436,10 @@ tlb_make_value (struct gdbarch *gdbarch, struct internalvar *var, void *ignore)
   if (target_has_stack () && inferior_ptid != null_ptid)
     {
       struct type *type = windows_get_tlb_type (gdbarch);
-      return allocate_computed_value (type, &tlb_value_funcs, NULL);
+      return value::allocate_computed (type, &tlb_value_funcs, NULL);
     }
 
-  return allocate_value (builtin_type (gdbarch)->builtin_void);
+  return value::allocate (builtin_type (gdbarch)->builtin_void);
 }
 
 
@@ -454,8 +452,8 @@ display_one_tib (ptid_t ptid)
   gdb_byte *index;
   CORE_ADDR thread_local_base;
   ULONGEST i, val, max, max_name, size, tib_size;
-  ULONGEST sizeof_ptr = gdbarch_ptr_bit (target_gdbarch ());
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  ULONGEST sizeof_ptr = gdbarch_ptr_bit (current_inferior ()->arch ());
+  bfd_endian byte_order = gdbarch_byte_order (current_inferior ()->arch ());
 
   if (sizeof_ptr == 64)
     {
@@ -482,24 +480,24 @@ display_one_tib (ptid_t ptid)
 
   if (target_get_tib_address (ptid, &thread_local_base) == 0)
     {
-      printf_filtered (_("Unable to get thread local base for %s\n"),
-		       target_pid_to_str (ptid).c_str ());
+      gdb_printf (_("Unable to get thread local base for %s\n"),
+		  target_pid_to_str (ptid).c_str ());
       return -1;
     }
 
   if (target_read (current_inferior ()->top_target (), TARGET_OBJECT_MEMORY,
 		   NULL, tib, thread_local_base, tib_size) != tib_size)
     {
-      printf_filtered (_("Unable to read thread information "
-			 "block for %s at address %s\n"),
-		       target_pid_to_str (ptid).c_str (), 
-		       paddress (target_gdbarch (), thread_local_base));
+      gdb_printf (_("Unable to read thread information "
+		    "block for %s at address %s\n"),
+		  target_pid_to_str (ptid).c_str (), 
+		  paddress (current_inferior ()->arch (), thread_local_base));
       return -1;
     }
 
-  printf_filtered (_("Thread Information Block %s at %s\n"),
-		   target_pid_to_str (ptid).c_str (),
-		   paddress (target_gdbarch (), thread_local_base));
+  gdb_printf (_("Thread Information Block %s at %s\n"),
+	      target_pid_to_str (ptid).c_str (),
+	      paddress (current_inferior ()->arch (), thread_local_base));
 
   index = (gdb_byte *) tib;
 
@@ -509,10 +507,10 @@ display_one_tib (ptid_t ptid)
     {
       val = extract_unsigned_integer (index, size, byte_order);
       if (i < max_name)
-	printf_filtered (_("%s is 0x%s\n"), TIB_NAME[i], phex (val, size));
+	gdb_printf (_("%s is 0x%s\n"), TIB_NAME[i], phex (val, size));
       else if (val != 0)
-	printf_filtered (_("TIB[0x%s] is 0x%s\n"), phex (i * size, 2),
-			 phex (val, size));
+	gdb_printf (_("TIB[0x%s] is 0x%s\n"), phex (i * size, 2),
+		    phex (val, size));
       index += size;
     } 
   return 1;  
@@ -530,14 +528,13 @@ display_tib (const char * args, int from_tty)
 void
 windows_xfer_shared_library (const char* so_name, CORE_ADDR load_addr,
 			     CORE_ADDR *text_offset_cached,
-			     struct gdbarch *gdbarch, struct obstack *obstack)
+			     struct gdbarch *gdbarch, std::string &xml)
 {
   CORE_ADDR text_offset = text_offset_cached ? *text_offset_cached : 0;
 
-  obstack_grow_str (obstack, "<library name=\"");
-  std::string p = xml_escape_text (so_name);
-  obstack_grow_str (obstack, p.c_str ());
-  obstack_grow_str (obstack, "\"><segment address=\"");
+  xml += "<library name=\"";
+  xml_escape_text_append (xml, so_name);
+  xml += "\"><segment address=\"";
 
   if (!text_offset)
     {
@@ -550,8 +547,8 @@ windows_xfer_shared_library (const char* so_name, CORE_ADDR load_addr,
 	*text_offset_cached = text_offset;
     }
 
-  obstack_grow_str (obstack, paddress (gdbarch, load_addr + text_offset));
-  obstack_grow_str (obstack, "\"/></library>");
+  xml += paddress (gdbarch, load_addr + text_offset);
+  xml += "\"/></library>";
 }
 
 /* Implement the "iterate_over_objfiles_in_search_order" gdbarch
@@ -574,36 +571,29 @@ windows_xfer_shared_library (const char* so_name, CORE_ADDR load_addr,
 
 static void
 windows_iterate_over_objfiles_in_search_order
-  (struct gdbarch *gdbarch,
-   iterate_over_objfiles_in_search_order_cb_ftype *cb,
-   void *cb_data, struct objfile *current_objfile)
+  (gdbarch *gdbarch, iterate_over_objfiles_in_search_order_cb_ftype cb,
+   objfile *current_objfile)
 {
-  int stop;
-
   if (current_objfile)
     {
-      stop = cb (current_objfile, cb_data);
-      if (stop)
+      if (cb (current_objfile))
 	return;
     }
 
   for (objfile *objfile : current_program_space->objfiles ())
-    {
-      if (objfile != current_objfile)
-	{
-	  stop = cb (objfile, cb_data);
-	  if (stop)
-	    return;
-	}
-    }
+    if (objfile != current_objfile)
+      {
+	if (cb (objfile))
+	  return;
+      }
 }
 
 static void
 show_maint_show_all_tib (struct ui_file *file, int from_tty,
 		struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Show all non-zero elements of "
-			    "Thread Information Block is %s.\n"), value);
+  gdb_printf (file, _("Show all non-zero elements of "
+		      "Thread Information Block is %s.\n"), value);
 }
 
 
@@ -754,16 +744,14 @@ create_enum (struct gdbarch *gdbarch, int bit, const char *name,
   struct type *type;
   int i;
 
-  type = arch_type (gdbarch, TYPE_CODE_ENUM, bit, name);
-  type->set_num_fields (count);
-  type->set_fields
-    ((struct field *) TYPE_ZALLOC (type, sizeof (struct field) * count));
+  type = type_allocator (gdbarch).new_type (TYPE_CODE_ENUM, bit, name);
+  type->alloc_fields (count);
   type->set_is_unsigned (true);
 
   for (i = 0; i < count; i++)
     {
-      TYPE_FIELD_NAME (type, i) = values[i].name;
-      SET_FIELD_ENUMVAL (type->field (i), values[i].value);
+      type->field (i).set_name (values[i].name);
+      type->field (i).set_loc_enumval (values[i].value);
     }
 
   return type;
@@ -820,11 +808,12 @@ windows_get_siginfo_type (struct gdbarch *gdbarch)
   if (windows_gdbarch_data->siginfo_type != NULL)
     return windows_gdbarch_data->siginfo_type;
 
-  dword_type = arch_integer_type (gdbarch, gdbarch_int_bit (gdbarch),
+  type_allocator alloc (gdbarch);
+  dword_type = init_integer_type (alloc, gdbarch_int_bit (gdbarch),
 				  1, "DWORD");
-  pvoid_type = arch_pointer_type (gdbarch, gdbarch_ptr_bit (gdbarch), "PVOID",
+  pvoid_type = init_pointer_type (alloc, gdbarch_ptr_bit (gdbarch), "PVOID",
 				  builtin_type (gdbarch)->builtin_void);
-  ulongptr_type = arch_integer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
+  ulongptr_type = init_integer_type (alloc, gdbarch_ptr_bit (gdbarch),
 				     1, "ULONG_PTR");
 
   /* ExceptionCode value names */
@@ -853,8 +842,8 @@ windows_get_siginfo_type (struct gdbarch *gdbarch)
 
   siginfo_type = arch_composite_type (gdbarch, "EXCEPTION_RECORD",
 				      TYPE_CODE_STRUCT);
-  siginfo_ptr_type = arch_pointer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
-					NULL, siginfo_type);
+  siginfo_ptr_type = init_pointer_type (alloc, gdbarch_ptr_bit (gdbarch),
+					nullptr, siginfo_type);
 
   /* ExceptionCode is documented as type DWORD, but here a helper
      enum type is used instead to display a human-readable value.  */
@@ -867,14 +856,14 @@ windows_get_siginfo_type (struct gdbarch *gdbarch)
   append_composite_type_field (siginfo_type, "NumberParameters", dword_type);
   /* The 64-bit variant needs some padding.  */
   append_composite_type_field_aligned (siginfo_type, "",
-				       para_type, TYPE_LENGTH (ulongptr_type));
+				       para_type, ulongptr_type->length ());
 
   windows_gdbarch_data->siginfo_type = siginfo_type;
 
   return siginfo_type;
 }
 
-/* Implement the "solib_create_inferior_hook" target_so_ops method.  */
+/* Implement the "solib_create_inferior_hook" solib_ops method.  */
 
 static void
 windows_solib_create_inferior_hook (int from_tty)
@@ -883,7 +872,7 @@ windows_solib_create_inferior_hook (int from_tty)
 
   /* Find base address of main executable in
      TIB->process_environment_block->image_base_address.  */
-  struct gdbarch *gdbarch = target_gdbarch ();
+  gdbarch *gdbarch = current_inferior ()->arch ();
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   int ptr_bytes;
   int peb_offset;  /* Offset of process_environment_block in TIB.  */
@@ -922,7 +911,7 @@ windows_solib_create_inferior_hook (int from_tty)
     }
 }
 
-static struct target_so_ops windows_so_ops;
+static solib_ops windows_so_ops;
 
 /* Common parts for gdbarch initialization for the Windows and Cygwin OS
    ABIs.  */
@@ -943,7 +932,7 @@ windows_init_abi_common (struct gdbarch_info info, struct gdbarch *gdbarch)
   windows_so_ops = solib_target_so_ops;
   windows_so_ops.solib_create_inferior_hook
     = windows_solib_create_inferior_hook;
-  set_solib_ops (gdbarch, &windows_so_ops);
+  set_gdbarch_so_ops (gdbarch, &windows_so_ops);
 
   set_gdbarch_get_siginfo_type (gdbarch, windows_get_siginfo_type);
 }
@@ -971,7 +960,6 @@ static const struct internalvar_funcs tlb_funcs =
 {
   tlb_make_value,
   NULL,
-  NULL
 };
 
 /* Layout of an element of a PE's Import Directory Table.  Based on:
@@ -988,7 +976,7 @@ struct pe_import_directory_entry
   uint32_t import_address_table_rva;
 };
 
-gdb_static_assert (sizeof (pe_import_directory_entry) == 20);
+static_assert (sizeof (pe_import_directory_entry) == 20);
 
 /* See windows-tdep.h.  */
 
@@ -1020,10 +1008,11 @@ is_linked_with_cygwin_dll (bfd *abfd)
       || import_table_va >= idata_section_end_va)
     {
       warning (_("\
-%s: import table's virtual address (0x%" BFD_VMA_FMT "x) is outside .idata \
-section's range [0x%" BFD_VMA_FMT "x, 0x%" BFD_VMA_FMT "x[."),
-	       bfd_get_filename (abfd), import_table_va, idata_section_va,
-	       idata_section_end_va);
+%s: import table's virtual address (%s) is outside .idata \
+section's range [%s, %s]."),
+	       bfd_get_filename (abfd), hex_string (import_table_va),
+	       hex_string (idata_section_va),
+	       hex_string (idata_section_end_va));
       return false;
     }
 
@@ -1070,10 +1059,11 @@ section's range [0x%" BFD_VMA_FMT "x, 0x%" BFD_VMA_FMT "x[."),
       if (name_va < idata_section_va || name_va >= idata_section_end_va)
 	{
 	  warning (_("\
-%s: name's virtual address (0x%" BFD_VMA_FMT "x) is outside .idata section's \
-range [0x%" BFD_VMA_FMT "x, 0x%" BFD_VMA_FMT "x[."),
-		   bfd_get_filename (abfd), name_va, idata_section_va,
-		   idata_section_end_va);
+%s: name's virtual address (%s) is outside .idata section's \
+range [%s, %s]."),
+		   bfd_get_filename (abfd), hex_string (name_va),
+		   hex_string (idata_section_va),
+		   hex_string (idata_section_end_va));
 	  break;
 	}
 
@@ -1097,7 +1087,7 @@ range [0x%" BFD_VMA_FMT "x, 0x%" BFD_VMA_FMT "x[."),
 struct cpms_data
 {
   struct gdbarch *gdbarch;
-  struct obstack *obstack;
+  std::string xml;
   int module_count;
 };
 
@@ -1113,83 +1103,72 @@ core_process_module_section (bfd *abfd, asection *sect, void *obj)
   size_t module_name_offset;
   CORE_ADDR base_addr;
 
-  gdb_byte *buf = NULL;
-
   if (!startswith (sect->name, ".module"))
     return;
 
-  buf = (gdb_byte *) xmalloc (bfd_section_size (sect) + 1);
-  if (!buf)
-    {
-      printf_unfiltered ("memory allocation failed for %s\n", sect->name);
-      goto out;
-    }
+  gdb::byte_vector buf (bfd_section_size (sect) + 1);
   if (!bfd_get_section_contents (abfd, sect,
-				 buf, 0, bfd_section_size (sect)))
-    goto out;
-
-
+				 buf.data (), 0, bfd_section_size (sect)))
+    return;
+  /* We're going to treat part of the buffer as a string, so make sure
+     it is NUL-terminated.  */
+  buf.back () = 0;
 
   /* A DWORD (data_type) followed by struct windows_core_module_info.  */
-  data_type = extract_unsigned_integer (buf, 4, byte_order);
+  if (bfd_section_size (sect) < 4)
+    return;
+  data_type = extract_unsigned_integer (buf.data (), 4, byte_order);
 
   if (data_type == NOTE_INFO_MODULE)
     {
-      base_addr = extract_unsigned_integer (buf + 4, 4, byte_order);
-      module_name_size = extract_unsigned_integer (buf + 8, 4, byte_order);
       module_name_offset = 12;
+      if (bfd_section_size (sect) < module_name_offset)
+	return;
+      base_addr = extract_unsigned_integer (&buf[4], 4, byte_order);
+      module_name_size = extract_unsigned_integer (&buf[8], 4, byte_order);
     }
   else if (data_type == NOTE_INFO_MODULE64)
     {
-      base_addr = extract_unsigned_integer (buf + 4, 8, byte_order);
-      module_name_size = extract_unsigned_integer (buf + 12, 4, byte_order);
       module_name_offset = 16;
+      if (bfd_section_size (sect) < module_name_offset)
+	return;
+      base_addr = extract_unsigned_integer (&buf[4], 8, byte_order);
+      module_name_size = extract_unsigned_integer (&buf[12], 4, byte_order);
     }
   else
-    goto out;
+    return;
 
   if (module_name_offset + module_name_size > bfd_section_size (sect))
-    goto out;
-  module_name = (char *) buf + module_name_offset;
+    return;
+  module_name = (char *) buf.data () + module_name_offset;
 
   /* The first module is the .exe itself.  */
   if (data->module_count != 0)
     windows_xfer_shared_library (module_name, base_addr,
-				 NULL, data->gdbarch, data->obstack);
+				 NULL, data->gdbarch, data->xml);
   data->module_count++;
-
-out:
-  xfree (buf);
-  return;
 }
 
 ULONGEST
 windows_core_xfer_shared_libraries (struct gdbarch *gdbarch,
-				  gdb_byte *readbuf,
-				  ULONGEST offset, ULONGEST len)
+				    gdb_byte *readbuf,
+				    ULONGEST offset, ULONGEST len)
 {
-  struct obstack obstack;
-  const char *buf;
-  ULONGEST len_avail;
-  struct cpms_data data = { gdbarch, &obstack, 0 };
-
-  obstack_init (&obstack);
-  obstack_grow_str (&obstack, "<library-list>\n");
-  bfd_map_over_sections (core_bfd,
+  cpms_data data { gdbarch, "<library-list>\n", 0 };
+  bfd_map_over_sections (current_program_space->core_bfd (),
 			 core_process_module_section,
 			 &data);
-  obstack_grow_str0 (&obstack, "</library-list>\n");
+  data.xml += "</library-list>\n";
 
-  buf = (const char *) obstack_finish (&obstack);
-  len_avail = strlen (buf);
+  ULONGEST len_avail = data.xml.length ();
   if (offset >= len_avail)
     return 0;
 
   if (len > len_avail - offset)
     len = len_avail - offset;
-  memcpy (readbuf, buf + offset, len);
 
-  obstack_free (&obstack, NULL);
+  memcpy (readbuf, data.xml.data () + offset, len);
+
   return len;
 }
 
@@ -1208,9 +1187,6 @@ void _initialize_windows_tdep ();
 void
 _initialize_windows_tdep ()
 {
-  windows_gdbarch_data_handle
-    = gdbarch_data_register_post_init (init_windows_gdbarch_data);
-
   init_w32_command_list ();
   cmd_list_element *info_w32_thread_information_block_cmd
     = add_cmd ("thread-information-block", class_info, display_tib,
@@ -1236,4 +1212,197 @@ even if their meaning is unknown."),
      isn't initialized yet.  At this point, we're quite sure there
      isn't another convenience variable of the same name.  */
   create_internalvar_type_lazy ("_tlb", &tlb_funcs, NULL);
+}
+
+/* Frame cache data for the cygwin sigwrapper unwinder.  */
+
+struct cygwin_sigwrapper_frame_cache
+{
+  CORE_ADDR prev_pc;
+  int tlsoffset;
+};
+
+/* Return true if the instructions at PC match the instructions bytes
+   in PATTERN.  Returns false otherwise.  */
+
+static bool
+insns_match_pattern (CORE_ADDR pc,
+		     const gdb::array_view<const gdb_byte> pattern)
+{
+  for (size_t i = 0; i < pattern.size (); i++)
+    {
+      gdb_byte buf;
+      if (target_read_code (pc + i, &buf, 1) != 0)
+	return false;
+      if (buf != pattern[i])
+	return false;
+    }
+  return true;
+}
+
+/* Helper for cygwin_sigwrapper_frame_cache.  Search for one of the
+   patterns in PATTERNS_LIST within [START, END).  If found, record
+   the tls offset found after the matched pattern in the instruction
+   stream, in *TLSOFFSET.  */
+
+static void
+cygwin_sigwrapper_frame_analyze
+  (struct gdbarch *gdbarch,
+   CORE_ADDR start, CORE_ADDR end,
+   gdb::array_view<const gdb::array_view<const gdb_byte>> patterns_list,
+   int *tlsoffset)
+{
+  enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+
+  *tlsoffset = 0;
+
+  for (CORE_ADDR addr = start; addr < end; addr++)
+    {
+      for (auto patterns : patterns_list)
+	{
+	  if (insns_match_pattern (addr, patterns))
+	    {
+	      /* The instruction sequence is followed by 4 bytes for
+		 tls::stackptr.  */
+	      gdb_byte tls_stackptr[4];
+	      if (target_read_code (addr + patterns.size (), tls_stackptr, 4) == 0)
+		{
+		  *tlsoffset = extract_signed_integer (tls_stackptr, 4, byte_order);
+
+		  frame_debug_printf ("matched pattern at %s, sigstackptroffset=%x",
+				      paddress (gdbarch, addr),
+				      *tlsoffset);
+		  break;
+		}
+	    }
+	}
+    }
+
+  /* XXX: Perhaps we should also note the address of the xaddq
+     instruction which pops the RA from the sigstack.  If PC is after
+     that, we should look in the appropriate register to get the RA,
+     not on the sigstack.  */
+}
+
+/* Fill THIS_CACHE using the cygwin sigwrapper unwinding data for
+   THIS_FRAME.  */
+
+static cygwin_sigwrapper_frame_cache *
+cygwin_sigwrapper_frame_cache (frame_info_ptr this_frame, void **this_cache)
+{
+  struct gdbarch *gdbarch = get_frame_arch (this_frame);
+  enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+  auto *cache = (struct cygwin_sigwrapper_frame_cache *) *this_cache;
+  const int len = gdbarch_addr_bit (gdbarch) / 8;
+
+  /* Get address of top of stack from thread information block.  */
+  CORE_ADDR thread_local_base;
+  target_get_tib_address (inferior_ptid, &thread_local_base);
+
+  CORE_ADDR stacktop
+    = read_memory_unsigned_integer (thread_local_base + len, len, byte_order);
+
+  frame_debug_printf ("TEB.stacktop=%s", paddress (gdbarch, stacktop));
+
+  /* Find cygtls, relative to stacktop, and read signalstackptr from
+     cygtls.  */
+  CORE_ADDR signalstackptr
+    = read_memory_unsigned_integer (stacktop + cache->tlsoffset,
+				    len, byte_order);
+
+  frame_debug_printf ("sigsp=%s", paddress (gdbarch, signalstackptr));
+
+  /* Read return address from signal stack.  */
+  cache->prev_pc
+    = read_memory_unsigned_integer (signalstackptr - len, len, byte_order);
+
+  frame_debug_printf ("ra=%s", paddress (gdbarch, cache->prev_pc));
+
+  return cache;
+}
+
+static struct value *
+cygwin_sigwrapper_frame_prev_register (const frame_info_ptr &this_frame,
+				       void **this_cache,
+				       int regnum)
+{
+  struct gdbarch *gdbarch = get_frame_arch (this_frame);
+  struct cygwin_sigwrapper_frame_cache *cache
+    = cygwin_sigwrapper_frame_cache (this_frame, this_cache);
+
+  frame_debug_printf ("%s for pc=%s",
+		      gdbarch_register_name (gdbarch, regnum),
+		      paddress (gdbarch, cache->prev_pc));
+
+  if (regnum == gdbarch_pc_regnum (gdbarch))
+    return frame_unwind_got_address (this_frame, regnum, cache->prev_pc);
+
+  return frame_unwind_got_register (this_frame, regnum, regnum);
+}
+
+static void
+cygwin_sigwrapper_frame_this_id (const frame_info_ptr &this_frame,
+				 void **this_cache,
+				 struct frame_id *this_id)
+{
+  *this_id = frame_id_build_unavailable_stack (get_frame_func (this_frame));
+}
+
+static int
+cygwin_sigwrapper_frame_sniffer (const struct frame_unwind *self_,
+				 const frame_info_ptr &this_frame,
+				 void **this_cache)
+{
+  const auto *self = (const struct cygwin_sigwrapper_frame_unwind *) self_;
+  struct gdbarch *gdbarch = get_frame_arch (this_frame);
+
+  CORE_ADDR pc = get_frame_pc (this_frame);
+  const char *name;
+  CORE_ADDR start, end;
+  find_pc_partial_function (pc, &name, &start, &end);
+
+  if (name == nullptr)
+    return 0;
+
+  if (strcmp (name, "_sigbe") != 0
+      && strcmp (name, "__sigbe") != 0
+      && strcmp (name, "sigdelayed") != 0
+      && strcmp (name, "_sigdelayed") != 0)
+    return 0;
+
+  frame_debug_printf ("name=%s, start=%s, end=%s",
+		      name,
+		      paddress (gdbarch, start),
+		      paddress (gdbarch, end));
+
+  int tlsoffset;
+  cygwin_sigwrapper_frame_analyze (gdbarch, start, end, self->patterns_list,
+				   &tlsoffset);
+  if (tlsoffset == 0)
+    return 0;
+
+  frame_debug_printf ("sigstackptroffset=%x", tlsoffset);
+
+  auto *cache = FRAME_OBSTACK_ZALLOC (struct cygwin_sigwrapper_frame_cache);
+  cache->tlsoffset = tlsoffset;
+
+  *this_cache = cache;
+  cygwin_sigwrapper_frame_cache (this_frame, this_cache);
+
+  return 1;
+}
+
+/* Cygwin sigwapper unwinder.  */
+
+cygwin_sigwrapper_frame_unwind::cygwin_sigwrapper_frame_unwind
+  (gdb::array_view<const gdb::array_view<const gdb_byte>> patterns_list)
+    : frame_unwind (),
+      patterns_list (patterns_list)
+{
+  name = "cygwin sigwrapper";
+  type = NORMAL_FRAME;
+  stop_reason = default_frame_unwind_stop_reason;
+  this_id = cygwin_sigwrapper_frame_this_id;
+  prev_register = cygwin_sigwrapper_frame_prev_register;
+  sniffer = cygwin_sigwrapper_frame_sniffer;
 }

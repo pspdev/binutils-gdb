@@ -1,6 +1,6 @@
 /* Target-dependent code for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,13 +17,13 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "extract-store-integer.h"
 #include "frame.h"
 #include "inferior.h"
 #include "symtab.h"
 #include "target.h"
 #include "gdbcore.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "symfile.h"
 #include "objfiles.h"
 #include "regcache.h"
@@ -62,6 +62,8 @@
 #include "user-regs.h"
 #include <ctype.h>
 #include "elf-bfd.h"
+#include "producer.h"
+#include "target-float.h"
 
 #include "features/rs6000/powerpc-32l.c"
 #include "features/rs6000/powerpc-altivec32l.c"
@@ -82,9 +84,10 @@
 #include "features/rs6000/powerpc-isa207-vsx64l.c"
 #include "features/rs6000/powerpc-isa207-htm-vsx64l.c"
 #include "features/rs6000/powerpc-e500l.c"
+#include "dwarf2/frame.h"
 
 /* Shared library operations for PowerPC-Linux.  */
-static struct target_so_ops powerpc_so_ops;
+static solib_ops powerpc_so_ops;
 
 /* The syscall's XML filename for PPC and PPC64.  */
 #define XML_SYSCALL_FILENAME_PPC "syscalls/ppc-linux.xml"
@@ -249,11 +252,18 @@ ppc_linux_memory_remove_breakpoint (struct gdbarch *gdbarch,
 static enum return_value_convention
 ppc_linux_return_value (struct gdbarch *gdbarch, struct value *function,
 			struct type *valtype, struct regcache *regcache,
-			gdb_byte *readbuf, const gdb_byte *writebuf)
+			struct value **read_value, const gdb_byte *writebuf)
 {  
+  gdb_byte *readbuf = nullptr;
+  if (read_value != nullptr)
+    {
+      *read_value = value::allocate (valtype);
+      readbuf = (*read_value)->contents_raw ().data ();
+    }
+
   if ((valtype->code () == TYPE_CODE_STRUCT
        || valtype->code () == TYPE_CODE_UNION)
-      && !((TYPE_LENGTH (valtype) == 16 || TYPE_LENGTH (valtype) == 8)
+      && !((valtype->length () == 16 || valtype->length () == 8)
 	   && valtype->is_vector ()))
     return RETURN_VALUE_STRUCT_CONVENTION;
   else
@@ -303,15 +313,13 @@ static const struct ppc_insn_pattern powerpc32_plt_stub_so_2[] =
 static int
 powerpc_linux_in_dynsym_resolve_code (CORE_ADDR pc)
 {
-  struct bound_minimal_symbol sym;
-
   /* Check whether PC is in the dynamic linker.  This also checks
      whether it is in the .plt section, used by non-PIC executables.  */
   if (svr4_in_dynsym_resolve_code (pc))
     return 1;
 
   /* Check if we are in the resolver.  */
-  sym = lookup_minimal_symbol_by_pc (pc);
+  bound_minimal_symbol sym = lookup_minimal_symbol_by_pc (pc);
   if (sym.minsym != NULL
       && (strcmp (sym.minsym->linkage_name (), "__glink") == 0
 	  || strcmp (sym.minsym->linkage_name (), "__glink_PLTresolve") == 0))
@@ -328,11 +336,11 @@ powerpc_linux_in_dynsym_resolve_code (CORE_ADDR pc)
    stub sequence.  */
 
 static CORE_ADDR
-ppc_skip_trampoline_code (struct frame_info *frame, CORE_ADDR pc)
+ppc_skip_trampoline_code (const frame_info_ptr &frame, CORE_ADDR pc)
 {
   unsigned int insnbuf[POWERPC32_PLT_CHECK_LEN];
   struct gdbarch *gdbarch = get_frame_arch (frame);
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   CORE_ADDR target = 0;
   int scan_limit, i;
@@ -898,7 +906,7 @@ ppc_linux_vsxregset (void)
 const struct regset *
 ppc_linux_cgprregset (struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
 
   if (tdep->wordsize == 4)
     {
@@ -938,7 +946,7 @@ ppc_linux_collect_core_cpgrregset (const struct regset *regset,
 				   int regnum, void *buf, size_t len)
 {
   struct gdbarch *gdbarch = regcache->arch ();
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
 
   const struct regset *cgprregset = ppc_linux_cgprregset (gdbarch);
 
@@ -985,7 +993,7 @@ ppc_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 					void *cb_data,
 					const struct regcache *regcache)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
   int have_altivec = tdep->ppc_vr0_regnum != -1;
   int have_vsx = tdep->ppc_vsr0_upper_regnum != -1;
   int have_ppr = tdep->ppc_ppr_regnum != -1;
@@ -1159,7 +1167,7 @@ ppc_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 }
 
 static void
-ppc_linux_sigtramp_cache (struct frame_info *this_frame,
+ppc_linux_sigtramp_cache (const frame_info_ptr &this_frame,
 			  struct trad_frame_cache *this_cache,
 			  CORE_ADDR func, LONGEST offset,
 			  int bias)
@@ -1170,7 +1178,7 @@ ppc_linux_sigtramp_cache (struct frame_info *this_frame,
   CORE_ADDR fpregs;
   int i;
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
 
   base = get_frame_register_unsigned (this_frame,
@@ -1231,7 +1239,7 @@ ppc_linux_sigtramp_cache (struct frame_info *this_frame,
 
 static void
 ppc32_linux_sigaction_cache_init (const struct tramp_frame *self,
-				  struct frame_info *this_frame,
+				  const frame_info_ptr &this_frame,
 				  struct trad_frame_cache *this_cache,
 				  CORE_ADDR func)
 {
@@ -1243,7 +1251,7 @@ ppc32_linux_sigaction_cache_init (const struct tramp_frame *self,
 
 static void
 ppc64_linux_sigaction_cache_init (const struct tramp_frame *self,
-				  struct frame_info *this_frame,
+				  const frame_info_ptr &this_frame,
 				  struct trad_frame_cache *this_cache,
 				  CORE_ADDR func)
 {
@@ -1255,7 +1263,7 @@ ppc64_linux_sigaction_cache_init (const struct tramp_frame *self,
 
 static void
 ppc32_linux_sighandler_cache_init (const struct tramp_frame *self,
-				   struct frame_info *this_frame,
+				   const frame_info_ptr &this_frame,
 				   struct trad_frame_cache *this_cache,
 				   CORE_ADDR func)
 {
@@ -1267,7 +1275,7 @@ ppc32_linux_sighandler_cache_init (const struct tramp_frame *self,
 
 static void
 ppc64_linux_sighandler_cache_init (const struct tramp_frame *self,
-				   struct frame_info *this_frame,
+				   const frame_info_ptr &this_frame,
 				   struct trad_frame_cache *this_cache,
 				   CORE_ADDR func)
 {
@@ -1341,7 +1349,7 @@ ppc_linux_get_syscall_number (struct gdbarch *gdbarch,
 			      thread_info *thread)
 {
   struct regcache *regcache = get_thread_regcache (thread);
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
 
   /* Make sure we're in a 32- or 64-bit machine */
@@ -1371,7 +1379,7 @@ static struct linux_record_tdep ppc64_linux_record_tdep;
    SYSCALL.  */
 
 static enum gdb_syscall
-ppc_canonicalize_syscall (int syscall)
+ppc_canonicalize_syscall (int syscall, int wordsize)
 {
   int result = -1;
 
@@ -1391,12 +1399,25 @@ ppc_canonicalize_syscall (int syscall)
     result = syscall += 259 - 240;
   else if (syscall >= 250 && syscall <= 251)	/* tgkill */
     result = syscall + 270 - 250;
+  else if (syscall == 286)
+    result = gdb_sys_openat;
+  else if (syscall == 291)
+    {
+      if (wordsize == 64)
+	result = gdb_sys_newfstatat;
+      else
+	result = gdb_sys_fstatat64;
+    }
+  else if (syscall == 317)
+    result = gdb_sys_pipe2;
   else if (syscall == 336)
     result = gdb_sys_recv;
   else if (syscall == 337)
     result = gdb_sys_recvfrom;
   else if (syscall == 342)
     result = gdb_sys_recvmsg;
+  else if (syscall == 359)
+    result = gdb_sys_getrandom;
 
   return (enum gdb_syscall) result;
 }
@@ -1408,18 +1429,19 @@ static int
 ppc_linux_syscall_record (struct regcache *regcache)
 {
   struct gdbarch *gdbarch = regcache->arch ();
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
   ULONGEST scnum;
   enum gdb_syscall syscall_gdb;
   int ret;
 
   regcache_raw_read_unsigned (regcache, tdep->ppc_gp0_regnum, &scnum);
-  syscall_gdb = ppc_canonicalize_syscall (scnum);
+  syscall_gdb = ppc_canonicalize_syscall (scnum, tdep->wordsize);
 
   if (syscall_gdb < 0)
     {
-      printf_unfiltered (_("Process record and replay target doesn't "
-			   "support syscall number %d\n"), (int) scnum);
+      gdb_printf (gdb_stderr,
+		  _("Process record and replay target doesn't "
+		    "support syscall number %d\n"), (int) scnum);
       return 0;
     }
 
@@ -1497,7 +1519,7 @@ ppc_linux_record_signal (struct gdbarch *gdbarch, struct regcache *regcache,
   const int SIGNAL_FRAMESIZE = 128;
   const int sizeof_rt_sigframe = 1440 * 2 + 8 * 2 + 4 * 6 + 8 + 8 + 128 + 512;
   ULONGEST sp;
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
   int i;
 
   for (i = 3; i <= 12; i++)
@@ -1587,7 +1609,8 @@ ppc_linux_core_read_description (struct gdbarch *gdbarch,
   if (vsx)
     features.vsx = true;
 
-  CORE_ADDR hwcap = linux_get_hwcap (target);
+  std::optional<gdb::byte_vector> auxv = target_read_auxv_raw (target);
+  CORE_ADDR hwcap = linux_get_hwcap (auxv, target, gdbarch);
 
   features.isa205 = ppc_linux_has_isa205 (hwcap);
 
@@ -1617,6 +1640,11 @@ ppc_linux_core_read_description (struct gdbarch *gdbarch,
 static void
 ppc_elfv2_elf_make_msymbol_special (asymbol *sym, struct minimal_symbol *msym)
 {
+  if ((sym->flags & BSF_SYNTHETIC) != 0)
+    /* ELFv2 synthetic symbols (the PLT stubs and the __glink_PLTresolve
+       trampoline) do not have a local entry point.  */
+    return;
+
   elf_symbol_type *elf_sym = (elf_symbol_type *)sym;
 
   /* If the symbol is marked as having a local entry point, set a target
@@ -1629,7 +1657,7 @@ ppc_elfv2_elf_make_msymbol_special (asymbol *sym, struct minimal_symbol *msym)
     default:
       break;
     case 8:
-      MSYMBOL_TARGET_FLAG_1 (msym) = 1;
+      msym->set_target_flag_1 (true);
       break;
     }
 }
@@ -1640,21 +1668,20 @@ ppc_elfv2_elf_make_msymbol_special (asymbol *sym, struct minimal_symbol *msym)
 static CORE_ADDR
 ppc_elfv2_skip_entrypoint (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
-  struct bound_minimal_symbol fun;
   int local_entry_offset = 0;
 
-  fun = lookup_minimal_symbol_by_pc (pc);
+  bound_minimal_symbol fun = lookup_minimal_symbol_by_pc (pc);
   if (fun.minsym == NULL)
     return pc;
 
   /* See ppc_elfv2_elf_make_msymbol_special for how local entry point
      offset values are encoded.  */
-  if (MSYMBOL_TARGET_FLAG_1 (fun.minsym))
+  if (fun.minsym->target_flag_1 ())
     local_entry_offset = 8;
 
-  if (BMSYMBOL_VALUE_ADDRESS (fun) <= pc
-      && pc < BMSYMBOL_VALUE_ADDRESS (fun) + local_entry_offset)
-    return BMSYMBOL_VALUE_ADDRESS (fun) + local_entry_offset;
+  if (fun.value_address () <= pc
+      && pc < fun.value_address () + local_entry_offset)
+    return fun.value_address () + local_entry_offset;
 
   return pc;
 }
@@ -1728,6 +1755,11 @@ static void
 ppc_init_linux_record_tdep (struct linux_record_tdep *record_tdep,
 			    int wordsize)
 {
+  /* The values for TCGETS, TCSETS, TCSETSW, TCSETSF are based on the
+     size of struct termios in the kernel source.
+     include/uapi/asm-generic/termbits.h  */
+#define SIZE_OF_STRUCT_TERMIOS  0x2c
+
   /* Simply return if it had been initialized.  */
   if (record_tdep->size_pointer != 0)
     return;
@@ -1870,7 +1902,7 @@ ppc_init_linux_record_tdep (struct linux_record_tdep *record_tdep,
       record_tdep->size_time_t = 4;
     }
   else
-    internal_error (__FILE__, __LINE__, _("unexpected wordsize"));
+    internal_error (_("unexpected wordsize"));
 
   /* These values are the second argument of system call "sys_fcntl"
      and "sys_fcntl64".  They are obtained from Linux Kernel source.  */
@@ -1889,14 +1921,15 @@ ppc_init_linux_record_tdep (struct linux_record_tdep *record_tdep,
   /* These values are the second argument of system call "sys_ioctl".
      They are obtained from Linux Kernel source.
      See arch/powerpc/include/uapi/asm/ioctls.h.  */
-  record_tdep->ioctl_TCGETS = 0x403c7413;
-  record_tdep->ioctl_TCSETS = 0x803c7414;
-  record_tdep->ioctl_TCSETSW = 0x803c7415;
-  record_tdep->ioctl_TCSETSF = 0x803c7416;
   record_tdep->ioctl_TCGETA = 0x40147417;
   record_tdep->ioctl_TCSETA = 0x80147418;
   record_tdep->ioctl_TCSETAW = 0x80147419;
   record_tdep->ioctl_TCSETAF = 0x8014741c;
+  record_tdep->ioctl_TCGETS = 0x40007413 | (SIZE_OF_STRUCT_TERMIOS << 16);
+  record_tdep->ioctl_TCSETS = 0x80007414 | (SIZE_OF_STRUCT_TERMIOS << 16);
+  record_tdep->ioctl_TCSETSW = 0x80007415 | (SIZE_OF_STRUCT_TERMIOS << 16);
+  record_tdep->ioctl_TCSETSF = 0x80007416 | (SIZE_OF_STRUCT_TERMIOS << 16);
+
   record_tdep->ioctl_TCSBRK = 0x2000741d;
   record_tdep->ioctl_TCXONC = 0x2000741e;
   record_tdep->ioctl_TCFLSH = 0x2000741f;
@@ -1964,7 +1997,7 @@ ppc_floatformat_for_type (struct gdbarch *gdbarch,
 	  || strcmp (name, "_Float64x") == 0
 	  || strcmp (name, "complex _Float128") == 0
 	  || strcmp (name, "complex _Float64x") == 0)
-	return floatformats_ia64_quad;
+	return floatformats_ieee_quad;
 
       if (strcmp (name, "__ibm128") == 0)
 	return floatformats_ibm_long_double;
@@ -1973,11 +2006,138 @@ ppc_floatformat_for_type (struct gdbarch *gdbarch,
   return default_floatformat_for_type (gdbarch, name, len);
 }
 
+static bool
+linux_dwarf2_omit_typedef_p (struct type *target_type,
+			     const char *producer, const char *name)
+{
+  int gcc_major, gcc_minor;
+
+  if (producer_is_gcc (producer, &gcc_major, &gcc_minor))
+    {
+      if ((target_type->code () == TYPE_CODE_FLT
+	   || target_type->code () == TYPE_CODE_COMPLEX)
+	  && (strcmp (name, "long double") == 0
+	      || strcmp (name, "complex long double") == 0))
+	{
+	  /* IEEE 128-bit floating point and IBM long double are two
+	     encodings for 128-bit values.  The DWARF debug data can't
+	     distinguish between them.  See bugzilla:
+	     https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104194
+
+	     A GCC hack was introduced to still allow the debugger to identify
+	     the case where "long double" uses the IEEE 128-bit floating point
+	     format: GCC will emit a bogus DWARF type record pretending that
+	     "long double" is a typedef alias for the _Float128 type.
+
+	     This hack should not be visible to the GDB user, so we replace
+	     this bogus typedef by a normal floating-point type, copying the
+	     format information from the target type of the bogus typedef.  */
+	  return true;
+	}
+    }
+  return false;
+}
+
+/* Specify the powerpc64le target triplet.
+   This can be variations of
+	ppc64le-{distro}-linux-gcc
+   and
+	powerpc64le-{distro}-linux-gcc.  */
+
+static const char *
+ppc64le_gnu_triplet_regexp (struct gdbarch *gdbarch)
+{
+  return "p(ower)?pc64le";
+}
+
+/* Specify the powerpc64 target triplet.
+   This can be variations of
+	ppc64-{distro}-linux-gcc
+   and
+	powerpc64-{distro}-linux-gcc.  */
+
+static const char *
+ppc64_gnu_triplet_regexp (struct gdbarch *gdbarch)
+{
+  return "p(ower)?pc64";
+}
+
+/* Implement the linux_gcc_target_options method.  */
+
+static std::string
+ppc64_linux_gcc_target_options (struct gdbarch *gdbarch)
+{
+  return "";
+}
+
+static displaced_step_prepare_status
+ppc_linux_displaced_step_prepare  (gdbarch *arch, thread_info *thread,
+				   CORE_ADDR &displaced_pc)
+{
+  ppc_inferior_data *per_inferior = get_ppc_per_inferior (thread->inf);
+  if (!per_inferior->disp_step_buf.has_value ())
+    {
+      /* Figure out where the displaced step buffer is.  */
+      CORE_ADDR disp_step_buf_addr
+	= linux_displaced_step_location (thread->inf->arch ());
+
+      per_inferior->disp_step_buf.emplace (disp_step_buf_addr);
+    }
+
+  return per_inferior->disp_step_buf->prepare (thread, displaced_pc);
+}
+
+/* Convert a Dwarf 2 register number to a GDB register number for Linux.  */
+
+static int
+rs6000_linux_dwarf2_reg_to_regnum (struct gdbarch *gdbarch, int num)
+{
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep>(gdbarch);
+
+  if (0 <= num && num <= 31)
+    return tdep->ppc_gp0_regnum + num;
+  else if (32 <= num && num <= 63)
+    /* Map dwarf register numbers for floating point, double, IBM double and
+       IEEE 128-bit floating point to the fpr range.  Will have to fix the
+       mapping for the IEEE 128-bit register numbers later.  */
+    return tdep->ppc_fp0_regnum + (num - 32);
+  else if (77 <= num && num < 77 + 32)
+    return tdep->ppc_vr0_regnum + (num - 77);
+  else
+    switch (num)
+      {
+      case 65:
+	return tdep->ppc_lr_regnum;
+      case 66:
+	return tdep->ppc_ctr_regnum;
+      case 76:
+	return tdep->ppc_xer_regnum;
+      case 109:
+	return tdep->ppc_vrsave_regnum;
+      case 110:
+	return tdep->ppc_vrsave_regnum - 1; /* vscr */
+      }
+
+  /* Unknown DWARF register number.  */
+  return -1;
+}
+
+/* Translate a .eh_frame register to DWARF register, or adjust a
+   .debug_frame register.  */
+
+static int
+rs6000_linux_adjust_frame_regnum (struct gdbarch *gdbarch, int num,
+				  int eh_frame_p)
+{
+  /* Linux uses the same numbering for .debug_frame numbering as .eh_frame.  */
+  return num;
+}
+
 static void
 ppc_linux_init_abi (struct gdbarch_info info,
 		    struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  ppc_gdbarch_tdep *tdep = gdbarch_tdep<ppc_gdbarch_tdep> (gdbarch);
   struct tdesc_arch_data *tdesc_data = info.tdesc_data;
   static const char *const stap_integer_prefixes[] = { "i", NULL };
   static const char *const stap_register_indirection_prefixes[] = { "(",
@@ -1994,12 +2154,15 @@ ppc_linux_init_abi (struct gdbarch_info info,
      to distinguish between the IBM long double and IEEE quad cases.  */
   set_gdbarch_long_double_bit (gdbarch, 16 * TARGET_CHAR_BIT);
   if (tdep->long_double_abi == POWERPC_LONG_DOUBLE_IEEE128)
-    set_gdbarch_long_double_format (gdbarch, floatformats_ia64_quad);
+    set_gdbarch_long_double_format (gdbarch, floatformats_ieee_quad);
   else
     set_gdbarch_long_double_format (gdbarch, floatformats_ibm_long_double);
 
   /* Support for floating-point data type variants.  */
   set_gdbarch_floatformat_for_type (gdbarch, ppc_floatformat_for_type);
+
+  /* Support for replacing typedef record.  */
+  set_gdbarch_dwarf2_omit_typedef_p (gdbarch, linux_dwarf2_omit_typedef_p);
 
   /* Handle inferior calls during interrupted system calls.  */
   set_gdbarch_write_pc (gdbarch, ppc_linux_write_pc);
@@ -2017,6 +2180,15 @@ ppc_linux_init_abi (struct gdbarch_info info,
   set_gdbarch_stap_is_single_operand (gdbarch, ppc_stap_is_single_operand);
   set_gdbarch_stap_parse_special_token (gdbarch,
 					ppc_stap_parse_special_token);
+  /* Linux DWARF register mapping is different from the other OSes.  */
+  set_gdbarch_dwarf2_reg_to_regnum (gdbarch,
+				    rs6000_linux_dwarf2_reg_to_regnum);
+  /* Note on Linux the mapping for the DWARF registers and the stab registers
+     use the same numbers.  Install rs6000_linux_dwarf2_reg_to_regnum for the
+     stab register mappings as well.  */
+  set_gdbarch_stab_reg_to_regnum (gdbarch,
+				    rs6000_linux_dwarf2_reg_to_regnum);
+  dwarf2_frame_set_adjust_regnum (gdbarch, rs6000_linux_adjust_frame_regnum);
 
   if (tdep->wordsize == 4)
     {
@@ -2027,7 +2199,8 @@ ppc_linux_init_abi (struct gdbarch_info info,
 	 (well ignoring vectors that is).  When this was corrected, it
 	 wasn't fixed for GNU/Linux native platform.  Use the
 	 PowerOpen struct convention.  */
-      set_gdbarch_return_value (gdbarch, ppc_linux_return_value);
+      set_gdbarch_return_value_as_value (gdbarch, ppc_linux_return_value);
+      set_gdbarch_return_value (gdbarch, nullptr);
 
       set_gdbarch_memory_remove_breakpoint (gdbarch,
 					    ppc_linux_memory_remove_breakpoint);
@@ -2035,7 +2208,7 @@ ppc_linux_init_abi (struct gdbarch_info info,
       /* Shared library handling.  */
       set_gdbarch_skip_trampoline_code (gdbarch, ppc_skip_trampoline_code);
       set_solib_svr4_fetch_link_map_offsets
-	(gdbarch, svr4_ilp32_fetch_link_map_offsets);
+	(gdbarch, linux_ilp32_fetch_link_map_offsets);
 
       /* Setting the correct XML syscall filename.  */
       set_xml_syscall_file_name (gdbarch, XML_SYSCALL_FILENAME_PPC);
@@ -2059,7 +2232,7 @@ ppc_linux_init_abi (struct gdbarch_info info,
 	  powerpc_so_ops.in_dynsym_resolve_code =
 	    powerpc_linux_in_dynsym_resolve_code;
 	}
-      set_solib_ops (gdbarch, &powerpc_so_ops);
+      set_gdbarch_so_ops (gdbarch, &powerpc_so_ops);
 
       set_gdbarch_skip_solib_resolver (gdbarch, glibc_skip_solib_resolver);
     }
@@ -2087,7 +2260,7 @@ ppc_linux_init_abi (struct gdbarch_info info,
       /* Shared library handling.  */
       set_gdbarch_skip_trampoline_code (gdbarch, ppc64_skip_trampoline_code);
       set_solib_svr4_fetch_link_map_offsets
-	(gdbarch, svr4_lp64_fetch_link_map_offsets);
+	(gdbarch, linux_lp64_fetch_link_map_offsets);
 
       /* Setting the correct XML syscall filename.  */
       set_xml_syscall_file_name (gdbarch, XML_SYSCALL_FILENAME_PPC64);
@@ -2103,6 +2276,13 @@ ppc_linux_init_abi (struct gdbarch_info info,
 	set_gdbarch_gcore_bfd_target (gdbarch, "elf64-powerpcle");
       else
 	set_gdbarch_gcore_bfd_target (gdbarch, "elf64-powerpc");
+     /* Set compiler triplet.  */
+      if (gdbarch_byte_order (gdbarch) == BFD_ENDIAN_LITTLE)
+	set_gdbarch_gnu_triplet_regexp (gdbarch, ppc64le_gnu_triplet_regexp);
+      else
+	set_gdbarch_gnu_triplet_regexp (gdbarch, ppc64_gnu_triplet_regexp);
+      /* Set GCC target options.  */
+      set_gdbarch_gcc_target_options (gdbarch, ppc64_linux_gcc_target_options);
     }
 
   set_gdbarch_core_read_description (gdbarch, ppc_linux_core_read_description);
@@ -2142,6 +2322,11 @@ ppc_linux_init_abi (struct gdbarch_info info,
 
   ppc_init_linux_record_tdep (&ppc_linux_record_tdep, 4);
   ppc_init_linux_record_tdep (&ppc64_linux_record_tdep, 8);
+
+  /* Setup displaced stepping.  */
+  set_gdbarch_displaced_step_prepare (gdbarch,
+				      ppc_linux_displaced_step_prepare);
+
 }
 
 void _initialize_ppc_linux_tdep ();

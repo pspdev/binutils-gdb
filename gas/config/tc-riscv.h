@@ -1,5 +1,5 @@
 /* tc-riscv.h -- header file for tc-riscv.c.
-   Copyright (C) 2011-2021 Free Software Foundation, Inc.
+   Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Waterman (andrew@sifive.com).
    Based on MIPS target.
@@ -78,6 +78,10 @@ extern int riscv_parse_long_option (const char *);
 
 #define md_pre_output_hook riscv_pre_output_hook ()
 extern void riscv_pre_output_hook (void);
+#define GAS_SORT_RELOCS 1
+
+#define md_end riscv_md_end
+extern void riscv_md_end (void);
 
 /* Let the linker resolve all the relocs due to relaxation.  */
 #define tc_fix_adjustable(fixp) 0
@@ -99,6 +103,14 @@ extern void riscv_pre_output_hook (void);
 #define TC_VALIDATE_FIX_SUB(FIX, SEG) 1
 #define TC_FORCE_RELOCATION_LOCAL(FIX) 1
 #define DIFF_EXPR_OK 1
+
+struct riscv_fix
+{
+  int source_macro;
+};
+
+#define TC_FIX_TYPE struct riscv_fix
+#define TC_INIT_FIX_DATA(FIX) (FIX)->tc_fix_data.source_macro = -1
 
 extern void riscv_pop_insert (void);
 #define md_pop_insert()		riscv_pop_insert ()
@@ -122,10 +134,44 @@ extern void riscv_elf_final_processing (void);
 /* Adjust debug_line after relaxation.  */
 #define DWARF2_USE_FIXED_ADVANCE_PC 1
 
-#define md_end riscv_md_end
+#define md_parse_name(name, exp, mode, c) \
+  riscv_parse_name (name, exp, mode)
+bool riscv_parse_name (const char *, struct expressionS *, enum expr_mode);
+
+#define md_finish riscv_md_finish
 #define CONVERT_SYMBOLIC_ATTRIBUTE riscv_convert_symbolic_attribute
 
-extern void riscv_md_end (void);
+extern void riscv_md_finish (void);
 extern int riscv_convert_symbolic_attribute (const char *);
+
+/* Set mapping symbol states.  */
+#define md_cons_align(nbytes) riscv_mapping_state (MAP_DATA, 0, 0)
+void riscv_mapping_state (enum riscv_seg_mstate, int, bool);
+
+/* Define target segment type.  */
+#define TC_SEGMENT_INFO_TYPE struct riscv_segment_info_type
+struct riscv_segment_info_type
+{
+  enum riscv_seg_mstate map_state;
+  /* The current mapping symbol with architecture string.  */
+  symbolS *arch_map_symbol;
+};
+
+/* Define target fragment type.  */
+#define TC_FRAG_TYPE struct riscv_frag_type
+struct riscv_frag_type
+{
+  symbolS *first_map_symbol, *last_map_symbol;
+};
+
+#define TC_FRAG_INIT(fragp, max_bytes) riscv_init_frag (fragp, max_bytes)
+extern void riscv_init_frag (struct frag *, int);
+
+#define obj_adjust_symtab() riscv_adjust_symtab ()
+extern void riscv_adjust_symtab (void);
+
+void riscv_elf_copy_symbol_attributes (symbolS *, symbolS *);
+#define OBJ_COPY_SYMBOL_ATTRIBUTES(DEST, SRC)  \
+  riscv_elf_copy_symbol_attributes (DEST, SRC)
 
 #endif /* TC_RISCV */

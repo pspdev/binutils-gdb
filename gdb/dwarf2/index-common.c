@@ -1,6 +1,6 @@
 /* Things needed for both reading and writing DWARF indices.
 
-   Copyright (C) 1994-2021 Free Software Foundation, Inc.
+   Copyright (C) 1994-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "dwarf2/index-common.h"
 
 /* See dwarf-index-common.h.  */
@@ -52,5 +51,19 @@ dwarf5_djb_hash (const char *str_)
   uint32_t hash = 5381;
   while (int c = *str++)
     hash = hash * 33 + tolower (c);
+  return hash;
+}
+
+/* See dwarf-index-common.h.  */
+
+uint32_t
+dwarf5_djb_hash (std::string_view str)
+{
+  /* Note: tolower here ignores UTF-8, which isn't fully compliant.
+     See http://dwarfstd.org/ShowIssue.php?issue=161027.1.  */
+
+  uint32_t hash = 5381;
+  for (char c : str)
+    hash = hash * 33 + tolower (c & 0xff);
   return hash;
 }

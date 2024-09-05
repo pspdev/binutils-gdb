@@ -1,6 +1,6 @@
 /* Python interface to inferior events.
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -52,6 +52,6 @@ struct events_object
 extern events_object gdb_py_events;
 
 extern eventregistry_object *create_eventregistry_object (void);
-extern int evregpy_no_listeners_p (eventregistry_object *registry);
+extern bool evregpy_no_listeners_p (eventregistry_object *registry);
 
 #endif /* PYTHON_PY_EVENTS_H */

@@ -1,4 +1,4 @@
-! Copyright 2019-2021 Free Software Foundation, Inc.
+! Copyright 2019-2024 Free Software Foundation, Inc.
 !
 ! This program is free software; you can redistribute it and/or modify
 ! it under the terms of the GNU General Public License as published by
@@ -61,7 +61,7 @@ subroutine show_1d (array)
      end if
      write(*, fmt="(I0)", advance="no") array (i)
   end do
-  write(*, fmt="(A)", advance="no") ")"
+  write(*, fmt="(A)", advance="yes") ")"
 
   print *, ""	! Display Array Slice 1D
 end subroutine show_1d

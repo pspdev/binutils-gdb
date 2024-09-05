@@ -1,4 +1,4 @@
-# Copyright 2011-2021 Free Software Foundation, Inc.
+# Copyright 2011-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,29 +16,13 @@
 standard_testfile .c
 
 # Fission doesn't support macros yet.  Bug 15954.
-if [using_fission] {
-    untested "fission does not support macros yet"
-    return -1
-}
+require !using_fission
 
-get_compiler_info
-if { [test_compiler_info gcc*] } {
-    # Don't use "debug" here.  Otherwise "-g" would be appended to the gcc
-    # command line, possibly overriding "-g3" (depending on gcc version).
-    set options "additional_flags=-g3"
-} elseif { [test_compiler_info clang*] } {
-    set options "additional_flags=-fdebug-macro"
-} else {
-    untested "no compiler info"
-    return -1
-}
-
-if { [prepare_for_testing "failed to prepare" ${testfile} ${srcfile} $options] } {
+if { [prepare_for_testing "failed to prepare" ${testfile} ${srcfile} {debug macros}] } {
     return -1
 }
 
 if ![runto_main] {
-    untested "could not run to main"
     return -1
 }
 
@@ -49,22 +33,22 @@ gdb_test "info macro  -- -all" \
 	 "The symbol `-all' has no definition .*\r\nat .*$srcfile:\[0-9\]+"
 
 gdb_test "info macro -all --" \
-	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*\[\r\n\]"
+	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*"
 
 gdb_test "info macro -all  --" \
-	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*\[\r\n\]"
+	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*"
 
 gdb_test "info macro  -all  --" \
-	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*\[\r\n\]"
+	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*"
 
 gdb_test "info macro --" \
-	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*\[\r\n\]"
+	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*"
 
 gdb_test "info macro -- " \
-	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*\[\r\n\]" \
+	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*" \
 	 "info macro -- <EOL>"
 gdb_test "info macro  -- " \
-	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*\[\r\n\]" \
+	 "You must follow.*with the name.*you want to see.*\[^\r\n\]*" \
 	 "info macro  -- <EOL>"
 
 gdb_test "info macro -invalid-option" \
@@ -126,7 +110,7 @@ gdb_test_lines $test $testname $r1.*$r2 \
     -re-not "#define THREE" \
     -re-not "#define FOUR"
 
-gdb_test "next" ".*" ""
+gdb_test "next" "" "next, 1"
 
 set r1 "#define FOO \" \""
 set r2 "#define ONE"
@@ -136,9 +120,9 @@ gdb_test_lines $test $testname $r1.*$r2.*$r3 \
     -re-not "#define THREE" \
     -re-not "#define FOUR"
 
-gdb_test "next" ".*" ""
+gdb_test "next" "" "next, 2"
 
-# in alpabetical order...
+# in alphabetical order...
 set r1 "#define FOO \"world\""
 set r2 "#define ONE"
 set r3 "#define THREE"
@@ -151,7 +135,7 @@ gdb_test_lines $test $testname $r1.*$r2.*$r3.*$r4 \
 set test "info macros *\$pc"
 gdb_test_lines $test "" $r1.*$r2.*$r3.*$r4 \
     -re-not "#define FOUR"
-gdb_test "next" ".*" ""
+gdb_test "next" "" "next, 3"
 
 set r1 "#define FOO \" \""
 set r2 "#define ONE"
@@ -161,8 +145,8 @@ set testname "$test 5"
 gdb_test_lines $test $testname $r1.*$r2.*$r3 \
     -re-not "#define THREE" \
     -re-not "#define FOUR"
-gdb_test "next" ".*" ""
-gdb_test "next" ".*" ""
+gdb_test "next" "" "next, 4"
+gdb_test "next" "" "next, 5"
 
 set r1 "#define DEF_MACROS"
 set testname "$test 6"
@@ -173,7 +157,7 @@ gdb_test_lines $test $testname $r1 \
     -re-not "#define THREE" \
     -re-not "#define FOUR"
 
-gdb_test "next" ".*" ""
+gdb_test "next" "" "next, 6"
 set r1 "#define DEF_MACROS"
 set r2 "#define FOO\\(a\\) foo = a"
 set r3 "#define FOUR"

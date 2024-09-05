@@ -1,6 +1,6 @@
 /* The IGEN simulator generator for GDB, the GNU Debugger.
 
-   Copyright 2002-2021 Free Software Foundation, Inc.
+   Copyright 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney.
 
@@ -61,16 +61,18 @@ static const name_map decode_combine_map[] = {
   {NULL, 0},
 };
 
+#if 0
 static const name_map decode_search_map[] = {
   {"constants", decode_find_constants},
   {"mixed", decode_find_mixed},
   {"strings", decode_find_strings},
   {NULL, decode_find_mixed},
 };
+#endif
 
 
 static void
-set_bits (int bit[max_insn_bit_size], unsigned64 value)
+set_bits (int bit[max_insn_bit_size], uint64_t value)
 {
   int bit_nr;
   for (bit_nr = 0; bit_nr < max_insn_bit_size; bit_nr++)
@@ -83,7 +85,7 @@ set_bits (int bit[max_insn_bit_size], unsigned64 value)
 }
 
 decode_table *
-load_decode_table (char *file_name)
+load_decode_table (const char *file_name)
 {
   table *file = table_open (file_name);
   table_entry *entry;
@@ -131,6 +133,8 @@ load_decode_table (char *file_name)
 		  break;
 		}
 	      chp = skip_to_separator (chp, ",");
+	      if (*chp == ',')
+		++chp;
 	      chp = skip_spaces (chp);
 	    }
 	}
@@ -284,7 +288,7 @@ load_decode_table (char *file_name)
 
 
 int
-decode_table_max_word_nr (decode_table *entry)
+decode_table_max_word_nr (const decode_table *entry)
 {
   int max_word_nr = 0;
   while (entry != NULL)
@@ -303,19 +307,19 @@ decode_table_max_word_nr (decode_table *entry)
 }
 
 
-
 static void
-dump_decode_cond (lf *file, char *prefix, decode_cond *cond, char *suffix)
+dump_decode_cond (lf *file, const char *prefix, const decode_cond *cond,
+		  const char *suffix)
 {
-  lf_printf (file, "%s(decode_cond *) 0x%lx", prefix, (long) cond);
+  lf_printf (file, "%s(decode_cond *) %p", prefix, cond);
   if (cond != NULL)
     {
       lf_indent (file, +1);
       lf_printf (file, "\n(word_nr %d)", cond->word_nr);
-      lf_printf (file, "\n(mask 0x%lx)", (long) cond->mask);
-      lf_printf (file, "\n(value 0x%lx)", (long) cond->value);
-      lf_printf (file, "\n(is_equal 0x%lx)", (long) cond->is_equal);
-      lf_printf (file, "\n(next (decode_cond *) 0%lx)", (long) cond->next);
+      lf_printf (file, "\n(mask %p)", cond->mask);
+      lf_printf (file, "\n(value %p)", cond->value);
+      lf_printf (file, "\n(is_equal %d)", cond->is_equal);
+      lf_printf (file, "\n(next (decode_cond *) %p)", cond->next);
       lf_indent (file, -1);
     }
   lf_printf (file, "%s", suffix);
@@ -323,9 +327,10 @@ dump_decode_cond (lf *file, char *prefix, decode_cond *cond, char *suffix)
 
 
 static void
-dump_decode_conds (lf *file, char *prefix, decode_cond *cond, char *suffix)
+dump_decode_conds (lf *file, const char *prefix, const decode_cond *cond,
+		   const char *suffix)
 {
-  lf_printf (file, "%s(decode_cond *) 0x%lx", prefix, (long) cond);
+  lf_printf (file, "%s(decode_cond *) %p", prefix, cond);
   while (cond != NULL)
     {
       dump_decode_cond (file, "\n(", cond, ")");
@@ -336,9 +341,10 @@ dump_decode_conds (lf *file, char *prefix, decode_cond *cond, char *suffix)
 
 
 void
-dump_decode_rule (lf *file, char *prefix, decode_table *rule, char *suffix)
+dump_decode_rule (lf *file, const char *prefix, const decode_table *rule,
+		  const char *suffix)
 {
-  lf_printf (file, "%s(decode_table *) 0x%lx", prefix, (long) rule);
+  lf_printf (file, "%s(decode_table *) %p", prefix, rule);
   if (rule != NULL)
     {
       lf_indent (file, +1);
@@ -359,7 +365,7 @@ dump_decode_rule (lf *file, char *prefix, decode_table *rule, char *suffix)
       dump_filter (file, "\n(format_names \"", rule->format_names, "\")");
       dump_filter (file, "\n(model_names \"", rule->model_names, "\")");
       dump_decode_conds (file, "\n(conditions ", rule->conditions, ")");
-      lf_printf (file, "\n(next 0x%lx)", (long) rule->next);
+      lf_printf (file, "\n(next %p)", rule->next);
       lf_indent (file, -1);
     }
   lf_printf (file, "%s", suffix);
@@ -369,7 +375,10 @@ dump_decode_rule (lf *file, char *prefix, decode_table *rule, char *suffix)
 #ifdef MAIN
 
 static void
-dump_decode_rules (lf *file, char *prefix, decode_table *rule, char *suffix)
+dump_decode_rules (lf *file,
+		   const char *prefix,
+		   const decode_table *rule,
+		   const char *suffix)
 {
   lf_printf (file, "%s", prefix);
   while (rule != NULL)

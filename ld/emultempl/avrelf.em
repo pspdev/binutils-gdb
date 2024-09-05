@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+#   Copyright (C) 2006-2024 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -134,6 +134,7 @@ avr_elf_create_output_section_statements (void)
       einfo (_("%X%P: can not create stub BFD: %E\n"));
       return;
     }
+  stub_file->the_bfd->flags |= BFD_LINKER_CREATED;
 
   /* Now we add the stub section.  */
 
@@ -230,15 +231,6 @@ avr_finish (void)
 }
 EOF
 
-
-PARSE_AND_LIST_PROLOGUE='
-
-#define OPTION_NO_CALL_RET_REPLACEMENT 301
-#define OPTION_PMEM_WRAP_AROUND	       302
-#define OPTION_NO_STUBS		       303
-#define OPTION_DEBUG_STUBS	       304
-#define OPTION_DEBUG_RELAX	       305
-'
 
 PARSE_AND_LIST_LONGOPTS='
   { "no-call-ret-replacement", no_argument,

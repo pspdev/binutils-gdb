@@ -1,6 +1,6 @@
 /* Convert types from GDB to GCC
 
-   Copyright (C) 2014-2021 Free Software Foundation, Inc.
+   Copyright (C) 2014-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,7 +18,6 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 
-#include "defs.h"
 #include "gdbtypes.h"
 #include "compile-internal.h"
 #include "compile-c.h"
@@ -29,7 +28,7 @@
 static gcc_type
 convert_pointer (compile_c_instance *context, struct type *type)
 {
-  gcc_type target = context->convert_type (TYPE_TARGET_TYPE (type));
+  gcc_type target = context->convert_type (type->target_type ());
 
   return context->plugin ().build_pointer_type (target);
 }
@@ -42,9 +41,9 @@ convert_array (compile_c_instance *context, struct type *type)
   gcc_type element_type;
   struct type *range = type->index_type ();
 
-  element_type = context->convert_type (TYPE_TARGET_TYPE (type));
+  element_type = context->convert_type (type->target_type ());
 
-  if (range->bounds ()->low.kind () != PROP_CONST)
+  if (!range->bounds ()->low.is_constant ())
     return context->plugin ().error (_("array type with non-constant"
 				       " lower bound is not supported"));
   if (range->bounds ()->low.const_val () != 0)
@@ -106,19 +105,23 @@ convert_struct_or_union (compile_c_instance *context, struct type *type)
   for (i = 0; i < type->num_fields (); ++i)
     {
       gcc_type field_type;
-      unsigned long bitsize = TYPE_FIELD_BITSIZE (type, i);
+      unsigned long bitsize = type->field (i).bitsize ();
 
       field_type = context->convert_type (type->field (i).type ());
       if (bitsize == 0)
-	bitsize = 8 * TYPE_LENGTH (type->field (i).type ());
+	bitsize = 8 * type->field (i).type ()->length ();
       context->plugin ().build_add_field (result,
-					  TYPE_FIELD_NAME (type, i),
+					  type->field (i).name (),
 					  field_type,
 					  bitsize,
-					  TYPE_FIELD_BITPOS (type, i));
+					  type->field (i).loc_bitpos ());
     }
 
-  context->plugin ().finish_record_or_union (result, TYPE_LENGTH (type));
+  if (context->plugin ().version () >= GCC_C_FE_VERSION_2)
+    context->plugin ().finish_record_with_alignment (result, type->length (),
+						     type_align (type));
+  else
+    context->plugin ().finish_record_or_union (result, type->length ());
   return result;
 }
 
@@ -131,13 +134,13 @@ convert_enum (compile_c_instance *context, struct type *type)
   int i;
 
   int_type = context->plugin ().int_type_v0 (type->is_unsigned (),
-					     TYPE_LENGTH (type));
+					     type->length ());
 
   result = context->plugin ().build_enum_type (int_type);
   for (i = 0; i < type->num_fields (); ++i)
     {
       context->plugin ().build_add_enum_constant
-	(result, TYPE_FIELD_NAME (type, i), TYPE_FIELD_ENUMVAL (type, i));
+	(result, type->field (i).name (), type->field (i).loc_enumval ());
     }
 
   context->plugin ().finish_enum_type (result);
@@ -155,7 +158,7 @@ convert_func (compile_c_instance *context, struct type *type)
   struct gcc_type_array array;
   int is_varargs = type->has_varargs () || !type->is_prototyped ();
 
-  struct type *target_type = TYPE_TARGET_TYPE (type);
+  struct type *target_type = type->target_type ();
 
   /* Functions with no debug info have no return type.  Ideally we'd
      want to fallback to the type of the cast just before the
@@ -164,10 +167,7 @@ convert_func (compile_c_instance *context, struct type *type)
      GDB's parser used to do.  */
   if (target_type == NULL)
     {
-      if (type->is_objfile_owned ())
-	target_type = objfile_type (type->objfile_owner ())->builtin_int;
-      else
-	target_type = builtin_type (type->arch_owner ())->builtin_int;
+      target_type = builtin_type (type->arch ())->builtin_int;
       warning (_("function has unknown return type; assuming int"));
     }
 
@@ -196,16 +196,16 @@ convert_int (compile_c_instance *context, struct type *type)
     {
       if (type->has_no_signedness ())
 	{
-	  gdb_assert (TYPE_LENGTH (type) == 1);
+	  gdb_assert (type->length () == 1);
 	  return context->plugin ().char_type ();
 	}
       return context->plugin ().int_type (type->is_unsigned (),
-					  TYPE_LENGTH (type),
+					  type->length (),
 					  type->name ());
     }
   else
     return context->plugin ().int_type_v0 (type->is_unsigned (),
-					   TYPE_LENGTH (type));
+					   type->length ());
 }
 
 /* Convert a floating-point type to its gcc representation.  */
@@ -214,10 +214,10 @@ static gcc_type
 convert_float (compile_c_instance *context, struct type *type)
 {
   if (context->plugin ().version () >= GCC_C_FE_VERSION_1)
-    return context->plugin ().float_type (TYPE_LENGTH (type),
+    return context->plugin ().float_type (type->length (),
 					  type->name ());
   else
-    return context->plugin ().float_type_v0 (TYPE_LENGTH (type));
+    return context->plugin ().float_type_v0 (type->length ());
 }
 
 /* Convert the 'void' type to its gcc representation.  */
@@ -263,7 +263,7 @@ convert_qualified (compile_c_instance *context, struct type *type)
 static gcc_type
 convert_complex (compile_c_instance *context, struct type *type)
 {
-  gcc_type base = context->convert_type (TYPE_TARGET_TYPE (type));
+  gcc_type base = context->convert_type (type->target_type ());
 
   return context->plugin ().build_complex_type (base);
 }
@@ -322,11 +322,7 @@ convert_type_basic (compile_c_instance *context, struct type *type)
 	   the cast-to type as the variable's type, like GDB's
 	   built-in parser does.  For now, assume "int" like GDB's
 	   built-in parser used to do, but at least warn.  */
-	struct type *fallback;
-	if (type->is_objfile_owned ())
-	  fallback = objfile_type (type->objfile_owner ())->builtin_int;
-	else
-	  fallback = builtin_type (type->arch_owner ())->builtin_int;
+	struct type *fallback = builtin_type (type->arch ())->builtin_int;
 	warning (_("variable has unknown type; assuming int"));
 	return convert_int (context, fallback);
       }

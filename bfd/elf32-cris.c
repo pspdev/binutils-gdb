@@ -1,5 +1,5 @@
 /* CRIS-specific support for 32-bit ELF.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2024 Free Software Foundation, Inc.
    Contributed by Axis Communications AB.
    Written by Hans-Peter Nilsson, based on elf32-fr30.c
    PIC and shlib bits based primarily on elf32-m68k.c and elf32-i386.c.
@@ -40,7 +40,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* This reloc does nothing.  */
   HOWTO (R_CRIS_NONE,		/* type */
 	 0,			/* rightshift */
-	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -55,7 +55,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* An 8 bit absolute relocation.  */
   HOWTO (R_CRIS_8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -70,7 +70,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* A 16 bit absolute relocation.  */
   HOWTO (R_CRIS_16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -85,7 +85,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* A 32 bit absolute relocation.  */
   HOWTO (R_CRIS_32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -105,7 +105,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* An 8 bit PC-relative relocation.  */
   HOWTO (R_CRIS_8_PCREL,	/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -120,7 +120,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* A 16 bit PC-relative relocation.  */
   HOWTO (R_CRIS_16_PCREL,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -135,7 +135,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* A 32 bit PC-relative relocation.  */
   HOWTO (R_CRIS_32_PCREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -150,7 +150,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* GNU extension to record C++ vtable hierarchy.  */
   HOWTO (R_CRIS_GNU_VTINHERIT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -165,7 +165,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* GNU extension to record C++ vtable member usage.  */
   HOWTO (R_CRIS_GNU_VTENTRY,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -184,7 +184,7 @@ static reloc_howto_type cris_elf_howto_table [] =
      run has to have the data at some particular address.  */
   HOWTO (R_CRIS_COPY,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -199,7 +199,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* Like R_CRIS_32, but used when setting global offset table entries.  */
   HOWTO (R_CRIS_GLOB_DAT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -214,7 +214,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* Marks a procedure linkage table entry for a symbol.  */
   HOWTO (R_CRIS_JUMP_SLOT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -231,7 +231,7 @@ static reloc_howto_type cris_elf_howto_table [] =
      addend.  */
   HOWTO (R_CRIS_RELATIVE,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -246,7 +246,7 @@ static reloc_howto_type cris_elf_howto_table [] =
   /* Like R_CRIS_32, but referring to the GOT table entry for the symbol.  */
   HOWTO (R_CRIS_16_GOT,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -260,7 +260,7 @@ static reloc_howto_type cris_elf_howto_table [] =
 
   HOWTO (R_CRIS_32_GOT,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -276,7 +276,7 @@ static reloc_howto_type cris_elf_howto_table [] =
      the GOT table for the symbol.  */
   HOWTO (R_CRIS_16_GOTPLT,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -290,7 +290,7 @@ static reloc_howto_type cris_elf_howto_table [] =
 
   HOWTO (R_CRIS_32_GOTPLT,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -306,7 +306,7 @@ static reloc_howto_type cris_elf_howto_table [] =
      be necessary.  */
   HOWTO (R_CRIS_32_GOTREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -322,7 +322,7 @@ static reloc_howto_type cris_elf_howto_table [] =
      to create PLT entry for symbol.  */
   HOWTO (R_CRIS_32_PLT_GOTREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -339,7 +339,7 @@ static reloc_howto_type cris_elf_howto_table [] =
      symbol.  */
   HOWTO (R_CRIS_32_PLT_PCREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -357,10 +357,10 @@ static reloc_howto_type cris_elf_howto_table [] =
      tests to actually refuse gracefully to handle these and PIC
      relocs for cross-format linking.  */
 #define TLSHOWTO32(name) \
- HOWTO (name, 0, 2, 32, false, 0, complain_overflow_bitfield, \
+ HOWTO (name, 0, 4, 32, false, 0, complain_overflow_bitfield, \
 	bfd_elf_generic_reloc, #name, false, 0, 0xffffffff, false)
 #define TLSHOWTO16X(name, X)	     \
- HOWTO (name, 0, 1, 16, false, 0, complain_overflow_ ## X, \
+ HOWTO (name, 0, 2, 16, false, 0, complain_overflow_ ## X, \
 	bfd_elf_generic_reloc, #name, false, 0, 0xffff, false)
 #define TLSHOWTO16(name) TLSHOWTO16X(name, unsigned)
 #define TLSHOWTO16S(name) TLSHOWTO16X(name, signed)
@@ -492,7 +492,7 @@ cris_elf_pcrel_reloc (bfd *abfd ATTRIBUTE_UNUSED,
 
      Only adjust when doing a final link.  */
   if (output_bfd == (bfd *) NULL)
-    reloc_entry->addend -= 1 << reloc_entry->howto->size;
+    reloc_entry->addend -= bfd_get_reloc_size (reloc_entry->howto);
 
   return
     bfd_elf_generic_reloc (abfd, reloc_entry, symbol, data,
@@ -2082,8 +2082,6 @@ elf_cris_finish_dynamic_symbol (bfd *output_bfd,
   const bfd_byte *plt_pic_entry = elf_cris_pic_plt_entry;
 
   htab = elf_cris_hash_table (info);
-  if (htab == NULL)
-    return false;
 
   /* Adjust the various PLT entry offsets.  */
   if (bfd_get_mach (output_bfd) == bfd_mach_cris_v32)
@@ -2527,7 +2525,7 @@ cris_elf_plt_sym_val (bfd_vma i ATTRIBUTE_UNUSED, const asection *plt,
    entry but we found we will not create any.  Called when we find we will
    not have any PLT for this symbol, by for example
    elf_cris_adjust_dynamic_symbol when we're doing a proper dynamic link,
-   or elf_cris_size_dynamic_sections if no dynamic sections will be
+   or elf_cris_late_size_sections if no dynamic sections will be
    created (we're only linking static objects).  */
 
 static bool
@@ -3508,8 +3506,8 @@ cris_elf_check_relocs (bfd *abfd,
 /* Set the sizes of the dynamic sections.  */
 
 static bool
-elf_cris_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
-				struct bfd_link_info *info)
+elf_cris_late_size_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
+			     struct bfd_link_info *info)
 {
   struct elf_cris_link_hash_table * htab;
   bfd *dynobj;
@@ -3521,7 +3519,8 @@ elf_cris_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
     return false;
 
   dynobj = htab->root.dynobj;
-  BFD_ASSERT (dynobj != NULL);
+  if (dynobj == NULL)
+    return true;
 
   if (htab->root.dynamic_sections_created)
     {
@@ -4090,8 +4089,8 @@ elf_cris_got_elt_size (bfd *abfd ATTRIBUTE_UNUSED,
 	elf_cris_adjust_dynamic_symbol
 #define elf_backend_copy_indirect_symbol \
 	elf_cris_copy_indirect_symbol
-#define elf_backend_size_dynamic_sections \
-	elf_cris_size_dynamic_sections
+#define elf_backend_late_size_sections \
+	elf_cris_late_size_sections
 #define elf_backend_init_index_section		_bfd_elf_init_1_index_section
 #define elf_backend_finish_dynamic_symbol \
 	elf_cris_finish_dynamic_symbol
@@ -4111,6 +4110,8 @@ elf_cris_got_elt_size (bfd *abfd ATTRIBUTE_UNUSED,
 #define elf_backend_got_elt_size elf_cris_got_elt_size
 #define elf_backend_dtrel_excludes_plt	1
 #define elf_backend_want_dynrelro	1
+
+#define elf_backend_default_execstack	0
 
 /* Later, we my want to optimize RELA entries into REL entries for dynamic
    linking and libraries (if it's a win of any significance).  Until then,

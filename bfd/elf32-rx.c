@@ -1,5 +1,5 @@
 /* Renesas RX specific support for 32-bit ELF.
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -49,25 +49,25 @@ void rx_dump_symtab (bfd *, void *, void *);
 
 static reloc_howto_type rx_elf_howto_table [] =
 {
-  RXREL (NONE,	       3,  0, 0, dont,	   false),
-  RXREL (DIR32,	       2, 32, 0, signed,   false),
-  RXREL (DIR24S,       2, 24, 0, signed,   false),
-  RXREL (DIR16,	       1, 16, 0, dont,	   false),
-  RXREL (DIR16U,       1, 16, 0, unsigned, false),
-  RXREL (DIR16S,       1, 16, 0, signed,   false),
-  RXREL (DIR8,	       0,  8, 0, dont,	   false),
-  RXREL (DIR8U,	       0,  8, 0, unsigned, false),
-  RXREL (DIR8S,	       0,  8, 0, signed,   false),
-  RXREL (DIR24S_PCREL, 2, 24, 0, signed,   true),
-  RXREL (DIR16S_PCREL, 1, 16, 0, signed,   true),
-  RXREL (DIR8S_PCREL,  0,  8, 0, signed,   true),
-  RXREL (DIR16UL,      1, 16, 2, unsigned, false),
-  RXREL (DIR16UW,      1, 16, 1, unsigned, false),
-  RXREL (DIR8UL,       0,  8, 2, unsigned, false),
-  RXREL (DIR8UW,       0,  8, 1, unsigned, false),
-  RXREL (DIR32_REV,    1, 16, 0, dont,	   false),
-  RXREL (DIR16_REV,    1, 16, 0, dont,	   false),
-  RXREL (DIR3U_PCREL,  0,  3, 0, dont,	   true),
+  RXREL (NONE,	       0,  0, 0, dont,	   false),
+  RXREL (DIR32,	       4, 32, 0, signed,   false),
+  RXREL (DIR24S,       4, 24, 0, signed,   false),
+  RXREL (DIR16,	       2, 16, 0, dont,	   false),
+  RXREL (DIR16U,       2, 16, 0, unsigned, false),
+  RXREL (DIR16S,       2, 16, 0, signed,   false),
+  RXREL (DIR8,	       1,  8, 0, dont,	   false),
+  RXREL (DIR8U,	       1,  8, 0, unsigned, false),
+  RXREL (DIR8S,	       1,  8, 0, signed,   false),
+  RXREL (DIR24S_PCREL, 4, 24, 0, signed,   true),
+  RXREL (DIR16S_PCREL, 2, 16, 0, signed,   true),
+  RXREL (DIR8S_PCREL,  1,  8, 0, signed,   true),
+  RXREL (DIR16UL,      2, 16, 2, unsigned, false),
+  RXREL (DIR16UW,      2, 16, 1, unsigned, false),
+  RXREL (DIR8UL,       1,  8, 2, unsigned, false),
+  RXREL (DIR8UW,       1,  8, 1, unsigned, false),
+  RXREL (DIR32_REV,    2, 16, 0, dont,	   false),
+  RXREL (DIR16_REV,    2, 16, 0, dont,	   false),
+  RXREL (DIR3U_PCREL,  1,  3, 0, dont,	   true),
 
   EMPTY_HOWTO (0x13),
   EMPTY_HOWTO (0x14),
@@ -83,19 +83,19 @@ static reloc_howto_type rx_elf_howto_table [] =
   EMPTY_HOWTO (0x1e),
   EMPTY_HOWTO (0x1f),
 
-  RXREL (RH_3_PCREL, 0,	 3, 0, signed,	 true),
-  RXREL (RH_16_OP,   1, 16, 0, signed,	 false),
-  RXREL (RH_24_OP,   2, 24, 0, signed,	 false),
-  RXREL (RH_32_OP,   2, 32, 0, signed,	 false),
-  RXREL (RH_24_UNS,  2, 24, 0, unsigned, false),
-  RXREL (RH_8_NEG,   0,	 8, 0, signed,	 false),
-  RXREL (RH_16_NEG,  1, 16, 0, signed,	 false),
-  RXREL (RH_24_NEG,  2, 24, 0, signed,	 false),
-  RXREL (RH_32_NEG,  2, 32, 0, signed,	 false),
-  RXREL (RH_DIFF,    2, 32, 0, signed,	 false),
-  RXREL (RH_GPRELB,  1, 16, 0, unsigned, false),
-  RXREL (RH_GPRELW,  1, 16, 0, unsigned, false),
-  RXREL (RH_GPRELL,  1, 16, 0, unsigned, false),
+  RXREL (RH_3_PCREL, 1,	 3, 0, signed,	 true),
+  RXREL (RH_16_OP,   2, 16, 0, signed,	 false),
+  RXREL (RH_24_OP,   4, 24, 0, signed,	 false),
+  RXREL (RH_32_OP,   4, 32, 0, signed,	 false),
+  RXREL (RH_24_UNS,  4, 24, 0, unsigned, false),
+  RXREL (RH_8_NEG,   1,	 8, 0, signed,	 false),
+  RXREL (RH_16_NEG,  2, 16, 0, signed,	 false),
+  RXREL (RH_24_NEG,  4, 24, 0, signed,	 false),
+  RXREL (RH_32_NEG,  4, 32, 0, signed,	 false),
+  RXREL (RH_DIFF,    4, 32, 0, signed,	 false),
+  RXREL (RH_GPRELB,  2, 16, 0, unsigned, false),
+  RXREL (RH_GPRELW,  2, 16, 0, unsigned, false),
+  RXREL (RH_GPRELL,  2, 16, 0, unsigned, false),
   RXREL (RH_RELAX,   0,	 0, 0, dont,	 false),
 
   EMPTY_HOWTO (0x2e),
@@ -118,23 +118,23 @@ static reloc_howto_type rx_elf_howto_table [] =
   EMPTY_HOWTO (0x3f),
   EMPTY_HOWTO (0x40),
 
-  RXREL (ABS32,	       2, 32, 0, dont,	   false),
-  RXREL (ABS24S,       2, 24, 0, signed,   false),
-  RXREL (ABS16,	       1, 16, 0, dont,	   false),
-  RXREL (ABS16U,       1, 16, 0, unsigned, false),
-  RXREL (ABS16S,       1, 16, 0, signed,   false),
-  RXREL (ABS8,	       0,  8, 0, dont,	   false),
-  RXREL (ABS8U,	       0,  8, 0, unsigned, false),
-  RXREL (ABS8S,	       0,  8, 0, signed,   false),
-  RXREL (ABS24S_PCREL, 2, 24, 0, signed,   true),
-  RXREL (ABS16S_PCREL, 1, 16, 0, signed,   true),
-  RXREL (ABS8S_PCREL,  0,  8, 0, signed,   true),
-  RXREL (ABS16UL,      1, 16, 0, unsigned, false),
-  RXREL (ABS16UW,      1, 16, 0, unsigned, false),
-  RXREL (ABS8UL,       0,  8, 0, unsigned, false),
-  RXREL (ABS8UW,       0,  8, 0, unsigned, false),
-  RXREL (ABS32_REV,    2, 32, 0, dont,	   false),
-  RXREL (ABS16_REV,    1, 16, 0, dont,	   false),
+  RXREL (ABS32,	       4, 32, 0, dont,	   false),
+  RXREL (ABS24S,       4, 24, 0, signed,   false),
+  RXREL (ABS16,	       2, 16, 0, dont,	   false),
+  RXREL (ABS16U,       2, 16, 0, unsigned, false),
+  RXREL (ABS16S,       2, 16, 0, signed,   false),
+  RXREL (ABS8,	       1,  8, 0, dont,	   false),
+  RXREL (ABS8U,	       1,  8, 0, unsigned, false),
+  RXREL (ABS8S,	       1,  8, 0, signed,   false),
+  RXREL (ABS24S_PCREL, 4, 24, 0, signed,   true),
+  RXREL (ABS16S_PCREL, 2, 16, 0, signed,   true),
+  RXREL (ABS8S_PCREL,  1,  8, 0, signed,   true),
+  RXREL (ABS16UL,      2, 16, 0, unsigned, false),
+  RXREL (ABS16UW,      2, 16, 0, unsigned, false),
+  RXREL (ABS8UL,       1,  8, 0, unsigned, false),
+  RXREL (ABS8UW,       1,  8, 0, unsigned, false),
+  RXREL (ABS32_REV,    4, 32, 0, dont,	   false),
+  RXREL (ABS16_REV,    2, 16, 0, dont,	   false),
 
 #define STACK_REL_P(x) ((x) <= R_RX_ABS16_REV && (x) >= R_RX_ABS32)
 
@@ -202,23 +202,33 @@ static reloc_howto_type rx_elf_howto_table [] =
   RXREL (RH_UNEG4p8,   0,  0, 0, dont,	   false),
   /* End of internal relocs.  */
 
-  RXREL (SYM,	    2, 32, 0, dont, false),
-  RXREL (OPneg,	    2, 32, 0, dont, false),
-  RXREL (OPadd,	    2, 32, 0, dont, false),
-  RXREL (OPsub,	    2, 32, 0, dont, false),
-  RXREL (OPmul,	    2, 32, 0, dont, false),
-  RXREL (OPdiv,	    2, 32, 0, dont, false),
-  RXREL (OPshla,    2, 32, 0, dont, false),
-  RXREL (OPshra,    2, 32, 0, dont, false),
-  RXREL (OPsctsize, 2, 32, 0, dont, false),
-  RXREL (OPscttop,  2, 32, 0, dont, false),
-  RXREL (OPand,	    2, 32, 0, dont, false),
-  RXREL (OPor,	    2, 32, 0, dont, false),
-  RXREL (OPxor,	    2, 32, 0, dont, false),
-  RXREL (OPnot,	    2, 32, 0, dont, false),
-  RXREL (OPmod,	    2, 32, 0, dont, false),
-  RXREL (OPromtop,  2, 32, 0, dont, false),
-  RXREL (OPramtop,  2, 32, 0, dont, false)
+  RXREL (SYM,	    4, 32, 0, dont, false),
+  RXREL (OPneg,	    4, 32, 0, dont, false),
+  RXREL (OPadd,	    4, 32, 0, dont, false),
+  RXREL (OPsub,	    4, 32, 0, dont, false),
+  RXREL (OPmul,	    4, 32, 0, dont, false),
+  RXREL (OPdiv,	    4, 32, 0, dont, false),
+  RXREL (OPshla,    4, 32, 0, dont, false),
+  RXREL (OPshra,    4, 32, 0, dont, false),
+  RXREL (OPsctsize, 4, 32, 0, dont, false),
+
+  EMPTY_HOWTO (0x89),
+  EMPTY_HOWTO (0x8a),
+  EMPTY_HOWTO (0x8b),
+  EMPTY_HOWTO (0x8c),
+
+  RXREL (OPscttop,  4, 32, 0, dont, false),
+
+  EMPTY_HOWTO (0x8e),
+  EMPTY_HOWTO (0x8f),
+
+  RXREL (OPand,	    4, 32, 0, dont, false),
+  RXREL (OPor,	    4, 32, 0, dont, false),
+  RXREL (OPxor,	    4, 32, 0, dont, false),
+  RXREL (OPnot,	    4, 32, 0, dont, false),
+  RXREL (OPmod,	    4, 32, 0, dont, false),
+  RXREL (OPromtop,  4, 32, 0, dont, false),
+  RXREL (OPramtop,  4, 32, 0, dont, false)
 };
 
 /* Map BFD reloc types to RX ELF reloc types.  */
@@ -307,7 +317,8 @@ rx_info_to_howto_rela (bfd *		   abfd,
   unsigned int r_type;
 
   r_type = ELF32_R_TYPE (dst->r_info);
-  if (r_type >= (unsigned int) R_RX_max)
+  BFD_ASSERT (R_RX_max == ARRAY_SIZE (rx_elf_howto_table));
+  if (r_type >= ARRAY_SIZE (rx_elf_howto_table))
     {
       /* xgettext:c-format */
       _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
@@ -2027,8 +2038,9 @@ elf32_rx_relax_section (bfd *abfd,
      this section does not have relocs, or if this is not a
      code section.  */
   if (bfd_link_relocatable (link_info)
-      || (sec->flags & SEC_RELOC) == 0
       || sec->reloc_count == 0
+      || (sec->flags & SEC_RELOC) == 0
+      || (sec->flags & SEC_HAS_CONTENTS) == 0
       || (sec->flags & SEC_CODE) == 0)
     return true;
 
@@ -3961,16 +3973,17 @@ rx_table_map (struct bfd_hash_entry *vent, void *vinfo)
 
   bfd_hash_traverse (&(info->info->hash->table), rx_table_map_2, info);
 
-  fprintf (info->mapfile, "\nRX Vector Table: %s has %d entries at 0x%08" BFD_VMA_FMT "x\n\n",
-	   tname, info->table_size, start_addr);
+  fprintf (info->mapfile,
+	   "\nRX Vector Table: %s has %d entries at 0x%08" PRIx64 "\n\n",
+	   tname, info->table_size, (uint64_t) start_addr);
 
   if (info->table_default_entry)
-    fprintf (info->mapfile, "  default handler is: %s at 0x%08" BFD_VMA_FMT "x\n",
+    fprintf (info->mapfile, "  default handler is: %s at 0x%08" PRIx64 "\n",
 	     info->table_default_entry->root.string,
-	     info->table_default_handler);
+	     (uint64_t) info->table_default_handler);
   else if (info->table_default_handler != (bfd_vma)(-1))
-    fprintf (info->mapfile, "  default handler is at 0x%08" BFD_VMA_FMT "x\n",
-	     info->table_default_handler);
+    fprintf (info->mapfile, "  default handler is at 0x%08" PRIx64 "\n",
+	     (uint64_t) info->table_default_handler);
   else
     fprintf (info->mapfile, "  no default handler\n");
 
@@ -3986,7 +3999,8 @@ rx_table_map (struct bfd_hash_entry *vent, void *vinfo)
 	}
       need_elipses = 1;
 
-      fprintf (info->mapfile, "  0x%08" BFD_VMA_FMT "x [%3d] ", start_addr + 4 * idx, idx);
+      fprintf (info->mapfile,
+	       "  0x%08" PRIx64 " [%3d] ", (uint64_t) start_addr + 4 * idx, idx);
 
       if (info->table_handlers[idx] == (bfd_vma) (-1))
 	fprintf (info->mapfile, "(no handler found)\n");
@@ -4001,12 +4015,15 @@ rx_table_map (struct bfd_hash_entry *vent, void *vinfo)
 
       else if (info->table_entries[idx])
 	{
-	  fprintf (info->mapfile, "0x%08" BFD_VMA_FMT "x %s\n", info->table_handlers[idx], info->table_entries[idx]->root.string);
+	  fprintf (info->mapfile, "0x%08" PRIx64 " %s\n",
+		   (uint64_t) info->table_handlers[idx],
+		   info->table_entries[idx]->root.string);
 	}
 
       else
 	{
-	  fprintf (info->mapfile, "0x%08" BFD_VMA_FMT "x ???\n", info->table_handlers[idx]);
+	  fprintf (info->mapfile, "0x%08" PRIx64 " ???\n",
+		   (uint64_t) info->table_handlers[idx]);
 	}
     }
   if (need_elipses)

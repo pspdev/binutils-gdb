@@ -1,5 +1,5 @@
 /* AVR-specific support for 32-bit ELF
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2024 Free Software Foundation, Inc.
    Contributed by Denis Chertykov <denisc@overta.ru>
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -121,7 +121,7 @@ static reloc_howto_type elf_avr_howto_table[] =
 {
   HOWTO (R_AVR_NONE,		/* type */
 	 0,			/* rightshift */
-	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* size */
 	 0,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -135,7 +135,7 @@ static reloc_howto_type elf_avr_howto_table[] =
 
   HOWTO (R_AVR_32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -150,7 +150,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* A 7 bit PC relative relocation.  */
   HOWTO (R_AVR_7_PCREL,		/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 7,			/* bitsize */
 	 true,			/* pc_relative */
 	 3,			/* bitpos */
@@ -165,7 +165,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* A 13 bit PC relative relocation.  */
   HOWTO (R_AVR_13_PCREL,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 13,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -180,7 +180,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* A 16 bit absolute relocation.  */
   HOWTO (R_AVR_16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -196,7 +196,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      Will be changed when linker stubs are needed.  */
   HOWTO (R_AVR_16_PM,		/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -211,7 +211,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  */
   HOWTO (R_AVR_LO8_LDI,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -226,7 +226,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  */
   HOWTO (R_AVR_HI8_LDI,		/* type */
 	 8,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -242,7 +242,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      a 32 bit link-time constant.  */
   HOWTO (R_AVR_HH8_LDI,		/* type */
 	 16,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -257,7 +257,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  */
   HOWTO (R_AVR_LO8_LDI_NEG,	/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -272,7 +272,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  */
   HOWTO (R_AVR_HI8_LDI_NEG,	/* type */
 	 8,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -287,7 +287,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  */
   HOWTO (R_AVR_HH8_LDI_NEG,	/* type */
 	 16,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -302,7 +302,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  Will not be changed when linker stubs are needed. */
   HOWTO (R_AVR_LO8_LDI_PM,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -317,7 +317,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  Will not be changed when linker stubs are needed. */
   HOWTO (R_AVR_HI8_LDI_PM,	/* type */
 	 9,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -332,7 +332,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  Will not be changed when linker stubs are needed. */
   HOWTO (R_AVR_HH8_LDI_PM,	/* type */
 	 17,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -347,7 +347,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  Will not be changed when linker stubs are needed. */
   HOWTO (R_AVR_LO8_LDI_PM_NEG,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -362,7 +362,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  Will not be changed when linker stubs are needed. */
   HOWTO (R_AVR_HI8_LDI_PM_NEG,	/* type */
 	 9,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -377,7 +377,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  Will not be changed when linker stubs are needed. */
   HOWTO (R_AVR_HH8_LDI_PM_NEG,	/* type */
 	 17,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -391,7 +391,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* Relocation for CALL command in ATmega.  */
   HOWTO (R_AVR_CALL,		/* type */
 	 1,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 23,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -406,7 +406,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  */
   HOWTO (R_AVR_LDI,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -421,7 +421,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For ldd/sdd command.  */
   HOWTO (R_AVR_6,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 6,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -436,7 +436,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For sbiw/adiw command.  */
   HOWTO (R_AVR_6_ADIW,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 6,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -450,7 +450,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* Most significant 8 bit value of a 32 bit link-time constant.  */
   HOWTO (R_AVR_MS8_LDI,		/* type */
 	 24,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -464,7 +464,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* Negative most significant 8 bit value of a 32 bit link-time constant.  */
   HOWTO (R_AVR_MS8_LDI_NEG,	/* type */
 	 24,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -479,7 +479,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  Will be changed when linker stubs are needed.  */
   HOWTO (R_AVR_LO8_LDI_GS,	/* type */
 	 1,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -494,7 +494,7 @@ static reloc_howto_type elf_avr_howto_table[] =
      For LDI command.  Will be changed when linker stubs are needed.  */
   HOWTO (R_AVR_HI8_LDI_GS,	/* type */
 	 9,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -508,7 +508,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* 8 bit offset.  */
   HOWTO (R_AVR_8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -522,7 +522,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* lo8-part to use in  .byte lo8(sym).  */
   HOWTO (R_AVR_8_LO8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -536,7 +536,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* hi8-part to use in  .byte hi8(sym).  */
   HOWTO (R_AVR_8_HI8,		/* type */
 	 8,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -550,7 +550,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* hlo8-part to use in  .byte hlo8(sym).  */
   HOWTO (R_AVR_8_HLO8,		/* type */
 	 16,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -563,7 +563,7 @@ static reloc_howto_type elf_avr_howto_table[] =
 	 false),		/* pcrel_offset */
   HOWTO (R_AVR_DIFF8,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 8,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -576,7 +576,7 @@ static reloc_howto_type elf_avr_howto_table[] =
 	 false),		/* pcrel_offset */
   HOWTO (R_AVR_DIFF16,		/* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 16,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -589,7 +589,7 @@ static reloc_howto_type elf_avr_howto_table[] =
 	 false),		/* pcrel_offset */
   HOWTO (R_AVR_DIFF32,		/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -603,7 +603,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* 7 bit immediate for LDS/STS in Tiny core.  */
   HOWTO (R_AVR_LDS_STS_16,  /* type */
 	 0,			/* rightshift */
-	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 2,			/* size */
 	 7,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -617,7 +617,7 @@ static reloc_howto_type elf_avr_howto_table[] =
 
   HOWTO (R_AVR_PORT6,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 6,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -630,7 +630,7 @@ static reloc_howto_type elf_avr_howto_table[] =
 	 false),		/* pcrel_offset */
   HOWTO (R_AVR_PORT5,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 1,			/* size */
 	 5,			/* bitsize */
 	 false,			/* pc_relative */
 	 0,			/* bitpos */
@@ -645,7 +645,7 @@ static reloc_howto_type elf_avr_howto_table[] =
   /* A 32 bit PC relative relocation.  */
   HOWTO (R_AVR_32_PCREL,	/* type */
 	 0,			/* rightshift */
-	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 4,			/* size */
 	 32,			/* bitsize */
 	 true,			/* pc_relative */
 	 0,			/* bitpos */
@@ -1048,7 +1048,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
 	       input_section->output_offset);
 
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       if (srel > ((1 << 7) - 1) || (srel < - (1 << 7)))
 	return bfd_reloc_overflow;
       x = bfd_get_16 (input_bfd, contents);
@@ -1066,7 +1066,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
 	       input_section->output_offset);
 
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
 
       srel = avr_relative_distance_considering_wrap_around (srel);
 
@@ -1228,11 +1228,11 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
 		    (unsigned int) reloc_addr);
 
 	  if (avr_stub_is_required_for_16_bit_reloc (srel - base_addr))
-	    return bfd_reloc_outofrange;
+	    return bfd_reloc_overflow;
 	}
 
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       srel = srel >> 1;
       x = bfd_get_16 (input_bfd, contents);
       x = (x & 0xf0f0) | (srel & 0xf) | ((srel << 4) & 0xf00);
@@ -1261,11 +1261,11 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
 		    (unsigned int) reloc_addr);
 
 	  if (avr_stub_is_required_for_16_bit_reloc (srel - base_addr))
-	    return bfd_reloc_outofrange;
+	    return bfd_reloc_overflow;
 	}
 
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       srel = srel >> 1;
       srel = (srel >> 8) & 0xff;
       x = bfd_get_16 (input_bfd, contents);
@@ -1277,7 +1277,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
       contents += rel->r_offset;
       srel = (bfd_signed_vma) relocation + rel->r_addend;
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       srel = srel >> 1;
       srel = (srel >> 16) & 0xff;
       x = bfd_get_16 (input_bfd, contents);
@@ -1290,7 +1290,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
       srel = (bfd_signed_vma) relocation + rel->r_addend;
       srel = -srel;
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       srel = srel >> 1;
       x = bfd_get_16 (input_bfd, contents);
       x = (x & 0xf0f0) | (srel & 0xf) | ((srel << 4) & 0xf00);
@@ -1302,7 +1302,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
       srel = (bfd_signed_vma) relocation + rel->r_addend;
       srel = -srel;
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       srel = srel >> 1;
       srel = (srel >> 8) & 0xff;
       x = bfd_get_16 (input_bfd, contents);
@@ -1315,7 +1315,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
       srel = (bfd_signed_vma) relocation + rel->r_addend;
       srel = -srel;
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       srel = srel >> 1;
       srel = (srel >> 16) & 0xff;
       x = bfd_get_16 (input_bfd, contents);
@@ -1327,7 +1327,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
       contents += rel->r_offset;
       srel = (bfd_signed_vma) relocation + rel->r_addend;
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       srel = srel >> 1;
       x = bfd_get_16 (input_bfd, contents);
       x |= ((srel & 0x10000) | ((srel << 3) & 0x1f00000)) >> 16;
@@ -1355,11 +1355,11 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
 		    (unsigned int) reloc_addr);
 
 	  if (avr_stub_is_required_for_16_bit_reloc (srel - base_addr))
-	    return bfd_reloc_outofrange;
+	    return bfd_reloc_overflow;
 	}
 
       if (srel & 1)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_other;
       srel = srel >> 1;
       bfd_put_16 (input_bfd, (bfd_vma) srel &0x00ffff, contents);
       break;
@@ -1375,7 +1375,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
       contents += rel->r_offset;
       srel = (bfd_signed_vma) relocation + rel->r_addend;
       if ((srel & 0xFFFF) < 0x40 || (srel & 0xFFFF) > 0xbf)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_overflow;
       srel = srel & 0x7f;
       x = bfd_get_16 (input_bfd, contents);
       x |= (srel & 0x0f) | ((srel & 0x30) << 5) | ((srel & 0x40) << 2);
@@ -1386,7 +1386,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
       contents += rel->r_offset;
       srel = (bfd_signed_vma) relocation + rel->r_addend;
       if ((srel & 0xffff) > 0x3f)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_overflow;
       x = bfd_get_16 (input_bfd, contents);
       x = (x & 0xf9f0) | ((srel & 0x30) << 5) | (srel & 0x0f);
       bfd_put_16 (input_bfd, x, contents);
@@ -1396,7 +1396,7 @@ avr_final_link_relocate (reloc_howto_type *		    howto,
       contents += rel->r_offset;
       srel = (bfd_signed_vma) relocation + rel->r_addend;
       if ((srel & 0xffff) > 0x1f)
-	return bfd_reloc_outofrange;
+	return bfd_reloc_overflow;
       x = bfd_get_16 (input_bfd, contents);
       x = (x & 0xff07) | ((srel & 0x1f) << 3);
       bfd_put_16 (input_bfd, x, contents);
@@ -1489,8 +1489,6 @@ elf32_avr_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 
       if (r != bfd_reloc_ok)
 	{
-	  const char * msg = (const char *) NULL;
-
 	  switch (r)
 	    {
 	    case bfd_reloc_overflow:
@@ -1505,25 +1503,29 @@ elf32_avr_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 	      break;
 
 	    case bfd_reloc_outofrange:
-	      msg = _("internal error: out of range error");
+	      /* xgettext:c-format */
+	      (*info->callbacks->einfo)
+		(_("%X%H: %s against `%s':"
+		   " error: relocation applies outside section\n"),
+		 input_bfd, input_section, rel->r_offset, howto->name, name);
 	      break;
 
-	    case bfd_reloc_notsupported:
-	      msg = _("internal error: unsupported relocation error");
-	      break;
-
-	    case bfd_reloc_dangerous:
-	      msg = _("internal error: dangerous relocation");
+	    case bfd_reloc_other:
+	      /* xgettext:c-format */
+	      (*info->callbacks->einfo)
+		(_("%X%H: %s against `%s':"
+		   " error: relocation target address is odd\n"),
+		 input_bfd, input_section, rel->r_offset, howto->name, name);
 	      break;
 
 	    default:
-	      msg = _("internal error: unknown error");
+	      /* xgettext:c-format */
+	      (*info->callbacks->einfo)
+		(_("%X%H: %s against `%s':"
+		   " internal error: unexpected relocation result %d\n"),
+		 input_bfd, input_section, rel->r_offset, howto->name, name, r);
 	      break;
 	    }
-
-	  if (msg)
-	    (*info->callbacks->warning) (info, msg, name, input_bfd,
-					 input_section, rel->r_offset);
 	}
     }
 
@@ -2520,8 +2522,9 @@ elf32_avr_relax_section (bfd *abfd,
      this section does not have relocs, or if this is not a
      code section.  */
   if (bfd_link_relocatable (link_info)
-      || (sec->flags & SEC_RELOC) == 0
       || sec->reloc_count == 0
+      || (sec->flags & SEC_RELOC) == 0
+      || (sec->flags & SEC_HAS_CONTENTS) == 0
       || (sec->flags & SEC_CODE) == 0)
     return true;
 
@@ -3068,6 +3071,10 @@ elf32_avr_relax_section (bfd *abfd,
 				      "at address 0x%x deleted.\n",
 				      (int) dot + insn_size);
 
+			    elf_section_data (sec)->relocs = internal_relocs;
+			    elf_section_data (sec)->this_hdr.contents = contents;
+			    symtab_hdr->contents = (unsigned char *) isymbuf;
+
 			    /* Delete two bytes of data.  */
 			    if (!elf32_avr_relax_delete_bytes (abfd, sec,
 							       irel->r_offset + insn_size, 2,
@@ -3210,6 +3217,13 @@ elf32_avr_get_relocated_section_contents (bfd *output_bfd,
 						       symbols);
   symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
 
+  bfd_byte *orig_data = data;
+  if (data == NULL)
+    {
+      data = bfd_malloc (input_section->size);
+      if (data == NULL)
+	return NULL;
+    }
   memcpy (data, elf_section_data (input_section)->this_hdr.contents,
 	  (size_t) input_section->size);
 
@@ -3279,6 +3293,8 @@ elf32_avr_get_relocated_section_contents (bfd *output_bfd,
     free (isymbuf);
   if (elf_section_data (input_section)->relocs != internal_relocs)
     free (internal_relocs);
+  if (orig_data == NULL)
+    free (data);
   return NULL;
 }
 
@@ -4201,7 +4217,7 @@ avr_elf32_load_property_records (bfd *abfd)
 
   /* Find the '.avr.prop' section and load the contents into memory.  */
   sec = bfd_get_section_by_name (abfd, AVR_PROPERTY_RECORD_SECTION_NAME);
-  if (sec == NULL)
+  if (sec == NULL || (sec->flags & SEC_HAS_CONTENTS) == 0)
     return NULL;
   return avr_elf32_load_records_from_section (abfd, sec);
 }

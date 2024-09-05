@@ -1,5 +1,5 @@
 /* Mach-O support for BFD.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2024 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -545,8 +545,8 @@ bfd_mach_o_encryption_info_command;
 
 typedef struct bfd_mach_o_main_command
 {
-  bfd_uint64_t entryoff;
-  bfd_uint64_t stacksize;
+  uint64_t entryoff;
+  uint64_t stacksize;
 }
 bfd_mach_o_main_command;
 
@@ -563,8 +563,8 @@ bfd_mach_o_source_version_command;
 typedef struct bfd_mach_o_note_command
 {
   char data_owner[16];
-  bfd_uint64_t offset;
-  bfd_uint64_t size;
+  uint64_t offset;
+  uint64_t size;
 }
 bfd_mach_o_note_command;
 
@@ -729,9 +729,11 @@ bool bfd_mach_o_find_nearest_line (bfd *, asymbol **,
 					  asection *, bfd_vma,
 					  const char **, const char **,
 					  unsigned int *, unsigned int *);
+#define bfd_mach_o_find_nearest_line_with_alt \
+  _bfd_nosymbols_find_nearest_line_with_alt
 #define bfd_mach_o_find_line _bfd_nosymbols_find_line
 bool bfd_mach_o_close_and_cleanup (bfd *);
-bool bfd_mach_o_free_cached_info (bfd *);
+bool bfd_mach_o_bfd_free_cached_info (bfd *);
 
 unsigned int bfd_mach_o_section_get_nbr_indirect (bfd *, bfd_mach_o_section *);
 unsigned int bfd_mach_o_section_get_entry_size (bfd *, bfd_mach_o_section *);

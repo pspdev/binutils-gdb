@@ -1,4 +1,4 @@
-# Copyright 2002-2021 Free Software Foundation, Inc.
+# Copyright 2002-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -25,8 +25,8 @@ set binfile2 [standard_output_file ${testfile2}]
 set opts [list debug]
 lappend opts "additional_flags=-ffunction-sections"
 lappend opts "additional_flags=-fdata-sections"
-lappend opts "additional_flags=-Wl,-gc-sections"
-lappend opts "additional_flags=-Wl,-e,main"
+lappend opts "ldflags=-Wl,-gc-sections"
+lappend opts "ldflags=-Wl,-e,main"
 
 # Place variables in .data instead of .sdata.
 if {[istarget "riscv*-*-*"]} {
@@ -93,11 +93,10 @@ with_test_prefix "single psymtabs" {
 # Same thing for symtabs
 
 gdb_exit
-global GDBFLAGS
-set saved_gdbflags $GDBFLAGS
-set GDBFLAGS "$GDBFLAGS --readnow $binfile1"
-gdb_start
-set GDBFLAGS $saved_gdbflags
+save_vars { GDBFLAGS } {
+    set GDBFLAGS "$GDBFLAGS --readnow $binfile1"
+    gdb_start
+}
 
 with_test_prefix "single symtabs" {
     test_eliminated_var my_global_symbol

@@ -2,7 +2,7 @@
 
 THIS FILE IS MACHINE GENERATED WITH CGEN.
 
-Copyright 1996-2021 Free Software Foundation, Inc.
+Copyright (C) 1996-2024 Free Software Foundation, Inc.
 
 This file is part of the GNU simulators.
 
@@ -17,7 +17,8 @@ This file is part of the GNU simulators.
    License for more details.
 
    You should have received a copy of the GNU General Public License along
-   with this program; if not, see <http://www.gnu.org/licenses/>.
+   with this program; if not, write to the Free Software Foundation, Inc.,
+   51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
 
 */
 
@@ -54,7 +55,7 @@ typedef struct {
 #define GET_H_CSR(a1) CPU (h_csr)[a1]
 #define SET_H_CSR(a1, x) (CPU (h_csr)[a1] = (x))
   } hardware;
-#define CPU_CGEN_HW(cpu) (& (cpu)->cpu_data.hardware)
+#define CPU_CGEN_HW(cpu) (& LM32_SIM_CPU (cpu)->cpu_data.hardware)
 } LM32BF_CPU_DATA;
 
 /* Cover fns for register access.  */
@@ -247,7 +248,7 @@ struct scache {
 #define EXTRACT_IFMT_BI_CODE \
   length = 4; \
   f_opcode = EXTRACT_LSB0_UINT (insn, 32, 31, 6); \
-  f_call = ((pc) + (((SI) (((EXTRACT_LSB0_SINT (insn, 32, 25, 26)) << (6))) >> (4)))); \
+  f_call = ((pc) + (((((((((EXTRACT_LSB0_SINT (insn, 32, 25, 26)) & (67108863))) << (2))) ^ (134217728))) - (134217728)))); \
 
 #define EXTRACT_IFMT_BE_VARS \
   UINT f_opcode; \
@@ -260,7 +261,7 @@ struct scache {
   f_opcode = EXTRACT_LSB0_UINT (insn, 32, 31, 6); \
   f_r0 = EXTRACT_LSB0_UINT (insn, 32, 25, 5); \
   f_r1 = EXTRACT_LSB0_UINT (insn, 32, 20, 5); \
-  f_branch = ((pc) + (((SI) (((EXTRACT_LSB0_SINT (insn, 32, 15, 16)) << (16))) >> (14)))); \
+  f_branch = ((pc) + (((((((((EXTRACT_LSB0_SINT (insn, 32, 15, 16)) & (65535))) << (2))) ^ (131072))) - (131072)))); \
 
 #define EXTRACT_IFMT_ORI_VARS \
   UINT f_opcode; \

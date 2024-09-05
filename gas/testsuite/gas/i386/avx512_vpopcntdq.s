@@ -1,8 +1,7 @@
 # Check 32bit AVX512_VPOPCNTDQ instructions
 
-	.allow_index_reg
 	.text
-_start:
+vpopcnt:
 	vpopcntd	%zmm5, %zmm6	 # AVX512_VPOPCNTDQ
 	vpopcntd	%zmm5, %zmm6{%k7}	 # AVX512_VPOPCNTDQ
 	vpopcntd	%zmm5, %zmm6{%k7}{z}	 # AVX512_VPOPCNTDQ
@@ -39,7 +38,7 @@ _start:
 	vpopcntd	zmm6, ZMMWORD PTR [ecx]	 # AVX512_VPOPCNTDQ
 	vpopcntd	zmm6, ZMMWORD PTR [esp+esi*8-123456]	 # AVX512_VPOPCNTDQ
 	vpopcntd	zmm6, [eax]{1to16}	 # AVX512_VPOPCNTDQ
-	vpopcntd	zmm6, DWORD PTR [eax]{1to16}	 # AVX512_VPOPCNTDQ
+	vpopcntd	zmm6, DWORD BCST [eax]	 # AVX512_VPOPCNTDQ
 	vpopcntd	zmm6, ZMMWORD PTR [edx+8128]	 # AVX512_VPOPCNTDQ Disp8
 	vpopcntd	zmm6, ZMMWORD PTR [edx+8192]	 # AVX512_VPOPCNTDQ
 	vpopcntd	zmm6, ZMMWORD PTR [edx-8192]	 # AVX512_VPOPCNTDQ Disp8
@@ -54,7 +53,7 @@ _start:
 	vpopcntq	zmm6, ZMMWORD PTR [ecx]	 # AVX512_VPOPCNTDQ
 	vpopcntq	zmm6, ZMMWORD PTR [esp+esi*8-123456]	 # AVX512_VPOPCNTDQ
 	vpopcntq	zmm6, [eax]{1to8}	 # AVX512_VPOPCNTDQ
-	vpopcntq	zmm6, QWORD PTR [eax]{1to8}	 # AVX512_VPOPCNTDQ
+	vpopcntq	zmm6, QWORD BCST [eax]	 # AVX512_VPOPCNTDQ
 	vpopcntq	zmm6, ZMMWORD PTR [edx+8128]	 # AVX512_VPOPCNTDQ Disp8
 	vpopcntq	zmm6, ZMMWORD PTR [edx+8192]	 # AVX512_VPOPCNTDQ
 	vpopcntq	zmm6, ZMMWORD PTR [edx-8192]	 # AVX512_VPOPCNTDQ Disp8

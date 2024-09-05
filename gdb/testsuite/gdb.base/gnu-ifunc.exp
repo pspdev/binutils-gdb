@@ -1,4 +1,4 @@
-# Copyright (C) 2009-2021 Free Software Foundation, Inc.
+# Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,13 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if {[skip_shlib_tests]} {
-    return 0
-}
-
-if {[skip_ifunc_tests]} {
-    return 0
-}
+require allow_shlib_tests allow_ifunc_tests
 
 standard_testfile .c
 set staticexecutable ${testfile}-static
@@ -30,10 +24,6 @@ set libsrc ${libfile}.c
 
 set final_file "${testfile}-final"
 set final_src ${final_file}.c
-
-if [get_compiler_info] {
-    return -1
-}
 
 # Return the binary suffix appended to program and library names to
 # make each testcase variant unique.
@@ -65,8 +55,8 @@ proc build {resolver_attr resolver_debug final_debug} {
     set final_opts {}
 
     # Force lazy binding so we don't resolve everything at process startup.
-    lappend exec_opts "additional_flags=-Wl,-z,lazy"
-    lappend lib_opts "additional_flags=-Wl,-z,lazy"
+    lappend exec_opts "ldflags=-Wl,-z,lazy"
+    lappend lib_opts "ldflags=-Wl,-z,lazy"
 
     if {$resolver_attr} {
 	lappend lib_opts "additional_flags=-DIFUNC_RESOLVER_ATTR"
@@ -109,8 +99,7 @@ proc_with_prefix set-break {resolver_attr resolver_debug final_debug} {
     clean_restart $binfile-$suffix
     gdb_load_shlib ${lib_so}
 
-    if ![runto_main] then {
-	fail "can't run to main"
+    if {![runto_main]} {
 	return 1
     }
 
@@ -232,8 +221,7 @@ proc misc_tests {resolver_attr resolver_debug final_debug} {
     clean_restart $binfile-$suffix
     gdb_load_shlib ${lib_so}
 
-    if ![runto_main] then {
-	fail "can't run to main"
+    if {![runto_main]} {
 	return 1
     }
 
@@ -246,14 +234,19 @@ proc misc_tests {resolver_attr resolver_debug final_debug} {
     # Test GDB will automatically indirect the call.
 
     if {!$resolver_debug && !$final_debug} {
+	# Do the test that is supposed to succeed first, to make sure
+	# elf_gnu_ifunc_record_cache is empty.  This excercises PR28224.
+	gdb_test "p (int) gnu_ifunc (3)" " = 4"
+
 	gdb_test "p gnu_ifunc()" \
 	    "'${dot}final' has unknown return type; cast the call to its declared return type"
 	gdb_test "p gnu_ifunc (3)" \
 	    "'${dot}final' has unknown return type; cast the call to its declared return type"
-	gdb_test "p (int) gnu_ifunc (3)" " = 4"
     } else {
-	gdb_test "p gnu_ifunc()" "Too few arguments in function call\\."
+	# Do the test that is supposed to succeed first, see above.
 	gdb_test "p gnu_ifunc (3)" " = 4"
+
+	gdb_test "p gnu_ifunc()" "Too few arguments in function call\\."
     }
 
     # Test that the resolver received its argument.
@@ -288,7 +281,7 @@ proc misc_tests {resolver_attr resolver_debug final_debug} {
 
     # Also test a former patch regression:
     # Continuing.
-    # Error in testing breakpoint condition:
+    # Error in testing condition for breakpoint NUM:
     # Attempt to take address of value not located in memory.
     #
     # Breakpoint 2, main () at ./gdb.base/gnu-ifunc.c:33

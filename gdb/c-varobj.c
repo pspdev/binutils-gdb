@@ -1,6 +1,6 @@
 /* varobj support for C and C++.
 
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,7 +15,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "value.h"
 #include "varobj.h"
 #include "gdbthread.h"
@@ -165,7 +164,7 @@ c_is_path_expr_parent (const struct varobj *var)
 	      const char *field_name;
 
 	      gdb_assert (var->index < parent_type->num_fields ());
-	      field_name = TYPE_FIELD_NAME (parent_type, var->index);
+	      field_name = parent_type->field (var->index).name ();
 	      return !(field_name == NULL || *field_name == '\0');
 	    }
 	}
@@ -191,9 +190,9 @@ c_number_of_children (const struct varobj *var)
   switch (type->code ())
     {
     case TYPE_CODE_ARRAY:
-      if (TYPE_LENGTH (type) > 0 && TYPE_LENGTH (target) > 0
-	  && (type->bounds ()->high.kind () != PROP_UNDEFINED))
-	children = TYPE_LENGTH (type) / TYPE_LENGTH (target);
+      if (type->length () > 0 && target->length () > 0
+	  && type->bounds ()->high.is_available ())
+	children = type->length () / target->length ();
       else
 	/* If we don't know how many elements there are, don't display
 	   any.  */
@@ -245,7 +244,7 @@ static struct value *
 value_struct_element_index (struct value *value, int type_index)
 {
   struct value *result = NULL;
-  struct type *type = value_type (value);
+  struct type *type = value->type ();
 
   type = check_typedef (type);
 
@@ -254,10 +253,10 @@ value_struct_element_index (struct value *value, int type_index)
 
   try
     {
-      if (field_is_static (&type->field (type_index)))
+      if (type->field (type_index).is_static ())
 	result = value_static_field (type, type_index);
       else
-	result = value_primitive_field (value, 0, type_index, type);
+	result = value->primitive_field (0, type_index, type);
     }
   catch (const gdb_exception_error &e)
     {
@@ -341,7 +340,7 @@ c_describe_child (const struct varobj *parent, int index,
 
 	/* If the type is anonymous and the field has no name,
 	   set an appropriate name.  */
-	field_name = TYPE_FIELD_NAME (type, index);
+	field_name = type->field (index).name ();
 	if (field_name == NULL || *field_name == '\0')
 	  {
 	    if (cname)
@@ -403,7 +402,7 @@ c_describe_child (const struct varobj *parent, int index,
 	 check_typedef and here, we want to show the true
 	 declared type of the variable.  */
       if (ctype)
-	*ctype = TYPE_TARGET_TYPE (type);
+	*ctype = type->target_type ();
 
       if (cfull_expression)
 	*cfull_expression = string_printf ("*(%s)", parent_expression.c_str ());
@@ -482,7 +481,7 @@ c_value_of_variable (const struct varobj *var,
 
   /* Strip top-level references.  */
   while (TYPE_IS_REFERENCE (type))
-    type = check_typedef (TYPE_TARGET_TYPE (type));
+    type = check_typedef (type->target_type ());
 
   switch (type->code ())
     {
@@ -506,14 +505,14 @@ c_value_of_variable (const struct varobj *var,
 	  }
 	else
 	  {
-	    if (var->not_fetched && value_lazy (var->value.get ()))
+	    if (var->not_fetched && var->value->lazy ())
 	      /* Frozen variable and no value yet.  We don't
 		 implicitly fetch the value.  MI response will
 		 use empty string for the value, which is OK.  */
 	      return std::string ();
 
 	    gdb_assert (varobj_value_is_changeable_p (var));
-	    gdb_assert (!value_lazy (var->value.get ()));
+	    gdb_assert (!var->value->lazy ());
 	    
 	    /* If the specified format is the current one,
 	       we can reuse print_value.  */
@@ -574,8 +573,7 @@ cplus_number_of_children (const struct varobj *var)
       if (opts.objectprint)
 	{
 	  value = var->value.get ();
-	  lookup_actual_type = (TYPE_IS_REFERENCE (var->type)
-				|| var->type->code () == TYPE_CODE_PTR);
+	  lookup_actual_type = var->type->is_pointer_or_reference ();
 	}
       adjust_value_for_child_access (&value, &type, NULL, lookup_actual_type);
 
@@ -611,8 +609,7 @@ cplus_number_of_children (const struct varobj *var)
 	  const struct varobj *parent = var->parent;
 
 	  value = parent->value.get ();
-	  lookup_actual_type = (TYPE_IS_REFERENCE (parent->type)
-				|| parent->type->code () == TYPE_CODE_PTR);
+	  lookup_actual_type = parent->type->is_pointer_or_reference ();
 	}
       adjust_value_for_child_access (&value, &type, NULL, lookup_actual_type);
 
@@ -649,16 +646,18 @@ cplus_class_num_children (struct type *type, int children[3])
   vptr_fieldno = get_vptr_fieldno (type, &basetype);
   for (i = TYPE_N_BASECLASSES (type); i < type->num_fields (); i++)
     {
+      field &fld = type->field (i);
+
       /* If we have a virtual table pointer, omit it.  Even if virtual
 	 table pointers are not specifically marked in the debug info,
 	 they should be artificial.  */
       if ((type == basetype && i == vptr_fieldno)
-	  || TYPE_FIELD_ARTIFICIAL (type, i))
+	  || fld.is_artificial ())
 	continue;
 
-      if (TYPE_FIELD_PROTECTED (type, i))
+      if (fld.is_protected ())
 	children[v_protected]++;
-      else if (TYPE_FIELD_PRIVATE (type, i))
+      else if (fld.is_private ())
 	children[v_private]++;
       else
 	children[v_public]++;
@@ -669,25 +668,6 @@ static std::string
 cplus_name_of_variable (const struct varobj *parent)
 {
   return c_name_of_variable (parent);
-}
-
-enum accessibility { private_field, protected_field, public_field };
-
-/* Check if field INDEX of TYPE has the specified accessibility.
-   Return 0 if so and 1 otherwise.  */
-
-static int 
-match_accessibility (struct type *type, int index, enum accessibility acc)
-{
-  if (acc == private_field && TYPE_FIELD_PRIVATE (type, index))
-    return 1;
-  else if (acc == protected_field && TYPE_FIELD_PROTECTED (type, index))
-    return 1;
-  else if (acc == public_field && !TYPE_FIELD_PRIVATE (type, index)
-	   && !TYPE_FIELD_PROTECTED (type, index))
-    return 1;
-  else
-    return 0;
 }
 
 static void
@@ -716,8 +696,7 @@ cplus_describe_child (const struct varobj *parent, int index,
 
   var = (CPLUS_FAKE_CHILD (parent)) ? parent->parent : parent;
   if (opts.objectprint)
-    lookup_actual_type = (TYPE_IS_REFERENCE (var->type)
-			  || var->type->code () == TYPE_CODE_PTR);
+    lookup_actual_type = var->type->is_pointer_or_reference ();
   value = var->value.get ();
   type = varobj_get_value_type (var);
   if (cfull_expression)
@@ -740,31 +719,31 @@ cplus_describe_child (const struct varobj *parent, int index,
 	     have the access control we are looking for to properly
 	     find the indexed field.  */
 	  int type_index = TYPE_N_BASECLASSES (type);
-	  enum accessibility acc = public_field;
+	  enum accessibility acc = accessibility::PUBLIC;
 	  int vptr_fieldno;
 	  struct type *basetype = NULL;
 	  const char *field_name;
 
 	  vptr_fieldno = get_vptr_fieldno (type, &basetype);
 	  if (parent->name == "private")
-	    acc = private_field;
+	    acc = accessibility::PRIVATE;
 	  else if (parent->name == "protected")
-	    acc = protected_field;
+	    acc = accessibility::PROTECTED;
 
 	  while (index >= 0)
 	    {
 	      if ((type == basetype && type_index == vptr_fieldno)
-		  || TYPE_FIELD_ARTIFICIAL (type, type_index))
+		  || type->field (type_index).is_artificial ())
 		; /* ignore vptr */
-	      else if (match_accessibility (type, type_index, acc))
-		    --index;
-		  ++type_index;
+	      else if (type->field (type_index).accessibility () == acc)
+		--index;
+	      ++type_index;
 	    }
 	  --type_index;
 
 	  /* If the type is anonymous and the field has no name,
 	     set an appropriate name.  */
-	  field_name = TYPE_FIELD_NAME (type, type_index);
+	  field_name = type->field (type_index).name ();
 	  if (field_name == NULL || *field_name == '\0')
 	    {
 	      if (cname)
@@ -783,7 +762,7 @@ cplus_describe_child (const struct varobj *parent, int index,
 	  else
 	    {
 	      if (cname)
-		*cname = TYPE_FIELD_NAME (type, type_index);
+		*cname = type->field (type_index).name ();
 
 	      if (cfull_expression)
 		*cfull_expression
@@ -801,7 +780,7 @@ cplus_describe_child (const struct varobj *parent, int index,
 	{
 	  /* This is a baseclass.  */
 	  if (cname)
-	    *cname = TYPE_FIELD_NAME (type, index);
+	    *cname = type->field (index).name ();
 
 	  if (cvalue && value)
 	    *cvalue = value_cast (type->field (index).type (), value);
@@ -818,7 +797,7 @@ cplus_describe_child (const struct varobj *parent, int index,
 	      /* Cast the parent to the base' type.  Note that in gdb,
 		 expression like 
 			 (Base1)d
-		 will create an lvalue, for all appearences, so we don't
+		 will create an lvalue, for all appearances, so we don't
 		 need to use more fancy:
 			 *(Base1*)(&d)
 		 construct.
@@ -830,7 +809,7 @@ cplus_describe_child (const struct varobj *parent, int index,
 		 'class' keyword.  See PR mi/11912  */
 	      *cfull_expression = string_printf ("(%s(class %s%s) %s)",
 						 ptr,
-						 TYPE_FIELD_NAME (type, index),
+						 type->field (index).name (),
 						 ptr,
 						 parent_expression);
 	    }

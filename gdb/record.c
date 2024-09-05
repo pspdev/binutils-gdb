@@ -1,6 +1,6 @@
 /* Process record and replay target for GDB, the GNU debugger.
 
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,8 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "completer.h"
 #include "record.h"
 #include "observable.h"
@@ -26,6 +25,8 @@
 #include "gdbsupport/common-utils.h"
 #include "cli/cli-utils.h"
 #include "disasm.h"
+#include "interps.h"
+#include "top.h"
 
 #include <ctype.h>
 
@@ -55,7 +56,7 @@ struct cmd_list_element *info_record_cmdlist = NULL;
 
 #define DEBUG(msg, args...)						\
   if (record_debug)							\
-    fprintf_unfiltered (gdb_stdlog, "record: " msg "\n", ##args)
+    gdb_printf (gdb_stdlog, "record: " msg "\n", ##args)
 
 /* See record.h.  */
 
@@ -247,7 +248,6 @@ record_check_stopped_by_breakpoint (const address_space *aspace,
       return 1;
     }
 
-  *reason = TARGET_STOPPED_BY_NO_REASON;
   return 0;
 }
 
@@ -257,15 +257,20 @@ static void
 show_record_debug (struct ui_file *file, int from_tty,
 		   struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Debugging of process record target is %s.\n"),
-		    value);
+  gdb_printf (file, _("Debugging of process record target is %s.\n"),
+	      value);
 }
 
-/* Alias for "target record".  */
+/* Alias for "target record-full".  */
 
 static void
 cmd_record_start (const char *args, int from_tty)
 {
+  /* As 'record' is a prefix command then if the user types 'record blah'
+     GDB will search for the 'blah' sub-command and either run that instead
+     of calling this function, or throw an error if 'blah' doesn't exist.
+     As a result, we only get here if no args are given.  */
+  gdb_assert (args == nullptr);
   execute_command ("target record-full", from_tty);
 }
 
@@ -279,14 +284,14 @@ cmd_record_delete (const char *args, int from_tty)
 
   if (!target_record_is_replaying (inferior_ptid))
     {
-      printf_unfiltered (_("Already at end of record list.\n"));
+      gdb_printf (_("Already at end of record list.\n"));
       return;
     }
 
   if (!target_supports_delete_record ())
     {
-      printf_unfiltered (_("The current record target does not support "
-			   "this operation.\n"));
+      gdb_printf (_("The current record target does not support "
+		    "this operation.\n"));
       return;
     }
 
@@ -308,10 +313,10 @@ cmd_record_stop (const char *args, int from_tty)
   record_stop (t);
   record_unpush (t);
 
-  printf_unfiltered (_("Process record is stopped and all execution "
-		       "logs are deleted.\n"));
+  gdb_printf (_("Process record is stopped and all execution "
+		"logs are deleted.\n"));
 
-  gdb::observers::record_changed.notify (current_inferior (), 0, NULL, NULL);
+  interps_notify_record_changed (current_inferior (), 0, NULL, NULL);
 }
 
 
@@ -325,11 +330,11 @@ info_record_command (const char *args, int from_tty)
   t = find_record_target ();
   if (t == NULL)
     {
-      printf_filtered (_("No recording is currently active.\n"));
+      gdb_printf (_("No recording is currently active.\n"));
       return;
     }
 
-  printf_filtered (_("Active record target: %s\n"), t->shortname ());
+  gdb_printf (_("Active record target: %s\n"), t->shortname ());
   t->info_record ();
 }
 
@@ -486,6 +491,9 @@ get_insn_history_modifiers (const char **arg)
 
 	  switch (*args)
 	    {
+	    case 'a':
+	      modifiers |= DISASSEMBLY_OMIT_AUX_INSN;
+	      break;
 	    case 'm':
 	    case 's':
 	      modifiers |= DISASSEMBLY_SOURCE;
@@ -493,6 +501,9 @@ get_insn_history_modifiers (const char **arg)
 	      break;
 	    case 'r':
 	      modifiers |= DISASSEMBLY_RAW_INSN;
+	      break;
+	    case 'b':
+	      modifiers |= DISASSEMBLY_RAW_BYTES;
 	      break;
 	    case 'f':
 	      modifiers |= DISASSEMBLY_OMIT_FNAME;
@@ -632,6 +643,9 @@ get_call_history_modifiers (const char **arg)
 	      break;
 	    case 'c':
 	      modifiers |= RECORD_PRINT_INDENT_CALLS;
+	      break;
+	    case 'a':
+	      modifiers |= RECORD_DONT_PRINT_AUX;
 	      break;
 	    default:
 	      error (_("Invalid modifier: %c."), *args);
@@ -789,21 +803,18 @@ A size of \"unlimited\" means unlimited lines.  The default is 10."),
     = add_prefix_cmd ("record", class_obscure, cmd_record_start,
 		      _("Start recording."),
 		      &record_cmdlist, 0, &cmdlist);
-  set_cmd_completer (record_cmd, filename_completer);
-
   add_com_alias ("rec", record_cmd, class_obscure, 1);
 
-  cmd_list_element *set_record_cmd
-    = add_basic_prefix_cmd ("record", class_support,
-			    _("Set record options."), &set_record_cmdlist,
-			    0, &setlist);
-  add_alias_cmd ("rec", set_record_cmd, class_obscure, 1, &setlist);
+  set_show_commands setshow_record_cmds
+    = add_setshow_prefix_cmd ("record", class_support,
+			      _("Set record options."),
+			      _("Show record options."),
+			      &set_record_cmdlist, &show_record_cmdlist,
+			      &setlist, &showlist);
 
-  cmd_list_element *show_record_cmd
-    = add_show_prefix_cmd ("record", class_support,
-			   _("Show record options."), &show_record_cmdlist,
-			   0, &showlist);
-  add_alias_cmd ("rec", show_record_cmd, class_obscure, 1, &showlist);
+
+  add_alias_cmd ("rec", setshow_record_cmds.set, class_obscure, 1, &setlist);
+  add_alias_cmd ("rec", setshow_record_cmds.show, class_obscure, 1, &showlist);
 
   cmd_list_element *info_record_cmd
     = add_prefix_cmd ("record", class_support, info_record_command,
@@ -854,6 +865,8 @@ With a /m or /s modifier, source lines are included (if available).\n\
 With a /r modifier, raw instructions in hex are included.\n\
 With a /f modifier, function names are omitted.\n\
 With a /p modifier, current position markers are omitted.\n\
+With a /a modifier, omits output of auxiliary data, which is enabled \
+by default.\n\
 With no argument, disassembles ten more instructions after the previous \
 disassembly.\n\
 \"record instruction-history -\" disassembles ten instructions before a \
@@ -876,6 +889,8 @@ Without modifiers, it prints the function name.\n\
 With a /l modifier, the source file and line number range is included.\n\
 With a /i modifier, the instruction number range is included.\n\
 With a /c modifier, the output is indented based on the call stack depth.\n\
+With a /a modifier, omits output of auxiliary data, which is enabled \
+by default.\n\
 With no argument, prints ten more lines after the previous ten-line print.\n\
 \"record function-call-history -\" prints ten lines before a previous ten-line \
 print.\n\

@@ -1,5 +1,5 @@
 /* tc-sparc.c -- Assemble for the SPARC
-   Copyright (C) 1989-2021 Free Software Foundation, Inc.
+   Copyright (C) 1989-2024 Free Software Foundation, Inc.
    This file is part of GAS, the GNU Assembler.
 
    GAS is free software; you can redistribute it and/or modify
@@ -75,10 +75,10 @@ static enum { MM_TSO, MM_PSO, MM_RMO } sparc_memory_model = MM_RMO;
 #ifndef TE_SOLARIS
 /* Bitmask of instruction types seen so far, used to populate the
    GNU attributes section with hwcap information.  */
-static bfd_uint64_t hwcap_seen;
+static uint64_t hwcap_seen;
 #endif
 
-static bfd_uint64_t hwcap_allowed;
+static uint64_t hwcap_allowed;
 
 static int architecture_requested;
 static int warn_on_bump;
@@ -498,15 +498,15 @@ md_parse_option (int c, const char *arg)
 	    || opcode_arch > max_architecture)
 	  max_architecture = opcode_arch;
 
-        /* The allowed hardware capabilities are the implied by the
-           opcodes arch plus any extra capabilities defined in the GAS
-           arch.  */
-        hwcap_allowed
-          = (hwcap_allowed
-             | (((bfd_uint64_t) sparc_opcode_archs[opcode_arch].hwcaps2) << 32)
-             | (((bfd_uint64_t) sa->hwcap2_allowed) << 32)
-             | sparc_opcode_archs[opcode_arch].hwcaps
-             | sa->hwcap_allowed);
+	/* The allowed hardware capabilities are the implied by the
+	   opcodes arch plus any extra capabilities defined in the GAS
+	   arch.  */
+	hwcap_allowed
+	  = (hwcap_allowed
+	     | ((uint64_t) sparc_opcode_archs[opcode_arch].hwcaps2 << 32)
+	     | ((uint64_t) sa->hwcap2_allowed << 32)
+	     | sparc_opcode_archs[opcode_arch].hwcaps
+	     | sa->hwcap_allowed);
 	architecture_requested = 1;
       }
       break;
@@ -1081,7 +1081,7 @@ md_begin (void)
 /* Called after all assembly has been done.  */
 
 void
-sparc_md_end (void)
+sparc_md_finish (void)
 {
   unsigned long mach;
 #ifndef TE_SOLARIS
@@ -1125,10 +1125,14 @@ sparc_md_end (void)
   hwcaps = hwcap_seen & U0xffffffff;
   hwcaps2 = hwcap_seen >> 32;
 
-  if (hwcaps)
-    bfd_elf_add_obj_attr_int (stdoutput, OBJ_ATTR_GNU, Tag_GNU_Sparc_HWCAPS, hwcaps);
-  if (hwcaps2)
-    bfd_elf_add_obj_attr_int (stdoutput, OBJ_ATTR_GNU, Tag_GNU_Sparc_HWCAPS2, hwcaps2);
+  if ((hwcaps
+       && !bfd_elf_add_obj_attr_int (stdoutput, OBJ_ATTR_GNU,
+				     Tag_GNU_Sparc_HWCAPS, hwcaps))
+      || (hwcaps2
+	  && !bfd_elf_add_obj_attr_int (stdoutput, OBJ_ATTR_GNU,
+					Tag_GNU_Sparc_HWCAPS2, hwcaps2)))
+    as_fatal (_("error adding attribute: %s"),
+	      bfd_errmsg (bfd_get_error ()));
 #endif
 }
 
@@ -1201,7 +1205,7 @@ BSR (bfd_vma val, int amount)
 }
 
 /* For communication between sparc_ip and get_expression.  */
-static char *expr_end;
+static char *expr_parse_end;
 
 /* Values for `special_case'.
    Instructions that require weird handling because they're longer than
@@ -1607,7 +1611,7 @@ md_assemble (char *str)
 }
 
 static const char *
-get_hwcap_name (bfd_uint64_t mask)
+get_hwcap_name (uint64_t mask)
 {
   if (mask & HWCAP_MUL32)
     return "mul32";
@@ -2589,13 +2593,6 @@ sparc_ip (char *str, const struct sparc_opcode **pinsn)
 		    break;
 		  }	/* if not an 'f' register.  */
 
-		if (*args == '}' && mask != RS2 (opcode))
-		  {
-		    error_message
-		      = _(": Instruction requires frs2 and frsd must be the same register");
-		    goto error;
-		  }
-
 		switch (*args)
 		  {
 		  case 'v':
@@ -2624,9 +2621,17 @@ sparc_ip (char *str, const struct sparc_opcode **pinsn)
 		  case 'g':
 		  case 'H':
 		  case 'J':
-		  case '}':
                   case '^':
 		    opcode |= RD (mask);
+		    continue;
+
+		  case '}':
+		    if (RD (mask) != (opcode & RD (0x1f)))
+		      {
+			error_message = _(": Instruction requires frs2 and "
+					  "frsd must be the same register");
+			goto error;
+		      }
 		    continue;
 		  }		/* Pack it in.  */
 
@@ -2741,7 +2746,7 @@ sparc_ip (char *str, const struct sparc_opcode **pinsn)
 		    *s1 = '\0';
 		    (void) get_expression (s);
 		    *s1 = ')';
-		    if (expr_end != s1)
+		    if (expr_parse_end != s1)
 		      {
 			as_bad (_("Expression inside %%%s could not be parsed"), op_arg);
 			return special_case;
@@ -2794,7 +2799,7 @@ sparc_ip (char *str, const struct sparc_opcode **pinsn)
 		    (void) get_expression (s);
 		    if (op_arg)
 		      *s = ')';
-		    s = expr_end;
+		    s = expr_parse_end;
 		  }
 
 		if (op_arg)
@@ -3171,8 +3176,7 @@ sparc_ip (char *str, const struct sparc_opcode **pinsn)
               msg_str = sasi->name;
             }
 
-          bfd_uint64_t hwcaps
-	    = (((bfd_uint64_t) insn->hwcaps2) << 32) | insn->hwcaps;
+	  uint64_t hwcaps = ((uint64_t) insn->hwcaps2 << 32) | insn->hwcaps;
 
 #ifndef TE_SOLARIS
 	  if (hwcaps)
@@ -3211,10 +3215,10 @@ sparc_ip (char *str, const struct sparc_opcode **pinsn)
 		}
 	      current_architecture = needed_architecture;
 	      hwcap_allowed
-                = (hwcap_allowed
-                   | hwcaps
-                   | (((bfd_uint64_t) sparc_opcode_archs[current_architecture].hwcaps2) << 32)
-                   | sparc_opcode_archs[current_architecture].hwcaps);
+		= (hwcap_allowed
+		   | hwcaps
+		   | ((uint64_t) sparc_opcode_archs[current_architecture].hwcaps2 << 32)
+		   | sparc_opcode_archs[current_architecture].hwcaps);
 	    }
 	  /* Conflict.  */
 	  /* ??? This seems to be a bit fragile.  What if the next entry in
@@ -3374,11 +3378,11 @@ get_expression (char *str)
       && seg != undefined_section)
     {
       the_insn.error = _("bad segment");
-      expr_end = input_line_pointer;
+      expr_parse_end = input_line_pointer;
       input_line_pointer = save_in;
       return 1;
     }
-  expr_end = input_line_pointer;
+  expr_parse_end = input_line_pointer;
   input_line_pointer = save_in;
   return 0;
 }
@@ -4993,3 +4997,4 @@ sparc_cfi_emit_pcrel_expr (expressionS *exp, unsigned int nbytes)
   emit_expr_with_reloc (exp, nbytes, "disp");
   sparc_no_align_cons = 0;
 }
+

@@ -1,5 +1,5 @@
 /* Print mips instructions for GDB, the GNU debugger, or for objdump.
-   Copyright (C) 1989-2021 Free Software Foundation, Inc.
+   Copyright (C) 1989-2024 Free Software Foundation, Inc.
    Contributed by Nobuyuki Hikichi(hikichi@sra.co.jp).
 
    This file is part of the GNU opcodes library.
@@ -204,6 +204,150 @@ static const char * const mips_cp1_names_mips3264[32] =
   "$20",          "$21",          "$22",          "$23",
   "$24",          "c1_fccr",      "c1_fexr",      "$27",
   "c1_fenr",      "$29",          "$30",          "c1_fcsr"
+};
+
+static const char * const vfpu_sreg_names[128] = {
+  "S000",  "S010",  "S020",  "S030",  "S100",  "S110",  "S120",  "S130",
+  "S200",  "S210",  "S220",  "S230",  "S300",  "S310",  "S320",  "S330",
+  "S400",  "S410",  "S420",  "S430",  "S500",  "S510",  "S520",  "S530",
+  "S600",  "S610",  "S620",  "S630",  "S700",  "S710",  "S720",  "S730",
+  "S001",  "S011",  "S021",  "S031",  "S101",  "S111",  "S121",  "S131",
+  "S201",  "S211",  "S221",  "S231",  "S301",  "S311",  "S321",  "S331",
+  "S401",  "S411",  "S421",  "S431",  "S501",  "S511",  "S521",  "S531",
+  "S601",  "S611",  "S621",  "S631",  "S701",  "S711",  "S721",  "S731",
+  "S002",  "S012",  "S022",  "S032",  "S102",  "S112",  "S122",  "S132",
+  "S202",  "S212",  "S222",  "S232",  "S302",  "S312",  "S322",  "S332",
+  "S402",  "S412",  "S422",  "S432",  "S502",  "S512",  "S522",  "S532",
+  "S602",  "S612",  "S622",  "S632",  "S702",  "S712",  "S722",  "S732",
+  "S003",  "S013",  "S023",  "S033",  "S103",  "S113",  "S123",  "S133",
+  "S203",  "S213",  "S223",  "S233",  "S303",  "S313",  "S323",  "S333",
+  "S403",  "S413",  "S423",  "S433",  "S503",  "S513",  "S523",  "S533",
+  "S603",  "S613",  "S623",  "S633",  "S703",  "S713",  "S723",  "S733"
+};
+
+static const char * const vfpu_vpreg_names[128] = {
+  "C000",  "C010",  "C020",  "C030",  "C100",  "C110",  "C120",  "C130",
+  "C200",  "C210",  "C220",  "C230",  "C300",  "C310",  "C320",  "C330",
+  "C400",  "C410",  "C420",  "C430",  "C500",  "C510",  "C520",  "C530",
+  "C600",  "C610",  "C620",  "C630",  "C700",  "C710",  "C720",  "C730",
+  "R000",  "R001",  "R002",  "R003",  "R100",  "R101",  "R102",  "R103",
+  "R200",  "R201",  "R202",  "R203",  "R300",  "R301",  "R302",  "R303",
+  "R400",  "R401",  "R402",  "R403",  "R500",  "R501",  "R502",  "R503",
+  "R600",  "R601",  "R602",  "R603",  "R700",  "R701",  "R702",  "R703",
+  "C002",  "C012",  "C022",  "C032",  "C102",  "C112",  "C122",  "C132",
+  "C202",  "C212",  "C222",  "C232",  "C302",  "C312",  "C322",  "C332",
+  "C402",  "C412",  "C422",  "C432",  "C502",  "C512",  "C522",  "C532",
+  "C602",  "C612",  "C622",  "C632",  "C702",  "C712",  "C722",  "C732",
+  "R020",  "R021",  "R022",  "R023",  "R120",  "R121",  "R122",  "R123",
+  "R220",  "R221",  "R222",  "R223",  "R320",  "R321",  "R322",  "R323",
+  "R420",  "R421",  "R422",  "R423",  "R520",  "R521",  "R522",  "R523",
+  "R620",  "R621",  "R622",  "R623",  "R720",  "R721",  "R722",  "R723"
+};
+
+static const char * const vfpu_vtreg_names[128] = {
+  "C000",  "C010",  "C020",  "C030",  "C100",  "C110",  "C120",  "C130",
+  "C200",  "C210",  "C220",  "C230",  "C300",  "C310",  "C320",  "C330",
+  "C400",  "C410",  "C420",  "C430",  "C500",  "C510",  "C520",  "C530",
+  "C600",  "C610",  "C620",  "C630",  "C700",  "C710",  "C720",  "C730",
+  "R000",  "R001",  "R002",  "R003",  "R100",  "R101",  "R102",  "R103",
+  "R200",  "R201",  "R202",  "R203",  "R300",  "R301",  "R302",  "R303",
+  "R400",  "R401",  "R402",  "R403",  "R500",  "R501",  "R502",  "R503",
+  "R600",  "R601",  "R602",  "R603",  "R700",  "R701",  "R702",  "R703",
+  "C001",  "C011",  "C021",  "C031",  "C101",  "C111",  "C121",  "C131",
+  "C201",  "C211",  "C221",  "C231",  "C301",  "C311",  "C321",  "C331",
+  "C401",  "C411",  "C421",  "C431",  "C501",  "C511",  "C521",  "C531",
+  "C601",  "C611",  "C621",  "C631",  "C701",  "C711",  "C721",  "C731",
+  "R010",  "R011",  "R012",  "R013",  "R110",  "R111",  "R112",  "R113",
+  "R210",  "R211",  "R212",  "R213",  "R310",  "R311",  "R312",  "R313",
+  "R410",  "R411",  "R412",  "R413",  "R510",  "R511",  "R512",  "R513",
+  "R610",  "R611",  "R612",  "R613",  "R710",  "R711",  "R712",  "R713"
+};
+
+static const char * const vfpu_vqreg_names[128] = {
+  "C000",  "C010",  "C020",  "C030",  "C100",  "C110",  "C120",  "C130",
+  "C200",  "C210",  "C220",  "C230",  "C300",  "C310",  "C320",  "C330",
+  "C400",  "C410",  "C420",  "C430",  "C500",  "C510",  "C520",  "C530",
+  "C600",  "C610",  "C620",  "C630",  "C700",  "C710",  "C720",  "C730",
+  "R000",  "R001",  "R002",  "R003",  "R100",  "R101",  "R102",  "R103",
+  "R200",  "R201",  "R202",  "R203",  "R300",  "R301",  "R302",  "R303",
+  "R400",  "R401",  "R402",  "R403",  "R500",  "R501",  "R502",  "R503",
+  "R600",  "R601",  "R602",  "R603",  "R700",  "R701",  "R702",  "R703",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  ""
+};
+
+static const char * const vfpu_mpreg_names[128] = {
+  "M000",  "",  "M020",  "",  "M100",  "",  "M120",  "",
+  "M200",  "",  "M220",  "",  "M300",  "",  "M320",  "",
+  "M400",  "",  "M420",  "",  "M500",  "",  "M520",  "",
+  "M600",  "",  "M620",  "",  "M700",  "",  "M720",  "",
+  "E000",  "",  "E002",  "",  "E100",  "",  "E102",  "",
+  "E200",  "",  "E202",  "",  "E300",  "",  "E302",  "",
+  "E400",  "",  "E402",  "",  "E500",  "",  "E502",  "",
+  "E600",  "",  "E602",  "",  "E700",  "",  "E702",  "",
+  "M002",  "",  "M022",  "",  "M102",  "",  "M122",  "",
+  "M202",  "",  "M222",  "",  "M302",  "",  "M322",  "",
+  "M402",  "",  "M422",  "",  "M502",  "",  "M522",  "",
+  "M602",  "",  "M622",  "",  "M702",  "",  "M722",  "",
+  "E020",  "",  "E022",  "",  "E120",  "",  "E122",  "",
+  "E220",  "",  "E222",  "",  "E320",  "",  "E322",  "",
+  "E420",  "",  "E422",  "",  "E520",  "",  "E522",  "",
+  "E620",  "",  "E622",  "",  "E720",  "",  "E722",  ""
+};
+
+static const char * const vfpu_mtreg_names[128] = {
+  "M000",  "M010",  "",  "",  "M100",  "M110",  "",  "",
+  "M200",  "M210",  "",  "",  "M300",  "M310",  "",  "",
+  "M400",  "M410",  "",  "",  "M500",  "M510",  "",  "",
+  "M600",  "M610",  "",  "",  "M700",  "M710",  "",  "",
+  "E000",  "E001",  "",  "",  "E100",  "E101",  "",  "",
+  "E200",  "E201",  "",  "",  "E300",  "E301",  "",  "",
+  "E400",  "E401",  "",  "",  "E500",  "E501",  "",  "",
+  "E600",  "E601",  "",  "",  "E700",  "E701",  "",  "",
+  "M001",  "M011",  "",  "",  "M101",  "M111",  "",  "",
+  "M201",  "M211",  "",  "",  "M301",  "M311",  "",  "",
+  "M401",  "M411",  "",  "",  "M501",  "M511",  "",  "",
+  "M601",  "M611",  "",  "",  "M701",  "M711",  "",  "",
+  "E010",  "E011",  "",  "",  "E110",  "E111",  "",  "",
+  "E210",  "E211",  "",  "",  "E310",  "E311",  "",  "",
+  "E410",  "E411",  "",  "",  "E510",  "E511",  "",  "",
+  "E610",  "E611",  "",  "",  "E710",  "E711",  "",  ""
+};
+
+static const char * const vfpu_mqreg_names[128] = {
+  "M000",  "",  "",  "",  "M100",  "",  "",  "",
+  "M200",  "",  "",  "",  "M300",  "",  "",  "",
+  "M400",  "",  "",  "",  "M500",  "",  "",  "",
+  "M600",  "",  "",  "",  "M700",  "",  "",  "",
+  "E000",  "",  "",  "",  "E100",  "",  "",  "",
+  "E200",  "",  "",  "",  "E300",  "",  "",  "",
+  "E400",  "",  "",  "",  "E500",  "",  "",  "",
+  "E600",  "",  "",  "",  "E700",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  "",
+  "",  "",  "",  "",  "",  "",  "",  ""
+};
+
+static const char * const * const vfpu_regnames[] = {
+  vfpu_sreg_names,
+  vfpu_vpreg_names,
+  vfpu_vtreg_names,
+  vfpu_vqreg_names,
+  NULL,
+  vfpu_mpreg_names,
+  vfpu_mtreg_names,
+  vfpu_mqreg_names
 };
 
 static const struct mips_cp0sel_name mips_cp0sel_names_mips3264[] =
@@ -440,6 +584,49 @@ static const char * const msa_control_names[32] =
   "$16",  "$17",  "$18",  "$19",  "$20",  "$21",  "$22",  "$23",
   "$24",  "$25",  "$26",  "$27",  "$28",  "$29",  "$30",  "$31"
 };
+static const char * const vfpu_cond_names[16] = {
+  "FL",  "EQ",  "LT",  "LE",  "TR",  "NE",  "GE",  "GT",
+  "EZ",  "EN",  "EI",  "ES",  "NZ",  "NN",  "NI",  "NS"
+};
+
+static const char * const vfpu_const_names[20] = {
+  "",
+  "VFPU_HUGE",
+  "VFPU_SQRT2",
+  "VFPU_SQRT1_2",
+  "VFPU_2_SQRTPI",
+  "VFPU_2_PI",
+  "VFPU_1_PI",
+  "VFPU_PI_4",
+  "VFPU_PI_2",
+  "VFPU_PI",
+  "VFPU_E",
+  "VFPU_LOG2E",
+  "VFPU_LOG10E",
+  "VFPU_LN2",
+  "VFPU_LN10",
+  "VFPU_2PI",
+  "VFPU_PI_6",
+  "VFPU_LOG10TWO",
+  "VFPU_LOG2TEN",
+  "VFPU_SQRT3_2"
+};
+
+static const char * const vfpu_rwb_names[2] = {
+  "wt",  "wb"
+};
+
+static const char * const pfx_cst_names[8] = {
+  "0",  "1",  "2",  "1/2",  "3",  "1/3",  "1/4",  "1/6"
+};
+
+static const char * const pfx_swz_names[4] = {
+  "x",  "y",  "z",  "w"
+};
+
+static const char * const pfx_sat_names[4] = {
+  "",  "[0:1]",  "",  "[-1:1]"
+};
 
 struct mips_abi_choice
 {
@@ -488,6 +675,9 @@ const struct mips_arch_choice mips_arch_choices[] =
     mips_hwr_names_numeric },
   { "r4010",	1, bfd_mach_mips4010, CPU_R4010, ISA_MIPS2, 0,
     mips_cp0_names_numeric, NULL, 0, mips_cp1_names_mips,
+    mips_hwr_names_numeric },
+  { "allegrex",	1, bfd_mach_mips_allegrex, CPU_ALLEGREX, ISA_MIPS2, 0,
+    mips_cp0_names_numeric, NULL, 0, mips_cp1_names_numeric,
     mips_hwr_names_numeric },
   { "vr4100",	1, bfd_mach_mips4100, CPU_VR4100, ISA_MIPS3, 0,
     mips_cp0_names_numeric, NULL, 0, mips_cp1_names_mips,
@@ -548,6 +738,9 @@ const struct mips_arch_choice mips_arch_choices[] =
     mips_hwr_names_numeric },
   { "mips5",	1, bfd_mach_mips5, CPU_MIPS5, ISA_MIPS5, 0,
     mips_cp0_names_numeric, NULL, 0, mips_cp1_names_mips,
+    mips_hwr_names_numeric },
+  { "allegrex", 1, bfd_mach_mips_allegrex, CPU_ALLEGREX, ISA_MIPS2, 0,
+    mips_cp0_names_numeric, NULL, 0, mips_cp1_names_numeric,
     mips_hwr_names_numeric },
 
   /* For stock MIPS32, disassemble all applicable MIPS-specified ASEs.
@@ -670,7 +863,7 @@ const struct mips_arch_choice mips_arch_choices[] =
     | ASE_LOONGSON_EXT2, mips_cp0_names_numeric, NULL, 0, mips_cp1_names_mips3264,
     mips_hwr_names_numeric },
 
-  { "gs264e",   1, bfd_mach_mips_gs464e, CPU_GS264E,
+  { "gs264e",   1, bfd_mach_mips_gs264e, CPU_GS264E,
     ISA_MIPS64R2, ASE_LOONGSON_MMI | ASE_LOONGSON_CAM | ASE_LOONGSON_EXT
     | ASE_LOONGSON_EXT2 | ASE_MSA | ASE_MSA64, mips_cp0_names_numeric, NULL,
     0, mips_cp1_names_mips3264, mips_hwr_names_numeric },
@@ -1173,84 +1366,93 @@ static void
 print_reg (struct disassemble_info *info, const struct mips_opcode *opcode,
 	   enum mips_reg_operand_type type, int regno)
 {
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
+
   switch (type)
     {
     case OP_REG_GP:
-      info->fprintf_func (info->stream, "%s", mips_gpr_names[regno]);
+      infprintf (info->stream, dis_style_register, "%s",
+		 mips_gpr_names[regno]);
       break;
 
     case OP_REG_FP:
-      info->fprintf_func (info->stream, "%s", mips_fpr_names[regno]);
+      infprintf (info->stream, dis_style_register, "%s",
+		 mips_fpr_names[regno]);
       break;
 
     case OP_REG_CCC:
       if (opcode->pinfo & (FP_D | FP_S))
-	info->fprintf_func (info->stream, "$fcc%d", regno);
+	infprintf (info->stream, dis_style_register, "$fcc%d", regno);
       else
-	info->fprintf_func (info->stream, "$cc%d", regno);
+	infprintf (info->stream, dis_style_register, "$cc%d", regno);
       break;
 
     case OP_REG_VEC:
       if (opcode->membership & INSN_5400)
-	info->fprintf_func (info->stream, "$f%d", regno);
+	infprintf (info->stream, dis_style_register, "$f%d", regno);
       else
-	info->fprintf_func (info->stream, "$v%d", regno);
+	infprintf (info->stream, dis_style_register, "$v%d", regno);
       break;
 
     case OP_REG_ACC:
-      info->fprintf_func (info->stream, "$ac%d", regno);
+      infprintf (info->stream, dis_style_register, "$ac%d", regno);
       break;
 
     case OP_REG_COPRO:
       if (opcode->name[strlen (opcode->name) - 1] == '0')
-	info->fprintf_func (info->stream, "%s", mips_cp0_names[regno]);
+	infprintf (info->stream, dis_style_register, "%s", mips_cp0_names[regno]);
       else
-	info->fprintf_func (info->stream, "$%d", regno);
+	infprintf (info->stream, dis_style_register, "$%d", regno);
       break;
 
     case OP_REG_CONTROL:
       if (opcode->name[strlen (opcode->name) - 1] == '1')
-	info->fprintf_func (info->stream, "%s", mips_cp1_names[regno]);
+	infprintf (info->stream, dis_style_register, "%s", mips_cp1_names[regno]);
       else
-	info->fprintf_func (info->stream, "$%d", regno);
+	infprintf (info->stream, dis_style_register, "$%d", regno);
       break;
 
     case OP_REG_HW:
-      info->fprintf_func (info->stream, "%s", mips_hwr_names[regno]);
+      infprintf (info->stream, dis_style_register, "%s", mips_hwr_names[regno]);
       break;
 
     case OP_REG_VF:
-      info->fprintf_func (info->stream, "$vf%d", regno);
+      infprintf (info->stream, dis_style_register, "$vf%d", regno);
       break;
 
     case OP_REG_VI:
-      info->fprintf_func (info->stream, "$vi%d", regno);
+      infprintf (info->stream, dis_style_register, "$vi%d", regno);
       break;
 
     case OP_REG_R5900_I:
-      info->fprintf_func (info->stream, "$I");
+      infprintf (info->stream, dis_style_register, "$I");
       break;
 
     case OP_REG_R5900_Q:
-      info->fprintf_func (info->stream, "$Q");
+      infprintf (info->stream, dis_style_register, "$Q");
       break;
 
     case OP_REG_R5900_R:
-      info->fprintf_func (info->stream, "$R");
+      infprintf (info->stream, dis_style_register, "$R");
       break;
 
     case OP_REG_R5900_ACC:
-      info->fprintf_func (info->stream, "$ACC");
+      infprintf (info->stream, dis_style_register, "$ACC");
       break;
 
     case OP_REG_MSA:
-      info->fprintf_func (info->stream, "$w%d", regno);
+      infprintf (info->stream, dis_style_register, "$w%d", regno);
       break;
 
     case OP_REG_MSA_CTRL:
-      info->fprintf_func (info->stream, "%s", msa_control_names[regno]);
+      infprintf (info->stream, dis_style_register, "%s",
+		 msa_control_names[regno]);
       break;
 
+    case OP_REG_VFPU:
+    case OP_REG_VFPU_CTR:
+      info->fprintf_func (info->stream, "$%d", regno);
+      break;
     }
 }
 
@@ -1277,21 +1479,173 @@ init_print_arg_state (struct mips_print_arg_state *state)
   memset (state, 0, sizeof (*state));
 }
 
+/* Print VFPU operands.  */
+
+static void
+print_vfpu_arg (struct disassemble_info *info, const struct mips_opcode *opcode,
+		const struct mips_vfpu_operand *operand, unsigned int uval)
+{
+  const fprintf_ftype infprintf = info->fprintf_func;
+  void *is = info->stream;
+
+  switch (operand->op_type) 
+  {
+    case OP_VFPU_CREG:
+      print_reg (info, opcode, OP_REG_VFPU_CTR, uval);
+      break;
+
+    case OP_VFPU_NCNT:
+      if (uval >= VF_MIN_CONST && uval <= VF_MAX_CONST)
+        infprintf (is, "%s", vfpu_const_names[uval]);
+      break;
+
+    case OP_VFPU_WRAPCNT:
+      infprintf (is, "0x%02x", uval);
+      break;
+
+    case OP_VFPU_COND:
+      infprintf (is, "%s", vfpu_cond_names[uval & OP_MASK_VFPU_COND]);
+      break;
+
+    case OP_VFPU_DECORATOR:
+      if (operand->extra)
+        infprintf (is, "]");
+      else
+        infprintf (is, "[");
+      break;
+
+    case OP_VFPU_WRB_BOOL:
+      infprintf (is, "%s", vfpu_rwb_names[uval & OP_MASK_VFPU_RWB]);
+      break;
+
+    case OP_VFPU_REGS:
+      /* vmmul vs register is a bit special */
+      if (!strncmp(opcode->name, "vmmul", 5))
+        uval ^= 0x20;
+      /* fallthrough */
+    case OP_VFPU_REGT:
+    case OP_VFPU_REGD:
+    case OP_VFPU_REGV:
+    case OP_VFPU_REGX:
+    case OP_VFPU_REG2:
+    {
+      static const char *tarr = "sptq?ptq";
+      infprintf (is, "%s.%c", vfpu_regnames[operand->extra][uval], tarr[operand->extra]);
+      break;
+    }
+
+    case OP_VFPU_HFLOAT:
+    {
+      unsigned sign = (uval >> VFPU_SH_FLOAT16_SIGN) & VFPU_MASK_FLOAT16_SIGN;
+      int exponent = (uval >> VFPU_SH_FLOAT16_EXP) & VFPU_MASK_FLOAT16_EXP;
+      unsigned fraction = uval & VFPU_MASK_FLOAT16_FRAC;
+      char signchar = sign ? '-' : '+';
+
+      if (exponent == VFPU_FLOAT16_EXP_MAX) {
+        if (fraction)
+          infprintf (is, "%cNaN", signchar);
+        else
+          infprintf (is, "%cInf", signchar);
+      }
+      else if (!exponent && !fraction)
+      {
+        infprintf (is, "%c0", signchar);
+      }
+      else
+      {
+        // Handle subnormal numbers correctly
+        unsigned lead1 = exponent ? 0x400 : 0;
+
+        float f = (fraction | lead1);
+
+        // Number is shifted by 10 already due to mantissa
+        int shifta = exponent - 15 - 10;   // -25..5
+
+        // Multiply or divide depending on exponent sign
+        // This is to avoid using pow() really :)
+        if (shifta > 0)
+          f *= (1 << ((unsigned)shifta));
+        else
+          f /= (1 << ((unsigned)(-shifta)));
+
+        if (sign)
+          f = -f;
+        infprintf (is, "%g", f);
+      }
+      break;
+    }
+
+    case OP_VFPU_ROTCNT:
+    {
+      unsigned opsize = (!strcmp(opcode->name, "vrot.p")) ? 2 :
+                        (!strcmp(opcode->name, "vrot.t")) ? 3 : 4;
+
+      infprintf (is, "[%s", vrot_dect[uval][0]);
+      for (unsigned i = 1; i < opsize; i++)
+        infprintf (is, ",%s", vrot_dect[uval][i]);
+      infprintf (is, "]");
+
+      break;
+    }
+
+    case OP_VFPU_SPREFIX:
+    {
+      unsigned chn = operand->extra;
+      unsigned neg = (uval >> (VFPU_SH_PFX_NEG       + chn))     & VFPU_MASK_PFX_NEG;
+      unsigned cnt = (uval >> (VFPU_SH_PFX_CST       + chn))     & VFPU_MASK_PFX_CST;
+      unsigned swz = (uval >> (VFPU_SH_PFX_SWZ_CSTLO + chn * 2)) & VFPU_MASK_PFX_SWZ_CSTLO;
+      unsigned abs = (uval >> (VFPU_SH_PFX_ABS_CSTHI + chn))     & VFPU_MASK_PFX_ABS_CSTHI;
+
+      if (neg)
+        infprintf (is, "-");
+
+      if (cnt)
+        infprintf (is, "%s", pfx_cst_names[(abs << 2) | swz]);
+      else {
+        if (abs)
+          infprintf (is, "|%s|", pfx_swz_names[swz]);
+        else
+          infprintf (is, "%s", pfx_swz_names[swz]);
+      }
+
+      break;
+    }
+
+    case OP_VFPU_DPREFIX:
+    {
+      unsigned chn = operand->extra;
+      unsigned msk = (uval >> (VFPU_SH_PFX_MASK + chn    )) & VFPU_MASK_PFX_MASK;
+      unsigned sat = (uval >> (VFPU_SH_PFX_SAT  + chn * 2)) & VFPU_MASK_PFX_SAT;
+
+      if (msk)
+        infprintf (is, "m");
+      else
+        infprintf (is, "%s", pfx_sat_names[sat]);
+
+      break;
+    }
+  };
+}
+
+
 /* Print OP_VU0_SUFFIX or OP_VU0_MATCH_SUFFIX operand OPERAND,
    whose value is given by UVAL.  */
 
 static void
 print_vu0_channel (struct disassemble_info *info,
-		   const struct mips_operand *operand, unsigned int uval)
+		   const struct mips_operand *operand, unsigned int uval,
+		   enum disassembler_style style)
 {
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
+
   if (operand->size == 4)
-    info->fprintf_func (info->stream, "%s%s%s%s",
+    infprintf (info->stream, style, "%s%s%s%s",
 			uval & 8 ? "x" : "",
 			uval & 4 ? "y" : "",
 			uval & 2 ? "z" : "",
 			uval & 1 ? "w" : "");
   else if (operand->size == 2)
-    info->fprintf_func (info->stream, "%c", "xyzw"[uval]);
+    infprintf (info->stream, style, "%c", "xyzw"[uval]);
   else
     abort ();
 }
@@ -1324,7 +1678,7 @@ mips_print_save_restore (struct disassemble_info *info, unsigned int amask,
 			 unsigned int s0, unsigned int s1,
 			 unsigned int frame_size)
 {
-  const fprintf_ftype infprintf = info->fprintf_func;
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
   unsigned int nargs, nstatics, smask, i, j;
   void *is = info->stream;
   const char *sep;
@@ -1348,16 +1702,20 @@ mips_print_save_restore (struct disassemble_info *info, unsigned int amask,
   sep = "";
   if (nargs > 0)
     {
-      infprintf (is, "%s", mips_gpr_names[4]);
+      infprintf (is, dis_style_register, "%s", mips_gpr_names[4]);
       if (nargs > 1)
-	infprintf (is, "-%s", mips_gpr_names[4 + nargs - 1]);
+	infprintf (is, dis_style_register, "-%s", mips_gpr_names[4 + nargs - 1]);
       sep = ",";
     }
 
-  infprintf (is, "%s%d", sep, frame_size);
+  infprintf (is, dis_style_text, "%s", sep);
+  infprintf (is, dis_style_immediate, "%d", frame_size);
 
   if (ra)			/* $ra */
-    infprintf (is, ",%s", mips_gpr_names[31]);
+    {
+      infprintf (is, dis_style_text, ",");
+      infprintf (is, dis_style_register, "%s", mips_gpr_names[31]);
+    }
 
   smask = 0;
   if (s0)			/* $s0 */
@@ -1370,21 +1728,34 @@ mips_print_save_restore (struct disassemble_info *info, unsigned int amask,
   for (i = 0; i < 9; i++)
     if (smask & (1 << i))
       {
-	infprintf (is, ",%s", mips_gpr_names[i == 8 ? 30 : (16 + i)]);
+	infprintf (is, dis_style_text, ",");
+	infprintf (is, dis_style_register, "%s",
+		   mips_gpr_names[i == 8 ? 30 : (16 + i)]);
 	/* Skip over string of set bits.  */
 	for (j = i; smask & (2 << j); j++)
 	  continue;
 	if (j > i)
-	  infprintf (is, "-%s", mips_gpr_names[j == 8 ? 30 : (16 + j)]);
+	  {
+	    infprintf (is, dis_style_text, "-");
+	    infprintf (is, dis_style_register, "%s",
+		       mips_gpr_names[j == 8 ? 30 : (16 + j)]);
+	  }
 	i = j + 1;
       }
   /* Statics $ax - $a3.  */
   if (nstatics == 1)
-    infprintf (is, ",%s", mips_gpr_names[7]);
+    {
+      infprintf (is, dis_style_text, ",");
+      infprintf (is, dis_style_register, "%s", mips_gpr_names[7]);
+    }
   else if (nstatics > 0)
-    infprintf (is, ",%s-%s",
-	       mips_gpr_names[7 - nstatics + 1],
-	       mips_gpr_names[7]);
+    {
+      infprintf (is, dis_style_text, ",");
+      infprintf (is, dis_style_register, "%s",
+		 mips_gpr_names[7 - nstatics + 1]);
+      infprintf (is, dis_style_text, "-");
+      infprintf (is, dis_style_register, "%s", mips_gpr_names[7]);
+    }
 }
 
 
@@ -1400,7 +1771,7 @@ print_insn_arg (struct disassemble_info *info,
 		bfd_vma base_pc,
 		unsigned int uval)
 {
-  const fprintf_ftype infprintf = info->fprintf_func;
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
   void *is = info->stream;
 
   switch (operand->type)
@@ -1413,9 +1784,9 @@ print_insn_arg (struct disassemble_info *info,
 	uval = mips_decode_int_operand (int_op, uval);
 	state->last_int = uval;
 	if (int_op->print_hex)
-	  infprintf (is, "0x%x", uval);
+	  infprintf (is, dis_style_immediate, "0x%x", uval);
 	else
-	  infprintf (is, "%d", uval);
+	  infprintf (is, dis_style_immediate, "%d", uval);
       }
       break;
 
@@ -1427,9 +1798,9 @@ print_insn_arg (struct disassemble_info *info,
 	uval = mint_op->int_map[uval];
 	state->last_int = uval;
 	if (mint_op->print_hex)
-	  infprintf (is, "0x%x", uval);
+	  infprintf (is, dis_style_immediate, "0x%x", uval);
 	else
-	  infprintf (is, "%d", uval);
+	  infprintf (is, dis_style_immediate, "%d", uval);
       }
       break;
 
@@ -1441,7 +1812,7 @@ print_insn_arg (struct disassemble_info *info,
 	uval += msb_op->bias;
 	if (msb_op->add_lsb)
 	  uval -= state->last_int;
-	infprintf (is, "0x%x", uval);
+	infprintf (is, dis_style_immediate, "0x%x", uval);
       }
       break;
 
@@ -1465,7 +1836,7 @@ print_insn_arg (struct disassemble_info *info,
 	pair_op = (const struct mips_reg_pair_operand *) operand;
 	print_reg (info, opcode, pair_op->reg_type,
 		   pair_op->reg1_map[uval]);
-	infprintf (is, ",");
+	infprintf (is, dis_style_text, ",");
 	print_reg (info, opcode, pair_op->reg_type,
 		   pair_op->reg2_map[uval]);
       }
@@ -1489,7 +1860,7 @@ print_insn_arg (struct disassemble_info *info,
       break;
 
     case OP_PERF_REG:
-      infprintf (is, "%d", uval);
+      infprintf (is, dis_style_register, "%d", uval);
       break;
 
     case OP_ADDIUSP_INT:
@@ -1499,7 +1870,7 @@ print_insn_arg (struct disassemble_info *info,
 	sval = mips_signed_operand (operand, uval) * 4;
 	if (sval >= -8 && sval < 8)
 	  sval ^= 0x400;
-	infprintf (is, "%d", sval);
+	infprintf (is, dis_style_immediate, "%d", sval);
 	break;
       }
 
@@ -1511,13 +1882,16 @@ print_insn_arg (struct disassemble_info *info,
 	reg2 = uval >> 5;
 	/* If one is zero use the other.  */
 	if (reg1 == reg2 || reg2 == 0)
-	  infprintf (is, "%s", mips_gpr_names[reg1]);
+	  infprintf (is, dis_style_register, "%s", mips_gpr_names[reg1]);
 	else if (reg1 == 0)
-	  infprintf (is, "%s", mips_gpr_names[reg2]);
+	  infprintf (is, dis_style_register, "%s", mips_gpr_names[reg2]);
 	else
-	  /* Bogus, result depends on processor.  */
-	  infprintf (is, "%s or %s", mips_gpr_names[reg1],
-		     mips_gpr_names[reg2]);
+	  {
+	    /* Bogus, result depends on processor.  */
+	    infprintf (is, dis_style_register, "%s", mips_gpr_names[reg1]);
+	    infprintf (is, dis_style_text, " or ");
+	    infprintf (is, dis_style_register, "%s", mips_gpr_names[reg2]);
+	  }
       }
       break;
 
@@ -1534,14 +1908,24 @@ print_insn_arg (struct disassemble_info *info,
       if (operand->size == 2)
 	{
 	  if (uval == 0)
-	    infprintf (is, "%s,%s",
-		       mips_gpr_names[16],
-		       mips_gpr_names[31]);
+	    {
+	      infprintf (is, dis_style_register, "%s",
+			 mips_gpr_names[16]);
+	      infprintf (is, dis_style_text, ",");
+	      infprintf (is, dis_style_register, "%s",
+			 mips_gpr_names[31]);
+	    }
 	  else
-	    infprintf (is, "%s-%s,%s",
-		       mips_gpr_names[16],
-		       mips_gpr_names[16 + uval],
-		       mips_gpr_names[31]);
+	    {
+	      infprintf (is, dis_style_register, "%s",
+			 mips_gpr_names[16]);
+	      infprintf (is, dis_style_text, "-");
+	      infprintf (is, dis_style_register, "%s",
+			 mips_gpr_names[16 + uval]);
+	      infprintf (is, dis_style_text, ",");
+	      infprintf (is, dis_style_register, "%s",
+			 mips_gpr_names[31]);
+	    }
 	}
       else
 	{
@@ -1551,26 +1935,40 @@ print_insn_arg (struct disassemble_info *info,
 	  if (s_reg_encode != 0)
 	    {
 	      if (s_reg_encode == 1)
-		infprintf (is, "%s", mips_gpr_names[16]);
+		infprintf (is, dis_style_register, "%s", mips_gpr_names[16]);
 	      else if (s_reg_encode < 9)
-		infprintf (is, "%s-%s",
-			   mips_gpr_names[16],
-			   mips_gpr_names[15 + s_reg_encode]);
+		{
+		  infprintf (is, dis_style_register, "%s",
+			     mips_gpr_names[16]);
+		  infprintf (is, dis_style_text, "-");
+		  infprintf (is, dis_style_register, "%s",
+			     mips_gpr_names[15 + s_reg_encode]);
+		}
 	      else if (s_reg_encode == 9)
-		infprintf (is, "%s-%s,%s",
-			   mips_gpr_names[16],
-			   mips_gpr_names[23],
-			   mips_gpr_names[30]);
+		{
+		  infprintf (is, dis_style_register, "%s",
+			     mips_gpr_names[16]);
+		  infprintf (is, dis_style_text, "-");
+		  infprintf (is, dis_style_register, "%s",
+			     mips_gpr_names[23]);
+		  infprintf (is, dis_style_text, ",");
+		  infprintf (is, dis_style_register, "%s",
+			     mips_gpr_names[30]);
+		}
 	      else
-		infprintf (is, "UNKNOWN");
+		infprintf (is, dis_style_text, "UNKNOWN");
 	    }
 
 	  if (uval & 0x10) /* For ra.  */
 	    {
 	      if (s_reg_encode == 0)
-		infprintf (is, "%s", mips_gpr_names[31]);
+		infprintf (is, dis_style_register, "%s", mips_gpr_names[31]);
 	      else
-		infprintf (is, ",%s", mips_gpr_names[31]);
+		{
+		  infprintf (is, dis_style_text, ",");
+		  infprintf (is, dis_style_register, "%s",
+			     mips_gpr_names[31]);
+		}
 	    }
 	}
       break;
@@ -1584,37 +1982,51 @@ print_insn_arg (struct disassemble_info *info,
 	amask = (uval >> 3) & 7;
 	if (amask > 0 && amask < 5)
 	  {
-	    infprintf (is, "%s", mips_gpr_names[4]);
+	    infprintf (is, dis_style_register, "%s", mips_gpr_names[4]);
 	    if (amask > 1)
-	      infprintf (is, "-%s", mips_gpr_names[amask + 3]);
+	      {
+		infprintf (is, dis_style_text, "-");
+		infprintf (is, dis_style_register, "%s",
+			   mips_gpr_names[amask + 3]);
+	      }
 	    sep = ",";
 	  }
 
 	smask = (uval >> 1) & 3;
 	if (smask == 3)
 	  {
-	    infprintf (is, "%s??", sep);
+	    infprintf (is, dis_style_text, "%s??", sep);
 	    sep = ",";
 	  }
 	else if (smask > 0)
 	  {
-	    infprintf (is, "%s%s", sep, mips_gpr_names[16]);
+	    infprintf (is, dis_style_text, "%s", sep);
+	    infprintf (is, dis_style_register, "%s", mips_gpr_names[16]);
 	    if (smask > 1)
-	      infprintf (is, "-%s", mips_gpr_names[smask + 15]);
+	      {
+		infprintf (is, dis_style_text, "-");
+		infprintf (is, dis_style_register, "%s",
+			   mips_gpr_names[smask + 15]);
+	      }
 	    sep = ",";
 	  }
 
 	if (uval & 1)
 	  {
-	    infprintf (is, "%s%s", sep, mips_gpr_names[31]);
+	    infprintf (is, dis_style_text, "%s", sep);
+	    infprintf (is, dis_style_register, "%s", mips_gpr_names[31]);
 	    sep = ",";
 	  }
 
 	if (amask == 5 || amask == 6)
 	  {
-	    infprintf (is, "%s%s", sep, mips_fpr_names[0]);
+	    infprintf (is, dis_style_text, "%s", sep);
+	    infprintf (is, dis_style_register, "%s", mips_fpr_names[0]);
 	    if (amask == 6)
-	      infprintf (is, "-%s", mips_fpr_names[1]);
+	      {
+		infprintf (is, dis_style_text, "-");
+		infprintf (is, dis_style_register, "%s", mips_fpr_names[1]);
+	      }
 	  }
       }
       break;
@@ -1638,12 +2050,14 @@ print_insn_arg (struct disassemble_info *info,
 	      if ((vsel & 1) == 0)
 		break;
 	    print_reg (info, opcode, OP_REG_VEC, uval);
-	    infprintf (is, "[%d]", vsel >> 1);
+	    infprintf (is, dis_style_text, "[");
+	    infprintf (is, dis_style_immediate, "%d", vsel >> 1);
+	    infprintf (is, dis_style_text, "]");
 	  }
 	else if ((vsel & 0x08) == 0)
 	  print_reg (info, opcode, OP_REG_VEC, uval);
 	else
-	  infprintf (is, "0x%x", uval);
+	  infprintf (is, dis_style_immediate, "0x%x", uval);
       }
       break;
 
@@ -1656,7 +2070,7 @@ print_insn_arg (struct disassemble_info *info,
       break;
 
     case OP_PC:
-      infprintf (is, "$pc");
+      infprintf (is, dis_style_register, "$pc");
       break;
 
     case OP_REG28:
@@ -1665,17 +2079,23 @@ print_insn_arg (struct disassemble_info *info,
 
     case OP_VU0_SUFFIX:
     case OP_VU0_MATCH_SUFFIX:
-      print_vu0_channel (info, operand, uval);
+      print_vu0_channel (info, operand, uval, dis_style_register);
       break;
 
     case OP_IMM_INDEX:
-      infprintf (is, "[%d]", uval);
+      infprintf (is, dis_style_text, "[");
+      infprintf (is, dis_style_immediate, "%d", uval);
+      infprintf (is, dis_style_text, "]");
       break;
 
     case OP_REG_INDEX:
-      infprintf (is, "[");
+      infprintf (is, dis_style_text, "[");
       print_reg (info, opcode, OP_REG_GP, uval);
-      infprintf (is, "]");
+      infprintf (is, dis_style_text, "]");
+      break;
+
+    case OP_VFPU_OPERAND:
+      print_vfpu_arg (info, opcode, (struct mips_vfpu_operand*) operand, uval);
       break;
     }
 }
@@ -1782,6 +2202,7 @@ validate_insn_args (const struct mips_opcode *opcode,
 		case OP_IMM_INDEX:
 		case OP_REG_INDEX:
 		case OP_SAVE_RESTORE_LIST:
+		case OP_VFPU_OPERAND:
 		  break;
 		}
 	    }
@@ -1803,7 +2224,7 @@ print_insn_args (struct disassemble_info *info,
 		 const struct mips_operand *(*decode_operand) (const char *),
 		 unsigned int insn, bfd_vma insn_pc, unsigned int length)
 {
-  const fprintf_ftype infprintf = info->fprintf_func;
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
   void *is = info->stream;
   struct mips_print_arg_state state;
   const struct mips_operand *operand;
@@ -1817,12 +2238,12 @@ print_insn_args (struct disassemble_info *info,
 	case ',':
 	case '(':
 	case ')':
-	  infprintf (is, "%c", *s);
+	  infprintf (is, dis_style_text, "%c", *s);
 	  break;
 
 	case '#':
 	  ++s;
-	  infprintf (is, "%c%c", *s, *s);
+	  infprintf (is, dis_style_text, "%c%c", *s, *s);
 	  break;
 
 	default:
@@ -1830,7 +2251,7 @@ print_insn_args (struct disassemble_info *info,
 	  if (!operand)
 	    {
 	      /* xgettext:c-format */
-	      infprintf (is,
+	      infprintf (is, dis_style_text,
 			 _("# internal error, undefined operand in `%s %s'"),
 			 opcode->name, opcode->args);
 	      return;
@@ -1851,7 +2272,7 @@ print_insn_args (struct disassemble_info *info,
 	    }
 	  else if (operand->type == OP_REG
 		   && s[1] == ','
-		   && s[2] == 'H'
+		   && (s[2] == 'H' || s[2] == 'J')
 		   && opcode->name[strlen (opcode->name) - 1] == '0')
 	    {
 	      /* Coprocessor register 0 with sel field.  */
@@ -1872,9 +2293,13 @@ print_insn_args (struct disassemble_info *info,
 					   mips_cp0sel_names_len,
 					   reg, sel);
 	      if (n != NULL)
-		infprintf (is, "%s", n->name);
+		infprintf (is, dis_style_register, "%s", n->name);
 	      else
-		infprintf (is, "$%d,%d", reg, sel);
+		{
+		  infprintf (is, dis_style_register, "$%d", reg);
+		  infprintf (is, dis_style_text, ",");
+		  infprintf (is, dis_style_immediate, "%d", sel);
+		}
 	    }
 	  else
 	    {
@@ -1899,6 +2324,11 @@ print_insn_args (struct disassemble_info *info,
 	    }
 	  if (*s == 'm' || *s == '+' || *s == '-')
 	    ++s;
+	  if (*s == '?') {
+	    while (s[1] != 0 && s[1] != '?' && s[1] != ',' &&
+	           s[1] != '(' && s[1] != '[' && s[1] != ')' && s[1] != ']')
+	      s++;
+	  }
 	  break;
 	}
     }
@@ -1917,7 +2347,7 @@ print_insn_mips (bfd_vma memaddr,
 #define GET_OP(insn, field)			\
   (((insn) >> OP_SH_##field) & OP_MASK_##field)
   static const struct mips_opcode *mips_hash[OP_MASK_OP + 1];
-  const fprintf_ftype infprintf = info->fprintf_func;
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
   const struct mips_opcode *op;
   static bool init = 0;
   void *is = info->stream;
@@ -1995,19 +2425,20 @@ print_insn_mips (bfd_vma memaddr,
 	      if (!validate_insn_args (op, decode_mips_operand, word))
 		continue;
 
-	      infprintf (is, "%s", op->name);
+	      infprintf (is, dis_style_mnemonic, "%s", op->name);
 	      if (op->pinfo2 & INSN2_VU0_CHANNEL_SUFFIX)
 		{
 		  unsigned int uval;
 
-		  infprintf (is, ".");
+		  infprintf (is, dis_style_mnemonic, ".");
 		  uval = mips_extract_operand (&mips_vu0_channel_mask, word);
-		  print_vu0_channel (info, &mips_vu0_channel_mask, uval);
+		  print_vu0_channel (info, &mips_vu0_channel_mask, uval,
+				     dis_style_mnemonic);
 		}
 
 	      if (op->args[0])
 		{
-		  infprintf (is, "\t");
+		  infprintf (is, dis_style_text, "\t");
 		  print_insn_args (info, op, decode_mips_operand, word,
 				   memaddr, 4);
 		}
@@ -2020,7 +2451,9 @@ print_insn_mips (bfd_vma memaddr,
 
   /* Handle undefined instructions.  */
   info->insn_type = dis_noninsn;
-  infprintf (is, "0x%x", word);
+  infprintf (is, dis_style_assembler_directive, ".word");
+  infprintf (is, dis_style_text, "\t");
+  infprintf (is, dis_style_immediate, "0x%x", word);
   return INSNLEN;
 }
 
@@ -2034,7 +2467,7 @@ print_mips16_insn_arg (struct disassemble_info *info,
 		       unsigned insn, bool use_extend,
 		       unsigned extend, bool is_offset)
 {
-  const fprintf_ftype infprintf = info->fprintf_func;
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
   void *is = info->stream;
   const struct mips_operand *operand, *ext_operand;
   unsigned short ext_size;
@@ -2049,7 +2482,7 @@ print_mips16_insn_arg (struct disassemble_info *info,
     case ',':
     case '(':
     case ')':
-      infprintf (is, "%c", type);
+      infprintf (is, dis_style_text, "%c", type);
       break;
 
     default:
@@ -2057,7 +2490,7 @@ print_mips16_insn_arg (struct disassemble_info *info,
       if (!operand)
 	{
 	  /* xgettext:c-format */
-	  infprintf (is, _("# internal error, undefined operand in `%s %s'"),
+	  infprintf (is, dis_style_text, _("# internal error, undefined operand in `%s %s'"),
 		     opcode->name, opcode->args);
 	  return;
 	}
@@ -2189,7 +2622,7 @@ enum match_kind
 static int
 print_insn_mips16 (bfd_vma memaddr, struct disassemble_info *info)
 {
-  const fprintf_ftype infprintf = info->fprintf_func;
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
   int status;
   bfd_byte buffer[4];
   const struct mips_opcode *op, *opend;
@@ -2224,7 +2657,9 @@ print_insn_mips16 (bfd_vma memaddr, struct disassemble_info *info)
 	    gotslot = bfd_getb32 (buffer);
 	  else
 	    gotslot = bfd_getl32 (buffer);
-	  infprintf (is, ".word\t0x%x", gotslot);
+	  infprintf (is, dis_style_assembler_directive, ".word");
+	  infprintf (is, dis_style_text, "\t");
+	  infprintf (is, dis_style_immediate, "0x%x", gotslot);
 
 	  return 4;
 	}
@@ -2311,9 +2746,9 @@ print_insn_mips16 (bfd_vma memaddr, struct disassemble_info *info)
 	{
 	  const char *s;
 
-	  infprintf (is, "%s", op->name);
+	  infprintf (is, dis_style_mnemonic, "%s", op->name);
 	  if (op->args[0] != '\0')
-	    infprintf (is, "\t");
+	    infprintf (is, dis_style_text, "\t");
 
 	  init_print_arg_state (&state);
 	  for (s = op->args; *s != '\0'; s++)
@@ -2359,9 +2794,13 @@ print_insn_mips16 (bfd_vma memaddr, struct disassemble_info *info)
 					       mips_cp0sel_names_len,
 					       reg, sel);
 		  if (n != NULL)
-		    infprintf (is, "%s", n->name);
+		    infprintf (is, dis_style_register, "%s", n->name);
 		  else
-		    infprintf (is, "$%d,%d", reg, sel);
+		    {
+		      infprintf (is, dis_style_register, "$%d", reg);
+		      infprintf (is, dis_style_text, ",");
+		      infprintf (is, dis_style_immediate, "%d", sel);
+		    }
 		}
 	      else
 		switch (match)
@@ -2398,7 +2837,9 @@ print_insn_mips16 (bfd_vma memaddr, struct disassemble_info *info)
     }
 #undef GET_OP
 
-  infprintf (is, "0x%x", first);
+  infprintf (is, dis_style_assembler_directive, ".short");
+  infprintf (is, dis_style_text, "\t");
+  infprintf (is, dis_style_immediate, "0x%x", first);
   info->insn_type = dis_noninsn;
 
   return 2;
@@ -2409,7 +2850,7 @@ print_insn_mips16 (bfd_vma memaddr, struct disassemble_info *info)
 static int
 print_insn_micromips (bfd_vma memaddr, struct disassemble_info *info)
 {
-  const fprintf_ftype infprintf = info->fprintf_func;
+  const fprintf_styled_ftype infprintf = info->fprintf_styled_func;
   const struct mips_opcode *op, *opend;
   void *is = info->stream;
   bfd_byte buffer[2];
@@ -2449,7 +2890,7 @@ print_insn_micromips (bfd_vma memaddr, struct disassemble_info *info)
       status = (*info->read_memory_func) (memaddr + 2, buffer, 2, info);
       if (status != 0)
 	{
-	  infprintf (is, "micromips 0x%x", higher);
+	  infprintf (is, dis_style_text, "micromips 0x%x", higher);
 	  (*info->memory_error_func) (status, memaddr + 2, info);
 	  return -1;
 	}
@@ -2478,11 +2919,11 @@ print_insn_micromips (bfd_vma memaddr, struct disassemble_info *info)
 	  if (!validate_insn_args (op, decode_micromips_operand, insn))
 	    continue;
 
-	  infprintf (is, "%s", op->name);
+	  infprintf (is, dis_style_mnemonic, "%s", op->name);
 
 	  if (op->args[0])
 	    {
-	      infprintf (is, "\t");
+	      infprintf (is, dis_style_text, "\t");
 	      print_insn_args (info, op, decode_micromips_operand, insn,
 			       memaddr + 1, length);
 	    }
@@ -2515,7 +2956,15 @@ print_insn_micromips (bfd_vma memaddr, struct disassemble_info *info)
 	}
     }
 
-  infprintf (is, "0x%x", insn);
+  infprintf (is, dis_style_assembler_directive, ".short");
+  infprintf (is, dis_style_text, "\t");
+  if (length != 2)
+    {
+      infprintf (is, dis_style_immediate, "0x%x", (insn >> 16) & 0xffff);
+      infprintf (is, dis_style_text, ", ");
+    }
+  infprintf (is, dis_style_immediate, "0x%x", (insn & 0xffff));
+
   info->insn_type = dis_noninsn;
 
   return length;
@@ -2809,6 +3258,8 @@ with the -M switch (multiple options should be separated by commas):\n\n"));
 
   for (i = 0; args[i].name != NULL; i++)
     {
+      if (args[i].values == NULL)
+	continue;
       fprintf (stream, _("\n\
   For the options above, the following values are supported for \"%s\":\n   "),
 	       args[i].name);

@@ -1,6 +1,6 @@
 /* load.c --- loading object files into the M32C simulator.
 
-Copyright (C) 2005-2021 Free Software Foundation, Inc.
+Copyright (C) 2005-2024 Free Software Foundation, Inc.
 Contributed by Red Hat, Inc.
 
 This file is part of the GNU simulators.
@@ -99,8 +99,8 @@ m32c_load (bfd * prog)
 
 	  base = bfd_section_lma (s);
 	  if (verbose)
-	    fprintf (stderr, "[load a=%08" BFD_VMA_FMT "x s=%08x %s]\n",
-		     base, (int) size, bfd_section_name (s));
+	    fprintf (stderr, "[load a=%08" PRIx64 " s=%08x %s]\n",
+		     (uint64_t) base, (int) size, bfd_section_name (s));
 	  buf = (char *) malloc (size);
 	  bfd_get_section_contents (prog, s, buf, 0, size);
 	  mem_put_blk (base, buf, size);

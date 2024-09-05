@@ -1,6 +1,6 @@
 /* Self tests for format_pieces for GDB, the GNU debugger.
 
-   Copyright (C) 2018-2021 Free Software Foundation, Inc.
+   Copyright (C) 2018-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,9 +17,14 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "gdbsupport/format.h"
 #include "gdbsupport/selftest.h"
+
+#if USE_PRINTF_I64
+#define LL "I64"
+#else
+#define LL "ll"
+#endif
 
 namespace selftests {
 namespace format_pieces {
@@ -55,7 +60,7 @@ test_format_specifier ()
     {
       format_piece ("Hello\t ", literal_piece, 0),
       format_piece ("%d", int_arg, 0),
-      format_piece ("%llx", long_long_arg, 0), /* ARI: %ll */
+      format_piece ("%" LL "x", long_long_arg, 0),
       format_piece ("%%d", literal_piece, 0),
       format_piece ("%d", int_arg, 0),
     });
@@ -87,7 +92,7 @@ test_format_int_sizes ()
       format_piece ("Hello\t ", literal_piece, 0),
       format_piece ("%hu", int_arg, 0),
       format_piece ("%lu", long_arg, 0),
-      format_piece ("%llu", long_long_arg, 0), /* ARI: %ll */
+      format_piece ("%" LL "u", long_long_arg, 0),
       format_piece ("%zu", size_t_arg, 0)
     });
 
@@ -96,7 +101,7 @@ test_format_int_sizes ()
       format_piece ("Hello\t ", literal_piece, 0),
       format_piece ("%hx", int_arg, 0),
       format_piece ("%lx", long_arg, 0),
-      format_piece ("%llx", long_long_arg, 0), /* ARI: %ll */
+      format_piece ("%" LL "x", long_long_arg, 0),
       format_piece ("%zx", size_t_arg, 0)
     });
 
@@ -105,7 +110,7 @@ test_format_int_sizes ()
       format_piece ("Hello\t ", literal_piece, 0),
       format_piece ("%ho", int_arg, 0),
       format_piece ("%lo", long_arg, 0),
-      format_piece ("%llo", long_long_arg, 0), /* ARI: %ll */
+      format_piece ("%" LL "o", long_long_arg, 0),
       format_piece ("%zo", size_t_arg, 0)
     });
 
@@ -114,7 +119,7 @@ test_format_int_sizes ()
       format_piece ("Hello\t ", literal_piece, 0),
       format_piece ("%hd", int_arg, 0),
       format_piece ("%ld", long_arg, 0),
-      format_piece ("%lld", long_long_arg, 0), /* ARI: %ll */
+      format_piece ("%" LL "d", long_long_arg, 0),
       format_piece ("%zd", size_t_arg, 0)
     });
 }

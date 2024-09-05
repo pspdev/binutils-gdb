@@ -1,5 +1,5 @@
 /* BFD back end for traditional Unix core files (U-area and raw sections)
-   Copyright (C) 1988-2021 Free Software Foundation, Inc.
+   Copyright (C) 1988-2024 Free Software Foundation, Inc.
    Written by John Gilmore of Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -70,11 +70,11 @@ trad_unix_core_file_p (bfd *abfd)
 
 #ifdef TRAD_CORE_USER_OFFSET
   /* If defined, this macro is the file position of the user struct.  */
-  if (bfd_seek (abfd, (file_ptr) TRAD_CORE_USER_OFFSET, SEEK_SET) != 0)
+  if (bfd_seek (abfd, TRAD_CORE_USER_OFFSET, SEEK_SET) != 0)
     return 0;
 #endif
 
-  val = bfd_bread ((void *) &u, (bfd_size_type) sizeof u, abfd);
+  val = bfd_read (&u, sizeof u, abfd);
   if (val != sizeof u)
     {
       /* Too small to be a core file */
@@ -249,9 +249,9 @@ swap_abort (void)
 #define	NO_GET ((bfd_vma (*) (const void *)) swap_abort)
 #define	NO_PUT ((void (*) (bfd_vma, void *)) swap_abort)
 #define	NO_GETS ((bfd_signed_vma (*) (const void *)) swap_abort)
-#define	NO_GET64 ((bfd_uint64_t (*) (const void *)) swap_abort)
-#define	NO_PUT64 ((void (*) (bfd_uint64_t, void *)) swap_abort)
-#define	NO_GETS64 ((bfd_int64_t (*) (const void *)) swap_abort)
+#define	NO_GET64 ((uint64_t (*) (const void *)) swap_abort)
+#define	NO_PUT64 ((void (*) (uint64_t, void *)) swap_abort)
+#define	NO_GETS64 ((int64_t (*) (const void *)) swap_abort)
 
 const bfd_target core_trad_vec =
   {

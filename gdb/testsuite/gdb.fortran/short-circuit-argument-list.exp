@@ -1,4 +1,4 @@
-# Copyright 2018-2021 Free Software Foundation, Inc.
+# Copyright 2018-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 # calls and substring operations that are to be skipped due to short
 # circuiting.
 
-if {[skip_fortran_tests]} { return -1 }
+require allow_fortran_tests
 
 standard_testfile ".f90"
 
@@ -25,9 +25,8 @@ if {[prepare_for_testing ${testfile}.exp ${testfile} ${srcfile} {debug f90}]} {
     return -1
 }
 
-if {![runto [gdb_get_line_number "post_truth_table_init"]]} then {
-    perror "couldn't run to breakpoint post_truth_table_init"
-    continue
+if {![runto [gdb_get_line_number "post_truth_table_init"]]} {
+    return
 }
 
 # Non-zero value to use as the function call count base. Using zero is avoided

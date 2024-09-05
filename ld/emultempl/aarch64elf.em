@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+#   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 #   Contributed by ARM Ltd.
 #
 # This file is part of the GNU Binutils.
@@ -54,6 +54,10 @@ fragment <<EOF
 EOF
 fi
 fragment <<EOF
+  link_info.separate_code = DEFAULT_LD_Z_SEPARATE_CODE;
+  link_info.warn_execstack = DEFAULT_LD_WARN_EXECSTACK;
+  link_info.no_warn_rwx_segments = ! DEFAULT_LD_WARN_RWX_SEGMENTS;
+  link_info.default_execstack = DEFAULT_LD_EXECSTACK;
 }
 
 static void
@@ -351,16 +355,6 @@ EOF
 # Define some shell vars to insert bits of code into the standard elf
 # parse_args and list_options functions.
 #
-PARSE_AND_LIST_PROLOGUE='
-#define OPTION_NO_ENUM_SIZE_WARNING	309
-#define OPTION_PIC_VENEER		310
-#define OPTION_STUBGROUP_SIZE		311
-#define OPTION_NO_WCHAR_SIZE_WARNING	312
-#define OPTION_FIX_ERRATUM_835769	313
-#define OPTION_FIX_ERRATUM_843419	314
-#define OPTION_NO_APPLY_DYNAMIC_RELOCS	315
-'
-
 PARSE_AND_LIST_SHORTOPTS=p
 
 PARSE_AND_LIST_LONGOPTS='

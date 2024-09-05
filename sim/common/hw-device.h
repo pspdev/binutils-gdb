@@ -1,6 +1,6 @@
 /* The common simulator framework for GDB, the GNU Debugger.
 
-   Copyright 2002-2021 Free Software Foundation, Inc.
+   Copyright 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney and Red Hat.
 
@@ -23,6 +23,9 @@
 #ifndef HW_DEVICE_H
 #define HW_DEVICE_H
 
+#include <stdarg.h>
+
+#include "ansidecl.h"
 
 /* Introduction:
 
@@ -434,10 +437,8 @@ void hw_abort
  const char *fmt,
  ...) ATTRIBUTE_PRINTF (2, 3) ATTRIBUTE_NORETURN;
 
-void hw_vabort
-(struct hw *me,
- const char *fmt,
- va_list ap) ATTRIBUTE_NORETURN;
+extern void hw_vabort (struct hw *me, const char *fmt, va_list ap)
+  ATTRIBUTE_NORETURN ATTRIBUTE_PRINTF (2, 0);
 
 void hw_halt
 (struct hw *me,

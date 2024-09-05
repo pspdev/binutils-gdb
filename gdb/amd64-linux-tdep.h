@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux AMD64.
 
-   Copyright (C) 2006-2021 Free Software Foundation, Inc.
+   Copyright (C) 2006-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -30,24 +30,6 @@
 
 /* Total number of registers for GNU/Linux.  */
 #define AMD64_LINUX_NUM_REGS (AMD64_LINUX_ORIG_RAX_REGNUM + 1)
-
-/* Linux target description.  */
-extern struct target_desc *tdesc_amd64_linux;
-extern struct target_desc *tdesc_amd64_avx_linux;
-extern struct target_desc *tdesc_amd64_mpx_linux;
-extern struct target_desc *tdesc_amd64_avx_mpx_linux;
-extern struct target_desc *tdesc_amd64_avx_avx512_linux;
-extern struct target_desc *tdesc_amd64_avx_mpx_avx512_pku_linux;
-
-extern struct target_desc *tdesc_x32_linux;
-extern struct target_desc *tdesc_x32_avx_linux;
-extern struct target_desc *tdesc_x32_avx_avx512_linux;
-
-/* Return the right amd64-linux target descriptions according to
-   XCR0_FEATURES_BIT and IS_X32.  */
-
-const target_desc *amd64_linux_read_description (uint64_t xcr0_features_bit,
-						 bool is_x32);
 
 /* Enum that defines the syscall identifiers for amd64 linux.
    Used for process record/replay, these will be translated into
@@ -320,6 +302,8 @@ enum amd64_syscall {
   amd64_sys_sync_file_range = 277,
   amd64_sys_vmsplice = 278,
   amd64_sys_move_pages = 279,
+  amd64_sys_pipe2 = 293,
+  amd64_sys_getrandom = 318
 };
 
 /* Enum that defines the syscall identifiers for x32 linux.

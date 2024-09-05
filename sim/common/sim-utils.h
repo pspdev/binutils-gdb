@@ -1,5 +1,5 @@
 /* Miscellaneous simulator utilities.
-   Copyright (C) 1997-2021 Free Software Foundation, Inc.
+   Copyright (C) 1997-2024 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
 
 This file is part of GDB, the GNU debugger.
@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #ifndef SIM_UTILS_H
 #define SIM_UTILS_H
+
+#include "ansidecl.h"
 
 /* Memory management with an allocator that clears memory before use. */
 
@@ -61,8 +63,8 @@ SIM_RC sim_analyze_program (SIM_DESC sd, const char *prog_name,
    This is still accommodated for backward compatibility reasons. */
 
 typedef struct host_callback_struct host_callback;
-typedef int sim_write_fn (SIM_DESC sd, SIM_ADDR mem,
-			  const unsigned char *buf, int length);
+typedef uint64_t sim_write_fn (SIM_DESC sd, uint64_t mem,
+			       const void *buf, uint64_t length);
 struct bfd *sim_load_file (SIM_DESC sd, const char *myname,
 			   host_callback *callback, const char *prog,
 			   struct bfd *prog_bfd, int verbose_p,

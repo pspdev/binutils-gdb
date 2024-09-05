@@ -1,6 +1,6 @@
 /* tc-visium.h -- Header file for tc-visium.c.
 
-   Copyright (C) 2005-2021 Free Software Foundation, Inc.
+   Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -62,9 +62,6 @@ extern long visium_pcrel_from_section (struct fix *, segT);
 #define MD_APPLY_SYM_VALUE(FIX) 0
 
 #define md_operand(x)
-
-#define tc_comment_chars visium_comment_chars
-extern const char *visium_comment_chars;
 
 #define TARGET_USE_CFIPOP 1
 

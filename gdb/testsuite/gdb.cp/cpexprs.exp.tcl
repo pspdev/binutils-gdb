@@ -1,6 +1,6 @@
 # cpexprs.exp - C++ expressions tests
 #
-# Copyright 2008-2021 Free Software Foundation, Inc.
+# Copyright 2008-2024 Free Software Foundation, Inc.
 #
 # Contributed by Red Hat, originally written by Keith Seitz.
 #
@@ -30,8 +30,7 @@ proc test_breakpoint {func} {
 	fail "set test_function breakpoint for $func"
     } elseif { [gdb_test "continue" \
 		    "Continuing.\r\n\r\nBreakpoint $DEC+,.*test_function.*" \
-		    ""] != 0 } {
-	fail "continue to test_function for $func"
+		    "continue to test_function for $func"] != 0 } {
     } else {
 	gdb_breakpoint "$func"
 	set i [expr {[string last : $func] + 1}]
@@ -679,17 +678,13 @@ add {policyd5::function} \
     {operation_1<T>::function}
 
 # Start the test
-if {[skip_cplus_tests]} { continue }
+if {![allow_cplus_tests]} { continue }
 
 #
 # test running programs
 #
 
 standard_testfile cpexprs.cc
-
-if {[get_compiler_info "c++"]} {
-    return -1
-}
 
 # Include required flags.
 set flags "$flags debug c++"
@@ -727,6 +722,8 @@ foreach name [get_functions list] {
 # Test c/v gets recognized even without quoting.
 foreach cv {{} { const} { volatile} { const volatile}} {
   set test "p 'CV::m(int)$cv'"
+  set correct dummy_value
+
   gdb_test_multiple $test $test {
       -re "( = {.*} 0x\[0-9a-f\]+ <CV::m.*>)\r\n$gdb_prompt $" {
 	  # = {void (CV * const, CV::t)} 0x400944 <CV::m(int)>

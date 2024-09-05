@@ -1,6 +1,6 @@
 /* environ.c -- library for manipulating environments for GNU.
 
-   Copyright (C) 1986-2021 Free Software Foundation, Inc.
+   Copyright (C) 1986-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,7 +15,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "common-defs.h"
 #include "environ.h"
 #include <algorithm>
 #include <utility>
@@ -28,6 +27,8 @@ gdb_environ::operator= (gdb_environ &&e)
   /* Are we self-moving?  */
   if (&e == this)
     return *this;
+
+  this->clear ();
 
   m_environ_vector = std::move (e.m_environ_vector);
   m_user_set_env = std::move (e.m_user_set_env);

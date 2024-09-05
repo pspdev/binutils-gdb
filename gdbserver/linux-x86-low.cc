@@ -1,6 +1,6 @@
 /* GNU/Linux/x86-64 specific low level interface, for the remote server
    for GDB.
-   Copyright (C) 2002-2021 Free Software Foundation, Inc.
+   Copyright (C) 2002-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "server.h"
 #include <signal.h>
 #include <limits.h>
 #include <inttypes.h>
@@ -25,11 +24,18 @@
 #include "i387-fp.h"
 #include "x86-low.h"
 #include "gdbsupport/x86-xstate.h"
+#include "nat/x86-xstate.h"
 #include "nat/gdb_ptrace.h"
 
 #ifdef __x86_64__
 #include "nat/amd64-linux-siginfo.h"
+#include "arch/amd64-linux-tdesc.h"
+#else
+#include "nat/i386-linux.h"
 #endif
+
+#include "arch/i386-linux-tdesc.h"
+#include "arch/x86-linux-tdesc-features.h"
 
 #include "gdb_proc_service.h"
 /* Don't include elf/common.h if linux/elf.h got included by
@@ -45,7 +51,7 @@
 #include "nat/linux-nat.h"
 #include "nat/x86-linux.h"
 #include "nat/x86-linux-dregs.h"
-#include "linux-x86-tdesc.h"
+#include "nat/x86-linux-tdesc.h"
 
 #ifdef __x86_64__
 static target_desc_up tdesc_amd64_linux_no_xml;
@@ -271,13 +277,12 @@ static /*const*/ int i386_regmap[] =
 
 #ifdef __x86_64__
 
-/* Returns true if the current inferior belongs to a x86-64 process,
-   per the tdesc.  */
+/* Returns true if THREAD belongs to a x86-64 process, per the tdesc.  */
 
 static int
-is_64bit_tdesc (void)
+is_64bit_tdesc (thread_info *thread)
 {
-  struct regcache *regcache = get_thread_regcache (current_thread, 0);
+  struct regcache *regcache = get_thread_regcache (thread, 0);
 
   return register_size (regcache->tdesc, 0) == 8;
 }
@@ -292,7 +297,9 @@ ps_get_thread_area (struct ps_prochandle *ph,
 		    lwpid_t lwpid, int idx, void **base)
 {
 #ifdef __x86_64__
-  int use_64bit = is_64bit_tdesc ();
+  lwp_info *lwp = find_lwp_pid (ptid_t (lwpid));
+  gdb_assert (lwp != nullptr);
+  int use_64bit = is_64bit_tdesc (get_lwp_thread (lwp));
 
   if (use_64bit)
     {
@@ -334,8 +341,10 @@ ps_get_thread_area (struct ps_prochandle *ph,
 int
 x86_target::low_get_thread_area (int lwpid, CORE_ADDR *addr)
 {
+  lwp_info *lwp = find_lwp_pid (ptid_t (lwpid));
+  gdb_assert (lwp != nullptr);
 #ifdef __x86_64__
-  int use_64bit = is_64bit_tdesc ();
+  int use_64bit = is_64bit_tdesc (get_lwp_thread (lwp));
 
   if (use_64bit)
     {
@@ -351,7 +360,6 @@ x86_target::low_get_thread_area (int lwpid, CORE_ADDR *addr)
 #endif
 
   {
-    struct lwp_info *lwp = find_lwp_pid (ptid_t (lwpid));
     struct thread_info *thr = get_lwp_thread (lwp);
     struct regcache *regcache = get_thread_regcache (thr, 1);
     unsigned int desc[4];
@@ -379,7 +387,7 @@ bool
 x86_target::low_cannot_store_register (int regno)
 {
 #ifdef __x86_64__
-  if (is_64bit_tdesc ())
+  if (is_64bit_tdesc (current_thread))
     return false;
 #endif
 
@@ -390,7 +398,7 @@ bool
 x86_target::low_cannot_fetch_register (int regno)
 {
 #ifdef __x86_64__
-  if (is_64bit_tdesc ())
+  if (is_64bit_tdesc (current_thread))
     return false;
 #endif
 
@@ -815,7 +823,7 @@ x86_target::low_siginfo_fixup (siginfo_t *ptrace, gdb_byte *inf, int direction)
   int is_elf64 = linux_pid_exe_is_elf_64_file (tid, &machine);
 
   /* Is the inferior 32-bit?  If so, then fixup the siginfo object.  */
-  if (!is_64bit_tdesc ())
+  if (!is_64bit_tdesc (current_thread))
       return amd64_linux_siginfo_fixup_common (ptrace, inf, direction,
 					       FIXUP_32);
   /* No fixup for native x32 GDB.  */
@@ -829,160 +837,70 @@ x86_target::low_siginfo_fixup (siginfo_t *ptrace, gdb_byte *inf, int direction)
 
 static int use_xml;
 
-/* Format of XSAVE extended state is:
-	struct
-	{
-	  fxsave_bytes[0..463]
-	  sw_usable_bytes[464..511]
-	  xstate_hdr_bytes[512..575]
-	  avx_bytes[576..831]
-	  future_state etc
-	};
-
-  Same memory layout will be used for the coredump NT_X86_XSTATE
-  representing the XSAVE extended state registers.
-
-  The first 8 bytes of the sw_usable_bytes[464..467] is the OS enabled
-  extended state mask, which is the same as the extended control register
-  0 (the XFEATURE_ENABLED_MASK register), XCR0.  We can use this mask
-  together with the mask saved in the xstate_hdr_bytes to determine what
-  states the processor/OS supports and what state, used or initialized,
-  the process/thread is in.  */
-#define I386_LINUX_XSAVE_XCR0_OFFSET 464
-
-/* Does the current host support the GETFPXREGS request?  The header
-   file may or may not define it, and even if it is defined, the
-   kernel will return EIO if it's running on a pre-SSE processor.  */
-int have_ptrace_getfpxregs =
-#ifdef HAVE_PTRACE_GETFPXREGS
-  -1
-#else
-  0
-#endif
-;
-
 /* Get Linux/x86 target description from running target.  */
 
 static const struct target_desc *
-x86_linux_read_description (void)
+x86_linux_read_description ()
 {
-  unsigned int machine;
-  int is_elf64;
-  int xcr0_features;
-  int tid;
-  static uint64_t xcr0;
-  struct regset_info *regset;
+  int tid = lwpid_of (current_thread);
 
-  tid = lwpid_of (current_thread);
+  /* If we are not allowed to send an XML target description then we need
+     to use the hard-wired target descriptions.  This corresponds to GDB's
+     default machine for x86.
 
-  is_elf64 = linux_pid_exe_is_elf_64_file (tid, &machine);
-
-  if (sizeof (void *) == 4)
-    {
-      if (is_elf64 > 0)
-       error (_("Can't debug 64-bit process with 32-bit GDBserver"));
-#ifndef __x86_64__
-      else if (machine == EM_X86_64)
-       error (_("Can't debug x86-64 process with 32-bit GDBserver"));
-#endif
-    }
-
-#if !defined __x86_64__ && defined HAVE_PTRACE_GETFPXREGS
-  if (machine == EM_386 && have_ptrace_getfpxregs == -1)
-    {
-      elf_fpxregset_t fpxregs;
-
-      if (ptrace (PTRACE_GETFPXREGS, tid, 0, (long) &fpxregs) < 0)
-	{
-	  have_ptrace_getfpxregs = 0;
-	  have_ptrace_getregset = 0;
-	  return i386_linux_read_description (X86_XSTATE_X87);
-	}
-      else
-	have_ptrace_getfpxregs = 1;
-    }
-#endif
-
+     This check needs to occur before any returns statements that might
+     generate some alternative target descriptions.  */
   if (!use_xml)
     {
-      x86_xcr0 = X86_XSTATE_SSE_MASK;
+      x86_linux_arch_size arch_size = x86_linux_ptrace_get_arch_size (tid);
+      bool is_64bit = arch_size.is_64bit ();
+      bool is_x32 = arch_size.is_x32 ();
 
-      /* Don't use XML.  */
+      if (sizeof (void *) == 4 && is_64bit && !is_x32)
+	error (_("Can't debug 64-bit process with 32-bit GDBserver"));
+
 #ifdef __x86_64__
-      if (machine == EM_X86_64)
+      if (is_64bit && !is_x32)
 	return tdesc_amd64_linux_no_xml.get ();
       else
 #endif
 	return tdesc_i386_linux_no_xml.get ();
     }
 
-  if (have_ptrace_getregset == -1)
+  /* If have_ptrace_getregset is changed to true by calling
+     x86_linux_tdesc_for_tid then we will perform some additional
+     initialisation.  */
+  bool have_ptrace_getregset_was_unknown
+    = have_ptrace_getregset == TRIBOOL_UNKNOWN;
+
+  /* Get pointers to where we should store the xcr0 and xsave_layout
+     values.  These will be filled in by x86_linux_tdesc_for_tid the first
+     time that the function is called.  Subsequent calls will not modify
+     the stored values.  */
+  std::pair<uint64_t *, x86_xsave_layout *> storage
+    = i387_get_xsave_storage ();
+
+  const target_desc *tdesc
+    = x86_linux_tdesc_for_tid (tid, storage.first, storage.second);
+
+  if (have_ptrace_getregset_was_unknown
+      && have_ptrace_getregset == TRIBOOL_TRUE)
     {
-      uint64_t xstateregs[(X86_XSTATE_SSE_SIZE / sizeof (uint64_t))];
-      struct iovec iov;
+      int xsave_len = x86_xsave_length ();
 
-      iov.iov_base = xstateregs;
-      iov.iov_len = sizeof (xstateregs);
-
-      /* Check if PTRACE_GETREGSET works.  */
-      if (ptrace (PTRACE_GETREGSET, tid,
-		  (unsigned int) NT_X86_XSTATE, (long) &iov) < 0)
-	have_ptrace_getregset = 0;
-      else
+      /* Use PTRACE_GETREGSET if it is available.  */
+      for (regset_info *regset = x86_regsets;
+	   regset->fill_function != nullptr;
+	   regset++)
 	{
-	  have_ptrace_getregset = 1;
-
-	  /* Get XCR0 from XSAVE extended state.  */
-	  xcr0 = xstateregs[(I386_LINUX_XSAVE_XCR0_OFFSET
-			     / sizeof (uint64_t))];
-
-	  /* Use PTRACE_GETREGSET if it is available.  */
-	  for (regset = x86_regsets;
-	       regset->fill_function != NULL; regset++)
-	    if (regset->get_request == PTRACE_GETREGSET)
-	      regset->size = X86_XSTATE_SIZE (xcr0);
-	    else if (regset->type != GENERAL_REGS)
-	      regset->size = 0;
+	  if (regset->get_request == PTRACE_GETREGSET)
+	    regset->size = xsave_len;
+	  else if (regset->type != GENERAL_REGS)
+	    regset->size = 0;
 	}
     }
 
-  /* Check the native XCR0 only if PTRACE_GETREGSET is available.  */
-  xcr0_features = (have_ptrace_getregset
-		   && (xcr0 & X86_XSTATE_ALL_MASK));
-
-  if (xcr0_features)
-    x86_xcr0 = xcr0;
-
-  if (machine == EM_X86_64)
-    {
-#ifdef __x86_64__
-      const target_desc *tdesc = NULL;
-
-      if (xcr0_features)
-	{
-	  tdesc = amd64_linux_read_description (xcr0 & X86_XSTATE_ALL_MASK,
-						!is_elf64);
-	}
-
-      if (tdesc == NULL)
-	tdesc = amd64_linux_read_description (X86_XSTATE_SSE_MASK, !is_elf64);
-      return tdesc;
-#endif
-    }
-  else
-    {
-      const target_desc *tdesc = NULL;
-
-      if (xcr0_features)
-	  tdesc = i386_linux_read_description (xcr0 & X86_XSTATE_ALL_MASK);
-
-      if (tdesc == NULL)
-	tdesc = i386_linux_read_description (X86_XSTATE_SSE);
-
-      return tdesc;
-    }
-
-  gdb_assert_not_reached ("failed to return tdesc");
+  return tdesc;
 }
 
 /* Update all the target description of all processes; a new GDB
@@ -991,7 +909,7 @@ x86_linux_read_description (void)
 void
 x86_target::update_xmltarget ()
 {
-  struct thread_info *saved_thread = current_thread;
+  scoped_restore_current_thread restore_thread;
 
   /* Before changing the register cache's internal layout, flush the
      contents of the current valid caches back to the threads, and
@@ -1002,12 +920,10 @@ x86_target::update_xmltarget ()
     int pid = proc->pid;
 
     /* Look up any thread of this process.  */
-    current_thread = find_any_thread_of_pid (pid);
+    switch_to_thread (find_any_thread_of_pid (pid));
 
     low_arch_setup ();
   });
-
-  current_thread = saved_thread;
 }
 
 /* Process qSupported query, "xmlRegisters=".  Update the buffer size for
@@ -1080,7 +996,7 @@ const regs_info *
 x86_target::get_regs_info ()
 {
 #ifdef __x86_64__
-  if (is_64bit_tdesc ())
+  if (is_64bit_tdesc (current_thread))
     return &amd64_linux_regs_info;
   else
 #endif
@@ -1555,7 +1471,7 @@ x86_target::install_fast_tracepoint_jump_pad (CORE_ADDR tpoint,
 					      char *err)
 {
 #ifdef __x86_64__
-  if (is_64bit_tdesc ())
+  if (is_64bit_tdesc (current_thread))
     return amd64_install_fast_tracepoint_jump_pad (tpoint, tpaddr,
 						   collector, lockaddr,
 						   orig_size, jump_entry,
@@ -1589,7 +1505,7 @@ x86_target::get_min_fast_tracepoint_insn_len ()
 #ifdef __x86_64__
   /*  On x86-64, 5-byte jump instructions with a 4-byte offset are always
       used for fast tracepoints.  */
-  if (is_64bit_tdesc ())
+  if (is_64bit_tdesc (current_thread))
     return 5;
 #endif
 
@@ -1630,9 +1546,8 @@ add_insns (unsigned char *start, int len)
 {
   CORE_ADDR buildaddr = current_insn_ptr;
 
-  if (debug_threads)
-    debug_printf ("Adding %d bytes of insn at %s\n",
-		  len, paddress (buildaddr));
+  threads_debug_printf ("Adding %d bytes of insn at %s",
+			len, paddress (buildaddr));
 
   append_insns (&buildaddr, len, start);
   current_insn_ptr = buildaddr;
@@ -2934,7 +2849,7 @@ emit_ops *
 x86_target::emit_ops ()
 {
 #ifdef __x86_64__
-  if (is_64bit_tdesc ())
+  if (is_64bit_tdesc (current_thread))
     return &amd64_emit_ops;
   else
 #endif
@@ -2962,14 +2877,28 @@ x86_target::get_ipa_tdesc_idx ()
   struct regcache *regcache = get_thread_regcache (current_thread, 0);
   const struct target_desc *tdesc = regcache->tdesc;
 
+  if (!use_xml)
+    {
+      /* If USE_XML is false then we should be using one of these target
+	 descriptions, see x86_linux_read_description for where we choose
+	 one of these.  Both of these descriptions are created from this
+	 fixed xcr0 value X86_XSTATE_SSE_MASK.  */
+      gdb_assert (tdesc == tdesc_i386_linux_no_xml.get ()
 #ifdef __x86_64__
-  return amd64_get_ipa_tdesc_idx (tdesc);
-#endif
+		  || tdesc == tdesc_amd64_linux_no_xml.get ()
+#endif /* __x86_64__ */
+		  );
+      return x86_linux_xcr0_to_tdesc_idx (X86_XSTATE_SSE_MASK);
+    }
 
-  if (tdesc == tdesc_i386_linux_no_xml.get ())
-    return X86_TDESC_SSE;
+  /* The xcr0 value and xsave layout value are cached when the target
+     description is read.  Grab their cache location, and use the cached
+     value to calculate a tdesc index.  */
+  std::pair<uint64_t *, x86_xsave_layout *> storage
+    = i387_get_xsave_storage ();
+  uint64_t xcr0 = *storage.first;
 
-  return i386_get_ipa_tdesc_idx (tdesc);
+  return x86_linux_xcr0_to_tdesc_idx (xcr0);
 }
 
 /* The linux target ops object.  */

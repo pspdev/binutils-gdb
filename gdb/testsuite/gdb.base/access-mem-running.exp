@@ -1,4 +1,4 @@
-# Copyright (C) 2021 Free Software Foundation, Inc.
+# Copyright (C) 2021-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 
 standard_testfile
 
-if {[prepare_for_testing "failed to prepare" $testfile $srcfile {debug}] == -1} {
+if {[build_executable "failed to prepare" $testfile $srcfile {debug}] == -1} {
     return -1
 }
 
@@ -46,13 +46,9 @@ proc test { non_stop } {
 	&& ([target_info gdb_protocol] == "remote"
 	    || [target_info gdb_protocol] == "extended-remote")} {
 
-	gdb_test_multiple "maint show target-non-stop" "" {
-	    -wrap -re "(is|currently) on.*" {
-	    }
-	    -wrap -re "(is|currently) off.*" {
-		unsupported "can't issue commands while target is running"
-		return 0
-	    }
+	if {![is_target_non_stop]} {
+	    unsupported "can't issue commands while target is running"
+	    return 0
 	}
     }
 

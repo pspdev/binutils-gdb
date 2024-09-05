@@ -1,5 +1,5 @@
 /* GDB variable objects API.
-   Copyright (C) 1999-2021 Free Software Foundation, Inc.
+   Copyright (C) 1999-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -314,7 +314,10 @@ extern void all_root_varobjs (gdb::function_view<void (struct varobj *var)>);
 extern std::vector<varobj_update_result>
   varobj_update (struct varobj **varp, bool is_explicit);
 
-extern void varobj_invalidate (void);
+/* Try to recreate any global or floating varobj.  This is called after
+   changing symbol files.  */
+
+extern void varobj_re_set (void);
 
 extern bool varobj_editable_p (const struct varobj *var);
 

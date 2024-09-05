@@ -1,5 +1,5 @@
 /* Agent expression code for remote server.
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,7 +16,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "server.h"
 #include "ax.h"
 #include "gdbsupport/format.h"
 #include "tracepoint.h"
@@ -39,19 +38,16 @@ ax_vdebug (const char *fmt, ...)
 #ifdef IN_PROCESS_AGENT
   fprintf (stderr, PROG "/ax: %s\n", buf);
 #else
-  debug_printf (PROG "/ax: %s\n", buf);
+  threads_debug_printf (PROG "/ax: %s", buf);
 #endif
   va_end (ap);
 }
 
-#define ax_debug_1(level, fmt, args...)	\
+#define ax_debug(fmt, args...) \
   do {						\
-    if (level <= debug_threads)			\
+    if (debug_threads)			\
       ax_vdebug ((fmt), ##args);		\
   } while (0)
-
-#define ax_debug(FMT, args...)		\
-  ax_debug_1 (1, FMT, ##args)
 
 /* This enum must exactly match what is documented in
    gdb/doc/agentexpr.texi, including all the numerical values.  */
@@ -878,7 +874,7 @@ ax_printf (CORE_ADDR fn, CORE_ADDR chan, const char *format,
 	    break;
 
 	  case long_long_arg:
-#if defined (CC_HAS_LONG_LONG) && defined (PRINTF_HAS_LONG_LONG)
+#if defined (PRINTF_HAS_LONG_LONG)
 	    {
 	      long long val = args[i];
 
@@ -988,7 +984,7 @@ gdb_eval_agent_expr (struct eval_agent_expr_context *ctx,
     }
 
   /* Cache the stack top in its own variable. Much of the time we can
-     operate on this variable, rather than dinking with the stack. It
+     operate on this variable, rather than syncing with the stack. It
      needs to be copied to the stack when sp changes.  */
   top = 0;
 
@@ -1115,22 +1111,26 @@ gdb_eval_agent_expr (struct eval_agent_expr_context *ctx,
 	  break;
 
 	case gdb_agent_op_ref8:
-	  agent_mem_read (ctx, cnv.u8.bytes, (CORE_ADDR) top, 1);
+	  if (agent_mem_read (ctx, cnv.u8.bytes, (CORE_ADDR) top, 1) != 0)
+	    return expr_eval_invalid_memory_access;
 	  top = cnv.u8.val;
 	  break;
 
 	case gdb_agent_op_ref16:
-	  agent_mem_read (ctx, cnv.u16.bytes, (CORE_ADDR) top, 2);
+	  if (agent_mem_read (ctx, cnv.u16.bytes, (CORE_ADDR) top, 2) != 0)
+	    return expr_eval_invalid_memory_access;
 	  top = cnv.u16.val;
 	  break;
 
 	case gdb_agent_op_ref32:
-	  agent_mem_read (ctx, cnv.u32.bytes, (CORE_ADDR) top, 4);
+	  if (agent_mem_read (ctx, cnv.u32.bytes, (CORE_ADDR) top, 4) != 0)
+	    return expr_eval_invalid_memory_access;
 	  top = cnv.u32.val;
 	  break;
 
 	case gdb_agent_op_ref64:
-	  agent_mem_read (ctx, cnv.u64.bytes, (CORE_ADDR) top, 8);
+	  if (agent_mem_read (ctx, cnv.u64.bytes, (CORE_ADDR) top, 8) != 0)
+	    return expr_eval_invalid_memory_access;
 	  top = cnv.u64.val;
 	  break;
 
@@ -1210,8 +1210,7 @@ gdb_eval_agent_expr (struct eval_agent_expr_context *ctx,
 		top = cnv.u8.val;
 		break;
 	      default:
-		internal_error (__FILE__, __LINE__,
-				"unhandled register size");
+		internal_error ("unhandled register size");
 	      }
 	  }
 	  break;

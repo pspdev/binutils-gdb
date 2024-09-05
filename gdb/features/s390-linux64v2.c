@@ -1,11 +1,10 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: s390-linux64v2.xml */
 
-#include "defs.h"
 #include "osabi.h"
 #include "target-descriptions.h"
 
-struct target_desc *tdesc_s390_linux64v2;
+const struct target_desc *tdesc_s390_linux64v2;
 static void
 initialize_tdesc_s390_linux64v2 (void)
 {

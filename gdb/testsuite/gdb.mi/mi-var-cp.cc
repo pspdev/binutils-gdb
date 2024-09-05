@@ -1,4 +1,4 @@
-/* Copyright 2006-2021 Free Software Foundation, Inc.
+/* Copyright 2006-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,15 +19,15 @@ void reference_update_tests ()
   int x = 167;
   /*: mi_create_varobj "RX" "rx" "create varobj for rx" :*/
   int& rx = x;
-  /*: mi_varobj_update RX {RX} "update RX (1)"
+  /*: mi_varobj_update RX {RX} "update RX, 1"
       mi_check_varobj_value RX 167 "check RX: expect 167"
       :*/
   x = 567;
-  /*: mi_varobj_update RX {RX} "update RX (2)"
+  /*: mi_varobj_update RX {RX} "update RX, 2"
       mi_check_varobj_value RX 567 "check RX: expect 567"
       :*/  
   x = 567;
-  /*: mi_varobj_update RX {} "update RX (3)"
+  /*: mi_varobj_update RX {} "update RX, 3"
       mi_delete_varobj RX "delete RX"
     :*/
   /* Dummy assignment to keep 'x' in scope.  */
@@ -104,7 +104,7 @@ int reference_to_struct ()
   S& r = s;
   /*:
     mi_create_varobj S s "create varobj for s"
-    mi_create_varobj R r "create varobj for s"
+    mi_create_varobj R r "create varobj for r"
     mi_gdb_test "-var-show-attributes S" \
 	"\\^done,attr=\"noneditable\"" \
 	"check attributes of S"

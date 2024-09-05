@@ -1,4 +1,4 @@
-# Copyright 2014-2021 Free Software Foundation, Inc.
+# Copyright 2014-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,6 +35,12 @@
 # anything target remote specific, so let it run on all targets.
 
 standard_testfile
+
+# The allow_hw_watchpoint_tests starts GDB on a small test program to
+# check if HW watchpoints are supported.  We do not want to restart
+# GDB after this test script has itself started GDB, so call
+# allow_hw_watchpoint_tests first and cache the result.
+set allow_hw_watchpoint_tests_p [allow_hw_watchpoint_tests]
 
 # Force a breakpoint re-set in GDB.  Currently this is done by
 # reloading symbols with the "file" command.
@@ -109,8 +115,7 @@ proc test_break { always_inserted break_command } {
     with_test_prefix "$cmd" {
 	delete_breakpoints
 
-	if ![runto_main] then {
-	    fail "can't run to main"
+	if {![runto_main]} {
 	    return
 	}
 
@@ -171,16 +176,16 @@ foreach_with_prefix pie { "nopie" "pie" } {
     foreach_with_prefix always_inserted { "off" "on" } {
 	test_break $always_inserted "break"
 
-	if {![skip_hw_breakpoint_tests]} {
+	if {[allow_hw_breakpoint_tests]} {
 	    test_break $always_inserted "hbreak"
 	}
 
-	if {![skip_hw_watchpoint_tests]} {
+	if {$allow_hw_watchpoint_tests_p} {
 	    test_break $always_inserted "watch"
 	}
 
-	if {![skip_hw_watchpoint_access_tests]
-	    && ![skip_hw_watchpoint_multi_tests]} {
+	if {[allow_hw_watchpoint_access_tests]
+	    && [allow_hw_watchpoint_multi_tests]} {
 	    test_break $always_inserted "rwatch"
 	    test_break $always_inserted "awatch"
 	}

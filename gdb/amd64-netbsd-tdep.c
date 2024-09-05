@@ -1,6 +1,6 @@
 /* Target-dependent code for NetBSD/amd64.
 
-   Copyright (C) 2003-2021 Free Software Foundation, Inc.
+   Copyright (C) 2003-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "arch-utils.h"
 #include "frame.h"
 #include "gdbcore.h"
@@ -35,7 +34,7 @@
    routine.  */
 
 static int
-amd64nbsd_sigtramp_p (struct frame_info *this_frame)
+amd64nbsd_sigtramp_p (const frame_info_ptr &this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
   const char *name;
@@ -48,7 +47,7 @@ amd64nbsd_sigtramp_p (struct frame_info *this_frame)
    return the address of the associated mcontext structure.  */
 
 static CORE_ADDR
-amd64nbsd_mcontext_addr (struct frame_info *this_frame)
+amd64nbsd_mcontext_addr (const frame_info_ptr &this_frame)
 {
   CORE_ADDR addr;
 
@@ -97,7 +96,7 @@ int amd64nbsd_r_reg_offset[] =
 static void
 amd64nbsd_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
-  struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  i386_gdbarch_tdep *tdep = gdbarch_tdep<i386_gdbarch_tdep> (gdbarch);
 
   /* Initialize general-purpose register set details first.  */
   tdep->gregset_reg_offset = amd64nbsd_r_reg_offset;

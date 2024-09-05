@@ -1,6 +1,6 @@
 /* The IGEN simulator generator for GDB, the GNU Debugger.
 
-   Copyright 2002-2021 Free Software Foundation, Inc.
+   Copyright 2002-2024 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney.
 
@@ -19,6 +19,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
+#ifndef IGEN_GEN_SEMANTICS_H
+#define IGEN_GEN_SEMANTICS_H
 
 /* Creates the files semantics.[hc].
 
@@ -72,14 +74,18 @@
 
 extern void print_semantic_declaration
   (lf *file,
-   insn_entry * insn,
-   opcode_bits *bits, insn_opcodes *opcodes, int nr_prefetched_words);
+   const insn_entry *insn,
+   const opcode_bits *bits,
+   const insn_opcodes *opcodes,
+   int nr_prefetched_words);
 
 extern void print_semantic_definition
   (lf *file,
-   insn_entry * insn,
-   opcode_bits *bits,
-   insn_opcodes *opcodes, cache_entry *cache_rules, int nr_prefetched_words);
+   const insn_entry *insn,
+   const opcode_bits *bits,
+   const insn_opcodes *opcodes,
+   cache_entry *cache_rules,
+   int nr_prefetched_words);
 
 
 typedef enum
@@ -95,5 +101,8 @@ extern void print_idecode_invalid
 
 extern void print_semantic_body
   (lf *file,
-   insn_entry * instruction,
-   opcode_bits *expanded_bits, insn_opcodes *opcodes);
+   const insn_entry *instruction,
+   const opcode_bits *expanded_bits,
+   const insn_opcodes *opcodes);
+
+#endif /* IGEN_GEN_SEMANTICS_H */

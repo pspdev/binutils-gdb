@@ -1,6 +1,6 @@
 # This testcase is part of GDB, the GNU debugger.
 
-# Copyright 2001-2021 Free Software Foundation, Inc.
+# Copyright 2001-2024 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -496,12 +496,17 @@ gdb_test_no_output "set target-charset UTF-8"
 gdb_test "print \"\\242\"" " = \"\\\\242\"" \
   "non-representable target character"
 
-gdb_test "print '\\x'" "\\\\x escape without a following hex digit."
-gdb_test "print '\\u'" "\\\\u escape without a following hex digit."
+gdb_test "print '\\x'" "\\\\x escape without a following hex digit"
+gdb_test "print '\\u'" "\\\\u escape without a following hex digit"
 gdb_test "print '\\9'" " = \[0-9\]+ '9'"
 
 # An octal escape can only be 3 digits.
 gdb_test "print \"\\1011\"" " = \"A1\""
+
+# The final digit does not need to be escaped here.
+foreach val {0 1 2 3 4 5 6 7 8 9 a b c d e f} {
+    gdb_test "print \"\\0\" \"${val}\"" " = \"\\\\000${val}\""
+}
 
 # Tests for wide- or unicode- strings.  L is the prefix letter to use,
 # either "L" (for wide strings), "u" (for UTF-16), or "U" (for UTF-32).
@@ -519,6 +524,9 @@ proc test_wide_or_unicode {L name} {
     gdb_test "print $L\"\" \"abcdef\" \"g\"" \
       "$L\"abcdefg\"" \
       "concatenate three strings with empty $name string"
+    gdb_test "print $L\"\\xffef\" $L\"f\"" \
+	"$L\"\\\\xffef\\\\146\"" \
+	"test multi-char escape sequence case for $name"
 
     gdb_test "print $L'a'" "= \[0-9\]+ $L'a'" \
       "basic $name character"

@@ -1,4 +1,4 @@
-/* Copyright (C) 2012-2021 Free Software Foundation, Inc.
+/* Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -15,9 +15,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "command.h"
-#include "gdbcmd.h"
+#include "cli/cli-cmds.h"
 #include "target.h"
 #include "gdbsupport/agent.h"
 #include "observable.h"
@@ -40,9 +39,9 @@ static void
 show_can_use_agent (struct ui_file *file, int from_tty,
 		    struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file,
-		    _("Debugger's willingness to use agent in inferior "
-		      "as a helper is %s.\n"), value);
+  gdb_printf (file,
+	      _("Debugger's willingness to use agent in inferior "
+		"as a helper is %s.\n"), value);
 }
 
 static void
@@ -65,7 +64,7 @@ set_can_use_agent (const char *args, int from_tty, struct cmd_list_element *c)
 static void
 agent_new_objfile (struct objfile *objfile)
 {
-  if (objfile == NULL || agent_loaded_p ())
+  if (agent_loaded_p ())
     return;
 
   if (can_use_agent == can_use_agent_off)

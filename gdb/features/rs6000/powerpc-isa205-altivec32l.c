@@ -1,11 +1,10 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: powerpc-isa205-altivec32l.xml */
 
-#include "defs.h"
 #include "osabi.h"
 #include "target-descriptions.h"
 
-struct target_desc *tdesc_powerpc_isa205_altivec32l;
+const struct target_desc *tdesc_powerpc_isa205_altivec32l;
 static void
 initialize_tdesc_powerpc_isa205_altivec32l (void)
 {

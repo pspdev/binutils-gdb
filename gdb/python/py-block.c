@@ -1,6 +1,6 @@
 /* Python interface to blocks.
 
-   Copyright (C) 2008-2021 Free Software Foundation, Inc.
+   Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
 #include "block.h"
 #include "dictionary.h"
 #include "symtab.h"
@@ -32,10 +31,6 @@ struct block_object {
      between a block and an object file.  When a block is created also
      store a pointer to the object file for later use.  */
   struct objfile *objfile;
-  /* Keep track of all blocks with a doubly-linked list.  Needed for
-     block invalidation if the source object file has been freed.  */
-  block_object *prev;
-  block_object *next;
 };
 
 struct block_syms_iterator_object {
@@ -79,7 +74,8 @@ struct block_syms_iterator_object {
 
 extern PyTypeObject block_syms_iterator_object_type
     CPYCHECKER_TYPE_OBJECT_FOR_TYPEDEF ("block_syms_iterator_object");
-static const struct objfile_data *blpy_objfile_data_key;
+static const registry<objfile>::key<htab, htab_deleter>
+     blpy_objfile_data_key;
 
 static PyObject *
 blpy_iter (PyObject *self)
@@ -109,7 +105,7 @@ blpy_get_start (PyObject *self, void *closure)
 
   BLPY_REQUIRE_VALID (self, block);
 
-  return gdb_py_object_from_ulongest (BLOCK_START (block)).release ();
+  return gdb_py_object_from_ulongest (block->start ()).release ();
 }
 
 static PyObject *
@@ -119,7 +115,7 @@ blpy_get_end (PyObject *self, void *closure)
 
   BLPY_REQUIRE_VALID (self, block);
 
-  return gdb_py_object_from_ulongest (BLOCK_END (block)).release ();
+  return gdb_py_object_from_ulongest (block->end ()).release ();
 }
 
 static PyObject *
@@ -130,7 +126,7 @@ blpy_get_function (PyObject *self, void *closure)
 
   BLPY_REQUIRE_VALID (self, block);
 
-  sym = BLOCK_FUNCTION (block);
+  sym = block->function ();
   if (sym)
     return symbol_to_symbol_object (sym);
 
@@ -146,7 +142,7 @@ blpy_get_superblock (PyObject *self, void *closure)
 
   BLPY_REQUIRE_VALID (self, block);
 
-  super_block = BLOCK_SUPERBLOCK (block);
+  super_block = block->superblock ();
   if (super_block)
     return block_to_block_object (super_block, self_obj->objfile);
 
@@ -164,7 +160,7 @@ blpy_get_global_block (PyObject *self, void *closure)
 
   BLPY_REQUIRE_VALID (self, block);
 
-  global_block = block_global_block (block);
+  global_block = block->global_block ();
 
   return block_to_block_object (global_block,
 				self_obj->objfile);
@@ -183,10 +179,10 @@ blpy_get_static_block (PyObject *self, void *closure)
 
   BLPY_REQUIRE_VALID (self, block);
 
-  if (BLOCK_SUPERBLOCK (block) == NULL)
+  if (block->superblock () == NULL)
     Py_RETURN_NONE;
 
-  static_block = block_static_block (block);
+  static_block = block->static_block ();
 
   return block_to_block_object (static_block, self_obj->objfile);
 }
@@ -201,7 +197,7 @@ blpy_is_global (PyObject *self, void *closure)
 
   BLPY_REQUIRE_VALID (self, block);
 
-  if (BLOCK_SUPERBLOCK (block))
+  if (block->superblock ())
     Py_RETURN_FALSE;
 
   Py_RETURN_TRUE;
@@ -217,8 +213,8 @@ blpy_is_static (PyObject *self, void *closure)
 
   BLPY_REQUIRE_VALID (self, block);
 
-  if (BLOCK_SUPERBLOCK (block) != NULL
-     && BLOCK_SUPERBLOCK (BLOCK_SUPERBLOCK (block)) == NULL)
+  if (block->superblock () != NULL
+     && block->superblock ()->superblock () == NULL)
     Py_RETURN_TRUE;
 
   Py_RETURN_FALSE;
@@ -241,66 +237,68 @@ blpy_getitem (PyObject *self, PyObject *key)
 
   lookup_name_info lookup_name (name.get(), symbol_name_match_type::FULL);
 
-  /* We use ALL_BLOCK_SYMBOLS_WITH_NAME instead of block_lookup_symbol so
-     that we can look up symbols irrespective of the domain, matching the
-     iterator. It would be confusing if the iterator returns symbols you
-     can't find via getitem.  */
-  struct block_iterator iter;
-  struct symbol *sym = nullptr;
-  ALL_BLOCK_SYMBOLS_WITH_NAME (block, lookup_name, iter, sym)
+  /* We use an iterator instead of block_lookup_symbol so that we can
+     look up symbols irrespective of the domain, matching the
+     iterator. It would be confusing if the iterator returns symbols
+     you can't find via getitem.  */
+  for (struct symbol *sym : block_iterator_range (block, &lookup_name))
     {
       /* Just stop at the first match */
-      break;
+      return symbol_to_symbol_object (sym);
     }
 
-  if (sym == nullptr)
-    {
-      PyErr_SetObject (PyExc_KeyError, key);
-      return nullptr;
-    }
-  return symbol_to_symbol_object (sym);
+  PyErr_SetObject (PyExc_KeyError, key);
+  return nullptr;
 }
+
+/* Deleter function for the hash table.  */
+
+static void
+block_object_del (void *obj)
+{
+  block_object *block = (block_object *) obj;
+  block->block = nullptr;
+  block->objfile = nullptr;
+}
+
+/* Hash function for the hash table.  */
+
+static hashval_t
+block_object_hash (const void *obj)
+{
+  const block_object *block = (const block_object *) obj;
+  return htab_hash_pointer (block->block);
+}
+
+/* Equality function for the hash table.  Note that searches must be
+   done with a plain block.  */
+
+static int
+block_object_eq (const void *a, const void *b)
+{
+  const block_object *blocka = (const block_object *) a;
+  const block *blockb = (const block *) b;
+  return blocka->block == blockb;
+}
+
+/* Called when a gdb.Block is destroyed.  This removes it from the
+   hash.  */
 
 static void
 blpy_dealloc (PyObject *obj)
 {
   block_object *block = (block_object *) obj;
 
-  if (block->prev)
-    block->prev->next = block->next;
-  else if (block->objfile)
+  if (block->objfile != nullptr)
     {
-      set_objfile_data (block->objfile, blpy_objfile_data_key,
-			block->next);
+      htab_t table = blpy_objfile_data_key.get (block->objfile);
+      hashval_t hash = block_object_hash (block);
+      /* This will clear the contents of the block as a side
+	 effect.  */
+      htab_remove_elt_with_hash (table, block->block, hash);
     }
-  if (block->next)
-    block->next->prev = block->prev;
-  block->block = NULL;
-  Py_TYPE (obj)->tp_free (obj);
-}
 
-/* Given a block, and a block_object that has previously been
-   allocated and initialized, populate the block_object with the
-   struct block data.  Also, register the block_object life-cycle
-   with the life-cycle of the object file associated with this
-   block, if needed.  */
-static void
-set_block (block_object *obj, const struct block *block,
-	   struct objfile *objfile)
-{
-  obj->block = block;
-  obj->prev = NULL;
-  if (objfile)
-    {
-      obj->objfile = objfile;
-      obj->next = ((block_object *)
-		   objfile_data (objfile, blpy_objfile_data_key));
-      if (obj->next)
-	obj->next->prev = obj;
-      set_objfile_data (objfile, blpy_objfile_data_key, obj);
-    }
-  else
-    obj->next = NULL;
+  Py_TYPE (obj)->tp_free (obj);
 }
 
 /* Create a new block object (gdb.Block) that encapsulates the struct
@@ -308,13 +306,32 @@ set_block (block_object *obj, const struct block *block,
 PyObject *
 block_to_block_object (const struct block *block, struct objfile *objfile)
 {
-  block_object *block_obj;
+  htab_t table = blpy_objfile_data_key.get (objfile);
+  if (table == nullptr)
+    {
+      table = htab_create_alloc (10, block_object_hash, block_object_eq,
+				 block_object_del, xcalloc, xfree);
+      blpy_objfile_data_key.set (objfile, table);
+    }
 
-  block_obj = PyObject_New (block_object, &block_object_type);
-  if (block_obj)
-    set_block (block_obj, block, objfile);
+  hashval_t hash = htab_hash_pointer (block);
+  block_object *result = (block_object *) htab_find_with_hash (table, block,
+							       hash);
+  if (result != nullptr)
+    {
+      PyObject *py_result = (PyObject *) result;
+      Py_INCREF (py_result);
+      return py_result;
+    }
 
-  return (PyObject *) block_obj;
+  result = PyObject_New (block_object, &block_object_type);
+  result->block = block;
+  result->objfile = objfile;
+
+  void **slot = htab_find_slot_with_hash (table, block, hash, INSERT);
+  *slot = result;
+
+  return (PyObject *) result;
 }
 
 /* Return struct block reference that is wrapped by this object.  */
@@ -404,41 +421,75 @@ blpy_iter_is_valid (PyObject *self, PyObject *args)
   Py_RETURN_TRUE;
 }
 
-/* This function is called when an objfile is about to be freed.
-   Invalidate the block as further actions on the block would result
-   in bad data.  All access to obj->symbol should be gated by
-   BLPY_REQUIRE_VALID which will raise an exception on invalid
-   blocks.  */
-static void
-del_objfile_blocks (struct objfile *objfile, void *datum)
-{
-  block_object *obj = (block_object *) datum;
+/* __repr__ implementation for gdb.Block.  */
 
-  while (obj)
+static PyObject *
+blpy_repr (PyObject *self)
+{
+  const auto block = block_object_to_block (self);
+  if (block == nullptr)
+    return gdb_py_invalid_object_repr (self);
+
+  const auto name = block->function () ?
+    block->function ()->print_name () : "<anonymous>";
+
+  std::string str;
+  unsigned int written_symbols = 0;
+  const int len = mdict_size (block->multidict ());
+  static constexpr int SYMBOLS_TO_SHOW = 5;
+  for (struct symbol *symbol : block_iterator_range (block))
     {
-      block_object *next = obj->next;
-
-      obj->block = NULL;
-      obj->objfile = NULL;
-      obj->next = NULL;
-      obj->prev = NULL;
-
-      obj = next;
+      if (written_symbols == SYMBOLS_TO_SHOW)
+	{
+	  const int remaining = len - SYMBOLS_TO_SHOW;
+	  if (remaining == 1)
+	    str += string_printf ("... (%d more symbol)", remaining);
+	  else
+	    str += string_printf ("... (%d more symbols)", remaining);
+	  break;
+	}
+      str += symbol->print_name ();
+      if (++written_symbols < len)
+	str += ", ";
     }
+  return PyUnicode_FromFormat ("<%s %s {%s}>", Py_TYPE (self)->tp_name,
+			       name, str.c_str ());
 }
 
-void _initialize_py_block ();
-void
-_initialize_py_block ()
+/* Hash function for block objects.  */
+
+static Py_hash_t
+blpy_hash (PyObject *self)
 {
-  /* Register an objfile "free" callback so we can properly
-     invalidate blocks when an object file is about to be
-     deleted.  */
-  blpy_objfile_data_key
-    = register_objfile_data_with_cleanup (NULL, del_objfile_blocks);
+  /* Python doesn't really expose its pointer hash function, so we use
+     our own.  */
+  Py_hash_t result = (Py_hash_t) htab_hash_pointer (self);
+  /* -1 has a special meaning for Python.  */
+  if (result == -1)
+    result = -2;
+  return result;
 }
 
-int
+/* Implements the equality comparison for Block objects.  All other
+   comparison operators will throw NotImplemented, as they aren't
+   valid for blocks.  */
+
+static PyObject *
+blpy_richcompare (PyObject *self, PyObject *other, int op)
+{
+  if (!PyObject_TypeCheck (other, &block_object_type)
+      || (op != Py_EQ && op != Py_NE))
+    {
+      Py_INCREF (Py_NotImplemented);
+      return Py_NotImplemented;
+    }
+
+  bool expected = self == other;
+  bool equal = op == Py_EQ;
+  return PyBool_FromLong (equal == expected);
+}
+
+static int CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION
 gdbpy_initialize_blocks (void)
 {
   block_object_type.tp_new = PyType_GenericNew;
@@ -456,6 +507,8 @@ gdbpy_initialize_blocks (void)
   return gdb_pymodule_addobject (gdb_module, "BlockIterator",
 				 (PyObject *) &block_syms_iterator_object_type);
 }
+
+GDBPY_INITIALIZE_FILE (gdbpy_initialize_blocks);
 
 
 
@@ -500,21 +553,21 @@ PyTypeObject block_object_type = {
   0,				  /*tp_getattr*/
   0,				  /*tp_setattr*/
   0,				  /*tp_compare*/
-  0,				  /*tp_repr*/
+  blpy_repr,                      /*tp_repr*/
   0,				  /*tp_as_number*/
   0,				  /*tp_as_sequence*/
   &block_object_as_mapping,	  /*tp_as_mapping*/
-  0,				  /*tp_hash */
+  blpy_hash,			  /*tp_hash */
   0,				  /*tp_call*/
   0,				  /*tp_str*/
   0,				  /*tp_getattro*/
   0,				  /*tp_setattro*/
   0,				  /*tp_as_buffer*/
-  Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,  /*tp_flags*/
+  Py_TPFLAGS_DEFAULT,		  /*tp_flags*/
   "GDB block object",		  /* tp_doc */
   0,				  /* tp_traverse */
   0,				  /* tp_clear */
-  0,				  /* tp_richcompare */
+  blpy_richcompare,		  /* tp_richcompare */
   0,				  /* tp_weaklistoffset */
   blpy_iter,			  /* tp_iter */
   0,				  /* tp_iternext */
@@ -550,7 +603,7 @@ PyTypeObject block_syms_iterator_object_type = {
   0,				  /*tp_getattro*/
   0,				  /*tp_setattro*/
   0,				  /*tp_as_buffer*/
-  Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,  /*tp_flags*/
+  Py_TPFLAGS_DEFAULT,		  /*tp_flags*/
   "GDB block syms iterator object",	      /*tp_doc */
   0,				  /*tp_traverse */
   0,				  /*tp_clear */

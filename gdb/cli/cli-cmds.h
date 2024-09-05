@@ -1,5 +1,5 @@
 /* Header file for GDB CLI command implementation library.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
+   Copyright (C) 2000-2024 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 #define CLI_CLI_CMDS_H
 
 #include "gdbsupport/filestuff.h"
-#include "gdbsupport/gdb_optional.h"
+#include <optional>
 #include "completer.h"
 
 /* Chain containing all defined commands.  */
@@ -93,9 +93,37 @@ extern struct cmd_list_element *maintenanceprintlist;
 
 extern struct cmd_list_element *maintenanceflushlist;
 
+/* Chain containing all defined "maintenance check" subcommands.  */
+
+extern struct cmd_list_element *maintenancechecklist;
+
+/* Chain containing all defined "maintenance set" subcommands.  */
+
+extern struct cmd_list_element *maintenance_set_cmdlist;
+
+/* Chain containing all defined "maintenance show" subcommands.  */
+
+extern struct cmd_list_element *maintenance_show_cmdlist;
+
 extern struct cmd_list_element *setprintlist;
 
 extern struct cmd_list_element *showprintlist;
+
+/* Chain containing all defined "set print raw" subcommands.  */
+
+extern struct cmd_list_element *setprintrawlist;
+
+/* Chain containing all defined "show print raw" subcommands.  */
+
+extern struct cmd_list_element *showprintrawlist;
+
+/* Chain containing all defined "set print type" subcommands.  */
+
+extern struct cmd_list_element *setprinttypelist;
+
+/* Chain containing all defined "show print type" subcommands.  */
+
+extern struct cmd_list_element *showprinttypelist;
 
 extern struct cmd_list_element *setdebuglist;
 
@@ -105,13 +133,23 @@ extern struct cmd_list_element *setchecklist;
 
 extern struct cmd_list_element *showchecklist;
 
+/* Chain containing all defined "save" subcommands.  */
+
+extern struct cmd_list_element *save_cmdlist;
+
+/* Chain containing all defined "set source" subcommands.  */
+
+extern struct cmd_list_element *setsourcelist;
+
+/* Chain containing all defined "show source" subcommands.  */
+
+extern struct cmd_list_element *showsourcelist;
+
 /* Limit the call depth of user-defined commands */
 
 extern unsigned int max_user_call_depth;
 
 /* Exported to gdb/top.c */
-
-void init_cmd_lists (void);
 
 int is_complete_command (struct cmd_list_element *cmd);
 
@@ -141,7 +179,7 @@ struct open_script
   }
 };
 
-extern gdb::optional<open_script>
+extern std::optional<open_script>
     find_and_open_script (const char *file, int search_path);
 
 /* Command tracing state.  */

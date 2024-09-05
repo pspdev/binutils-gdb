@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux, architecture independent.
 
-   Copyright (C) 2009-2021 Free Software Foundation, Inc.
+   Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "defs.h"
+#include "exceptions.h"
 #include "gdbtypes.h"
 #include "linux-tdep.h"
 #include "auxv.h"
@@ -27,22 +27,25 @@
 #include "regcache.h"
 #include "regset.h"
 #include "elf/common.h"
-#include "elf-bfd.h"            /* for elfcore_write_* */
+#include "elf-bfd.h"
 #include "inferior.h"
 #include "cli/cli-utils.h"
 #include "arch-utils.h"
-#include "gdb_obstack.h"
+#include "gdbsupport/gdb_obstack.h"
 #include "observable.h"
 #include "objfiles.h"
 #include "infcall.h"
-#include "gdbcmd.h"
-#include "gdb_regex.h"
+#include "cli/cli-cmds.h"
+#include "gdbsupport/gdb_regex.h"
 #include "gdbsupport/enum-flags.h"
-#include "gdbsupport/gdb_optional.h"
+#include <optional>
 #include "gcore.h"
 #include "gcore-elf.h"
+#include "solib-svr4.h"
+#include "memtag.h"
 
 #include <ctype.h>
+#include <unordered_map>
 
 /* This enum represents the values that the user can choose when
    informing the Linux kernel about which memory mappings will be
@@ -190,25 +193,22 @@ enum
     LINUX_SIGRTMAX = 64,
   };
 
-static struct gdbarch_data *linux_gdbarch_data_handle;
-
 struct linux_gdbarch_data
 {
-  struct type *siginfo_type;
-  int num_disp_step_buffers;
+  struct type *siginfo_type = nullptr;
+  int num_disp_step_buffers = 0;
 };
 
-static void *
-init_linux_gdbarch_data (struct obstack *obstack)
-{
-  return obstack_zalloc<linux_gdbarch_data> (obstack);
-}
+static const registry<gdbarch>::key<linux_gdbarch_data>
+     linux_gdbarch_data_handle;
 
 static struct linux_gdbarch_data *
 get_linux_gdbarch_data (struct gdbarch *gdbarch)
 {
-  return ((struct linux_gdbarch_data *)
-	  gdbarch_data (gdbarch, linux_gdbarch_data_handle));
+  struct linux_gdbarch_data *result = linux_gdbarch_data_handle.get (gdbarch);
+  if (result == nullptr)
+    result = linux_gdbarch_data_handle.emplace (gdbarch);
+  return result;
 }
 
 /* Linux-specific cached data.  This is used by GDB for caching
@@ -229,11 +229,11 @@ struct linux_info
   int vsyscall_range_p = 0;
 
   /* Inferior's displaced step buffers.  */
-  gdb::optional<displaced_step_buffers> disp_step_bufs;
+  std::optional<displaced_step_buffers> disp_step_bufs;
 };
 
 /* Per-inferior data key.  */
-static const struct inferior_key<linux_info> linux_inferior_data;
+static const registry<inferior>::key<linux_info> linux_inferior_data;
 
 /* Frees whatever allocated space there is to be freed and sets INF's
    linux cache data pointer to NULL.  */
@@ -242,6 +242,14 @@ static void
 invalidate_linux_cache_inf (struct inferior *inf)
 {
   linux_inferior_data.clear (inf);
+}
+
+/* inferior_execd observer.  */
+
+static void
+linux_inferior_execd (inferior *exec_inf, inferior *follow_inf)
+{
+  invalidate_linux_cache_inf (follow_inf);
 }
 
 /* Fetch the linux cache info for INF.  This function always returns a
@@ -275,13 +283,15 @@ linux_get_siginfo_type_with_fields (struct gdbarch *gdbarch,
   if (linux_gdbarch_data->siginfo_type != NULL)
     return linux_gdbarch_data->siginfo_type;
 
-  int_type = arch_integer_type (gdbarch, gdbarch_int_bit (gdbarch),
+  type_allocator alloc (gdbarch);
+
+  int_type = init_integer_type (alloc, gdbarch_int_bit (gdbarch),
 			 	0, "int");
-  uint_type = arch_integer_type (gdbarch, gdbarch_int_bit (gdbarch),
+  uint_type = init_integer_type (alloc, gdbarch_int_bit (gdbarch),
 				 1, "unsigned int");
-  long_type = arch_integer_type (gdbarch, gdbarch_long_bit (gdbarch),
+  long_type = init_integer_type (alloc, gdbarch_long_bit (gdbarch),
 				 0, "long");
-  short_type = arch_integer_type (gdbarch, gdbarch_long_bit (gdbarch),
+  short_type = init_integer_type (alloc, gdbarch_long_bit (gdbarch),
 				 0, "short");
   void_ptr_type = lookup_pointer_type (builtin_type (gdbarch)->builtin_void);
 
@@ -292,22 +302,24 @@ linux_get_siginfo_type_with_fields (struct gdbarch *gdbarch,
   append_composite_type_field (sigval_type, "sival_ptr", void_ptr_type);
 
   /* __pid_t */
-  pid_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-			TYPE_LENGTH (int_type) * TARGET_CHAR_BIT, "__pid_t");
-  TYPE_TARGET_TYPE (pid_type) = int_type;
+  pid_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+			     int_type->length () * TARGET_CHAR_BIT,
+			     "__pid_t");
+  pid_type->set_target_type (int_type);
   pid_type->set_target_is_stub (true);
 
   /* __uid_t */
-  uid_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-			TYPE_LENGTH (uint_type) * TARGET_CHAR_BIT, "__uid_t");
-  TYPE_TARGET_TYPE (uid_type) = uint_type;
+  uid_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+			     uint_type->length () * TARGET_CHAR_BIT,
+			     "__uid_t");
+  uid_type->set_target_type (uint_type);
   uid_type->set_target_is_stub (true);
 
   /* __clock_t */
-  clock_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-			  TYPE_LENGTH (long_type) * TARGET_CHAR_BIT,
-			  "__clock_t");
-  TYPE_TARGET_TYPE (clock_type) = long_type;
+  clock_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+			       long_type->length () * TARGET_CHAR_BIT,
+			       "__clock_t");
+  clock_type->set_target_type (long_type);
   clock_type->set_target_is_stub (true);
 
   /* _sifields */
@@ -379,6 +391,13 @@ linux_get_siginfo_type_with_fields (struct gdbarch *gdbarch,
   append_composite_type_field (type, "si_fd", int_type);
   append_composite_type_field (sifields_type, "_sigpoll", type);
 
+  /* _sigsys */
+  type = arch_composite_type (gdbarch, NULL, TYPE_CODE_STRUCT);
+  append_composite_type_field (type, "_call_addr", void_ptr_type);
+  append_composite_type_field (type, "_syscall", int_type);
+  append_composite_type_field (type, "_arch", uint_type);
+  append_composite_type_field (sifields_type, "_sigsys", type);
+
   /* struct siginfo */
   siginfo_type = arch_composite_type (gdbarch, NULL, TYPE_CODE_STRUCT);
   siginfo_type->set_name (xstrdup ("siginfo"));
@@ -387,7 +406,7 @@ linux_get_siginfo_type_with_fields (struct gdbarch *gdbarch,
   append_composite_type_field (siginfo_type, "si_code", int_type);
   append_composite_type_field_aligned (siginfo_type,
 				       "_sifields", sifields_type,
-				       TYPE_LENGTH (long_type));
+				       long_type->length ());
 
   linux_gdbarch_data->siginfo_type = siginfo_type;
 
@@ -410,10 +429,9 @@ int
 linux_is_uclinux (void)
 {
   CORE_ADDR dummy;
-  target_ops *target = current_inferior ()->top_target ();
 
-  return (target_auxv_search (target, AT_NULL, &dummy) > 0
-	  && target_auxv_search (target, AT_PAGESZ, &dummy) == 0);
+  return (target_auxv_search (AT_NULL, &dummy) > 0
+	  && target_auxv_search (AT_PAGESZ, &dummy) == 0);
 }
 
 static int
@@ -433,42 +451,55 @@ linux_core_pid_to_str (struct gdbarch *gdbarch, ptid_t ptid)
   return normal_pid_to_str (ptid);
 }
 
+/* Data from one mapping from /proc/PID/maps.  */
+
+struct mapping
+{
+  ULONGEST addr;
+  ULONGEST endaddr;
+  std::string_view permissions;
+  ULONGEST offset;
+  std::string_view device;
+  ULONGEST inode;
+
+  /* This field is guaranteed to be NULL-terminated, hence it is not a
+     std::string_view.  */
+  const char *filename;
+};
+
 /* Service function for corefiles and info proc.  */
 
-static void
-read_mapping (const char *line,
-	      ULONGEST *addr, ULONGEST *endaddr,
-	      const char **permissions, size_t *permissions_len,
-	      ULONGEST *offset,
-	      const char **device, size_t *device_len,
-	      ULONGEST *inode,
-	      const char **filename)
+static mapping
+read_mapping (const char *line)
 {
+  struct mapping mapping;
   const char *p = line;
 
-  *addr = strtoulst (p, &p, 16);
+  mapping.addr = strtoulst (p, &p, 16);
   if (*p == '-')
     p++;
-  *endaddr = strtoulst (p, &p, 16);
+  mapping.endaddr = strtoulst (p, &p, 16);
 
   p = skip_spaces (p);
-  *permissions = p;
+  const char *permissions_start = p;
   while (*p && !isspace (*p))
     p++;
-  *permissions_len = p - *permissions;
+  mapping.permissions = {permissions_start, (size_t) (p - permissions_start)};
 
-  *offset = strtoulst (p, &p, 16);
+  mapping.offset = strtoulst (p, &p, 16);
 
   p = skip_spaces (p);
-  *device = p;
+  const char *device_start = p;
   while (*p && !isspace (*p))
     p++;
-  *device_len = p - *device;
+  mapping.device = {device_start, (size_t) (p - device_start)};
 
-  *inode = strtoulst (p, &p, 10);
+  mapping.inode = strtoulst (p, &p, 10);
 
   p = skip_spaces (p);
-  *filename = p;
+  mapping.filename = p;
+
+  return mapping;
 }
 
 /* Helper function to decode the "VmFlags" field in /proc/PID/smaps.
@@ -558,7 +589,7 @@ struct mapping_regexes
 static int
 mapping_is_anonymous_p (const char *filename)
 {
-  static gdb::optional<mapping_regexes> regexes;
+  static std::optional<mapping_regexes> regexes;
   static int init_regex_p = 0;
 
   if (!init_regex_p)
@@ -793,7 +824,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
   int status_f = (what == IP_STATUS || what == IP_ALL);
   int stat_f = (what == IP_STAT || what == IP_ALL);
   char filename[100];
-  int target_errno;
+  fileio_error target_errno;
 
   if (args && isdigit (args[0]))
     {
@@ -816,7 +847,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
   if (args && args[0])
     error (_("Too many parameters: %s"), args);
 
-  printf_filtered (_("process %ld\n"), pid);
+  gdb_printf (_("process %ld\n"), pid);
   if (cmdline_f)
     {
       xsnprintf (filename, sizeof filename, "/proc/%ld/cmdline", pid);
@@ -834,7 +865,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 		buffer[pos] = ' ';
 	    }
 	  buffer[len - 1] = '\0';
-	  printf_filtered ("cmdline = '%s'\n", buffer);
+	  gdb_printf ("cmdline = '%s'\n", buffer);
 	}
       else
 	warning (_("unable to open /proc file '%s'"), filename);
@@ -842,20 +873,20 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
   if (cwd_f)
     {
       xsnprintf (filename, sizeof filename, "/proc/%ld/cwd", pid);
-      gdb::optional<std::string> contents
+      std::optional<std::string> contents
 	= target_fileio_readlink (NULL, filename, &target_errno);
       if (contents.has_value ())
-	printf_filtered ("cwd = '%s'\n", contents->c_str ());
+	gdb_printf ("cwd = '%s'\n", contents->c_str ());
       else
 	warning (_("unable to read link '%s'"), filename);
     }
   if (exe_f)
     {
       xsnprintf (filename, sizeof filename, "/proc/%ld/exe", pid);
-      gdb::optional<std::string> contents
+      std::optional<std::string> contents
 	= target_fileio_readlink (NULL, filename, &target_errno);
       if (contents.has_value ())
-	printf_filtered ("exe = '%s'\n", contents->c_str ());
+	gdb_printf ("exe = '%s'\n", contents->c_str ());
       else
 	warning (_("unable to read link '%s'"), filename);
     }
@@ -868,20 +899,18 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 	{
 	  char *line;
 
-	  printf_filtered (_("Mapped address spaces:\n\n"));
+	  gdb_printf (_("Mapped address spaces:\n\n"));
 	  if (gdbarch_addr_bit (gdbarch) == 32)
 	    {
-	      printf_filtered ("\t%10s %10s %10s %10s %s\n",
-			   "Start Addr",
-			   "  End Addr",
-			   "      Size", "    Offset", "objfile");
+	      gdb_printf ("\t%10s %10s %10s %10s  %s %s\n",
+			  "Start Addr", "  End Addr", "      Size",
+			  "    Offset", "Perms  ", "objfile");
 	    }
 	  else
 	    {
-	      printf_filtered ("  %18s %18s %10s %10s %s\n",
-			   "Start Addr",
-			   "  End Addr",
-			   "      Size", "    Offset", "objfile");
+	      gdb_printf ("  %18s %18s %10s %10s  %s %s\n",
+			  "Start Addr", "  End Addr", "      Size",
+			  "    Offset", "Perms ", "objfile");
 	    }
 
 	  char *saveptr;
@@ -889,32 +918,29 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 	       line;
 	       line = strtok_r (NULL, "\n", &saveptr))
 	    {
-	      ULONGEST addr, endaddr, offset, inode;
-	      const char *permissions, *device, *mapping_filename;
-	      size_t permissions_len, device_len;
-
-	      read_mapping (line, &addr, &endaddr,
-			    &permissions, &permissions_len,
-			    &offset, &device, &device_len,
-			    &inode, &mapping_filename);
+	      struct mapping m = read_mapping (line);
 
 	      if (gdbarch_addr_bit (gdbarch) == 32)
 		{
-		  printf_filtered ("\t%10s %10s %10s %10s %s\n",
-				   paddress (gdbarch, addr),
-				   paddress (gdbarch, endaddr),
-				   hex_string (endaddr - addr),
-				   hex_string (offset),
-				   *mapping_filename ? mapping_filename : "");
+		  gdb_printf ("\t%10s %10s %10s %10s  %-5.*s  %s\n",
+			      paddress (gdbarch, m.addr),
+			      paddress (gdbarch, m.endaddr),
+			      hex_string (m.endaddr - m.addr),
+			      hex_string (m.offset),
+			      (int) m.permissions.size (),
+			      m.permissions.data (),
+			      m.filename);
 		}
 	      else
 		{
-		  printf_filtered ("  %18s %18s %10s %10s %s\n",
-				   paddress (gdbarch, addr),
-				   paddress (gdbarch, endaddr),
-				   hex_string (endaddr - addr),
-				   hex_string (offset),
-				   *mapping_filename ? mapping_filename : "");
+		  gdb_printf ("  %18s %18s %10s %10s  %-5.*s  %s\n",
+			      paddress (gdbarch, m.addr),
+			      paddress (gdbarch, m.endaddr),
+			      hex_string (m.endaddr - m.addr),
+			      hex_string (m.offset),
+			      (int) m.permissions.size (),
+			      m.permissions.data (),
+			      m.filename);
 		}
 	    }
 	}
@@ -927,7 +953,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
       gdb::unique_xmalloc_ptr<char> status
 	= target_fileio_read_stralloc (NULL, filename);
       if (status)
-	puts_filtered (status.get ());
+	gdb_puts (status.get ());
       else
 	warning (_("unable to open /proc file '%s'"), filename);
     }
@@ -940,8 +966,8 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 	{
 	  const char *p = statstr.get ();
 
-	  printf_filtered (_("Process: %s\n"),
-			   pulongest (strtoulst (p, &p, 10)));
+	  gdb_printf (_("Process: %s\n"),
+		      pulongest (strtoulst (p, &p, 10)));
 
 	  p = skip_spaces (p);
 	  if (*p == '(')
@@ -951,117 +977,117 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
 	      const char *ep = strrchr (p, ')');
 	      if (ep != NULL)
 		{
-		  printf_filtered ("Exec file: %.*s\n",
-				   (int) (ep - p - 1), p + 1);
+		  gdb_printf ("Exec file: %.*s\n",
+			      (int) (ep - p - 1), p + 1);
 		  p = ep + 1;
 		}
 	    }
 
 	  p = skip_spaces (p);
 	  if (*p)
-	    printf_filtered (_("State: %c\n"), *p++);
+	    gdb_printf (_("State: %c\n"), *p++);
 
 	  if (*p)
-	    printf_filtered (_("Parent process: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Parent process: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Process group: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Process group: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Session id: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Session id: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("TTY: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("TTY: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("TTY owner process group: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("TTY owner process group: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 
 	  if (*p)
-	    printf_filtered (_("Flags: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Flags: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Minor faults (no memory page): %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Minor faults (no memory page): %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Minor faults, children: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Minor faults, children: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Major faults (memory page faults): %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Major faults (memory page faults): %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Major faults, children: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Major faults, children: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("utime: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("utime: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("stime: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("stime: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("utime, children: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("utime, children: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("stime, children: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("stime, children: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("jiffies remaining in current "
-			       "time slice: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("jiffies remaining in current "
+			  "time slice: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("'nice' value: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("'nice' value: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("jiffies until next timeout: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("jiffies until next timeout: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("jiffies until next SIGALRM: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("jiffies until next SIGALRM: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("start time (jiffies since "
-			       "system boot): %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("start time (jiffies since "
+			  "system boot): %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Virtual memory size: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Virtual memory size: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Resident set size: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Resident set size: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("rlim: %s\n"),
-			     pulongest (strtoulst (p, &p, 10)));
+	    gdb_printf (_("rlim: %s\n"),
+			pulongest (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Start of text: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Start of text: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("End of text: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("End of text: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Start of stack: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Start of stack: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 #if 0	/* Don't know how architecture-dependent the rest is...
 	   Anyway the signal bitmap info is available from "status".  */
 	  if (*p)
-	    printf_filtered (_("Kernel stack pointer: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Kernel stack pointer: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Kernel instr pointer: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Kernel instr pointer: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Pending signals bitmap: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Pending signals bitmap: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Blocked signals bitmap: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Blocked signals bitmap: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Ignored signals bitmap: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Ignored signals bitmap: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("Catched signals bitmap: %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("Catched signals bitmap: %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 	  if (*p)
-	    printf_filtered (_("wchan (system call): %s\n"),
-			     hex_string (strtoulst (p, &p, 10)));
+	    gdb_printf (_("wchan (system call): %s\n"),
+			hex_string (strtoulst (p, &p, 10)));
 #endif
 	}
       else
@@ -1096,19 +1122,14 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
    for each mapping.  */
 
 static void
-linux_read_core_file_mappings (struct gdbarch *gdbarch,
-			       struct bfd *cbfd,
-			       gdb::function_view<void (ULONGEST count)>
-				 pre_loop_cb,
-			       gdb::function_view<void (int num,
-							ULONGEST start,
-							ULONGEST end,
-							ULONGEST file_ofs,
-							const char *filename)>
-				 loop_cb)
+linux_read_core_file_mappings
+  (struct gdbarch *gdbarch,
+   struct bfd *cbfd,
+   read_core_file_mappings_pre_loop_ftype pre_loop_cb,
+   read_core_file_mappings_loop_ftype  loop_cb)
 {
   /* Ensure that ULONGEST is big enough for reading 64-bit core files.  */
-  gdb_static_assert (sizeof (ULONGEST) >= 8);
+  static_assert (sizeof (ULONGEST) >= 8);
 
   /* It's not required that the NT_FILE note exists, so return silently
      if it's not found.  Beyond this point though, we'll complain
@@ -1127,9 +1148,9 @@ linux_read_core_file_mappings (struct gdbarch *gdbarch,
       return;
     }
 
-  gdb::def_vector<gdb_byte> contents (note_size);
-  if (!bfd_get_section_contents (core_bfd, section, contents.data (),
-				 0, note_size))
+  gdb::byte_vector contents (note_size);
+  if (!bfd_get_section_contents (current_program_space->core_bfd (), section,
+				 contents.data (), 0, note_size))
     {
       warning (_("could not get core note contents"));
       return;
@@ -1144,10 +1165,13 @@ linux_read_core_file_mappings (struct gdbarch *gdbarch,
       return;
     }
 
-  ULONGEST count = bfd_get (addr_size_bits, core_bfd, descdata);
+  ULONGEST count = bfd_get (addr_size_bits, current_program_space->core_bfd (),
+			    descdata);
   descdata += addr_size;
 
-  ULONGEST page_size = bfd_get (addr_size_bits, core_bfd, descdata);
+  ULONGEST page_size = bfd_get (addr_size_bits,
+				current_program_space->core_bfd (),
+				descdata);
   descdata += addr_size;
 
   if (note_size < 2 * addr_size + count * 3 * addr_size)
@@ -1174,21 +1198,42 @@ linux_read_core_file_mappings (struct gdbarch *gdbarch,
   if (f != descend)
     warning (_("malformed note - filename area is too big"));
 
+  const bfd_build_id *orig_build_id = cbfd->build_id;
+  std::unordered_map<ULONGEST, const bfd_build_id *> vma_map;
+
+  /* Search for solib build-ids in the core file.  Each time one is found,
+     map the start vma of the corresponding elf header to the build-id.  */
+  for (bfd_section *sec = cbfd->sections; sec != nullptr; sec = sec->next)
+    {
+      cbfd->build_id = nullptr;
+
+      if (sec->flags & SEC_LOAD
+	  && (get_elf_backend_data (cbfd)->elf_backend_core_find_build_id
+	       (cbfd, (bfd_vma) sec->filepos)))
+	vma_map[sec->vma] = cbfd->build_id;
+    }
+
+  cbfd->build_id = orig_build_id;
   pre_loop_cb (count);
 
   for (int i = 0; i < count; i++)
     {
-      ULONGEST start = bfd_get (addr_size_bits, core_bfd, descdata);
+      ULONGEST start = bfd_get (addr_size_bits, current_program_space->core_bfd (), descdata);
       descdata += addr_size;
-      ULONGEST end = bfd_get (addr_size_bits, core_bfd, descdata);
+      ULONGEST end = bfd_get (addr_size_bits, current_program_space->core_bfd (), descdata);
       descdata += addr_size;
       ULONGEST file_ofs
-	= bfd_get (addr_size_bits, core_bfd, descdata) * page_size;
+	= bfd_get (addr_size_bits, current_program_space->core_bfd (), descdata) * page_size;
       descdata += addr_size;
       char * filename = filenames;
       filenames += strlen ((char *) filenames) + 1;
+      const bfd_build_id *build_id = nullptr;
+      auto vma_map_it = vma_map.find (start);
 
-      loop_cb (i, start, end, file_ofs, filename);
+      if (vma_map_it != vma_map.end ())
+	build_id = vma_map_it->second;
+
+      loop_cb (i, start, end, file_ofs, filename, build_id);
     }
 }
 
@@ -1197,42 +1242,42 @@ linux_read_core_file_mappings (struct gdbarch *gdbarch,
 static void
 linux_core_info_proc_mappings (struct gdbarch *gdbarch, const char *args)
 {
-  linux_read_core_file_mappings (gdbarch, core_bfd,
+  linux_read_core_file_mappings (gdbarch, current_program_space->core_bfd (),
     [=] (ULONGEST count)
       {
-	printf_filtered (_("Mapped address spaces:\n\n"));
+	gdb_printf (_("Mapped address spaces:\n\n"));
 	if (gdbarch_addr_bit (gdbarch) == 32)
 	  {
-	    printf_filtered ("\t%10s %10s %10s %10s %s\n",
-			     "Start Addr",
-			     "  End Addr",
-			     "      Size", "    Offset", "objfile");
+	    gdb_printf ("\t%10s %10s %10s %10s %s\n",
+			"Start Addr",
+			"  End Addr",
+			"      Size", "    Offset", "objfile");
 	  }
 	else
 	  {
-	    printf_filtered ("  %18s %18s %10s %10s %s\n",
-			     "Start Addr",
-			     "  End Addr",
-			     "      Size", "    Offset", "objfile");
+	    gdb_printf ("  %18s %18s %10s %10s %s\n",
+			"Start Addr",
+			"  End Addr",
+			"      Size", "    Offset", "objfile");
 	  }
       },
     [=] (int num, ULONGEST start, ULONGEST end, ULONGEST file_ofs,
-	 const char *filename)
+	 const char *filename, const bfd_build_id *build_id)
       {
 	if (gdbarch_addr_bit (gdbarch) == 32)
-	  printf_filtered ("\t%10s %10s %10s %10s %s\n",
-			   paddress (gdbarch, start),
-			   paddress (gdbarch, end),
-			   hex_string (end - start),
-			   hex_string (file_ofs),
-			   filename);
+	  gdb_printf ("\t%10s %10s %10s %10s %s\n",
+		      paddress (gdbarch, start),
+		      paddress (gdbarch, end),
+		      hex_string (end - start),
+		      hex_string (file_ofs),
+		      filename);
 	else
-	  printf_filtered ("  %18s %18s %10s %10s %s\n",
-			   paddress (gdbarch, start),
-			   paddress (gdbarch, end),
-			   hex_string (end - start),
-			   hex_string (file_ofs),
-			   filename);
+	  gdb_printf ("  %18s %18s %10s %10s %s\n",
+		      paddress (gdbarch, start),
+		      paddress (gdbarch, end),
+		      hex_string (end - start),
+		      hex_string (file_ofs),
+		      filename);
       });
 }
 
@@ -1247,11 +1292,11 @@ linux_core_info_proc (struct gdbarch *gdbarch, const char *args,
 
   if (exe_f)
     {
-      const char *exe;
+      const char *exe
+	= bfd_core_file_failing_command (current_program_space->core_bfd ());
 
-      exe = bfd_core_file_failing_command (core_bfd);
       if (exe != NULL)
-	printf_filtered ("exe = '%s'\n", exe);
+	gdb_printf ("exe = '%s'\n", exe);
       else
 	warning (_("unable to find command name in core file"));
     }
@@ -1273,11 +1318,14 @@ linux_core_xfer_siginfo (struct gdbarch *gdbarch, gdb_byte *readbuf,
 			 ULONGEST offset, ULONGEST len)
 {
   thread_section_name section_name (".note.linuxcore.siginfo", inferior_ptid);
-  asection *section = bfd_get_section_by_name (core_bfd, section_name.c_str ());
+  asection *section
+    = bfd_get_section_by_name (current_program_space->core_bfd (),
+			       section_name.c_str ());
   if (section == NULL)
     return -1;
 
-  if (!bfd_get_section_contents (core_bfd, section, readbuf, offset, len))
+  if (!bfd_get_section_contents (current_program_space->core_bfd (), section,
+				 readbuf, offset, len))
     return -1;
 
   return len;
@@ -1287,6 +1335,7 @@ typedef int linux_find_memory_region_ftype (ULONGEST vaddr, ULONGEST size,
 					    ULONGEST offset, ULONGEST inode,
 					    int read, int write,
 					    int exec, int modified,
+					    bool memory_tagged,
 					    const char *filename,
 					    void *data);
 
@@ -1319,19 +1368,15 @@ parse_smaps_data (const char *data,
 
   while (line != NULL)
     {
-      ULONGEST addr, endaddr, offset, inode;
-      const char *permissions, *device, *filename;
       struct smaps_vmflags v;
-      size_t permissions_len, device_len;
       int read, write, exec, priv;
       int has_anonymous = 0;
       int mapping_anon_p;
       int mapping_file_p;
 
       memset (&v, 0, sizeof (v));
-      read_mapping (line, &addr, &endaddr, &permissions, &permissions_len,
-		    &offset, &device, &device_len, &inode, &filename);
-      mapping_anon_p = mapping_is_anonymous_p (filename);
+      struct mapping m = read_mapping (line);
+      mapping_anon_p = mapping_is_anonymous_p (m.filename);
       /* If the mapping is not anonymous, then we can consider it
 	 to be file-backed.  These two states (anonymous or
 	 file-backed) seem to be exclusive, but they can actually
@@ -1344,9 +1389,12 @@ parse_smaps_data (const char *data,
       mapping_file_p = !mapping_anon_p;
 
       /* Decode permissions.  */
-      read = (memchr (permissions, 'r', permissions_len) != 0);
-      write = (memchr (permissions, 'w', permissions_len) != 0);
-      exec = (memchr (permissions, 'x', permissions_len) != 0);
+      auto has_perm = [&m] (char c)
+	{ return m.permissions.find (c) != std::string_view::npos; };
+      read = has_perm ('r');
+      write = has_perm ('w');
+      exec = has_perm ('x');
+
       /* 'private' here actually means VM_MAYSHARE, and not
 	 VM_SHARED.  In order to know if a mapping is really
 	 private or not, we must check the flag "sh" in the
@@ -1356,7 +1404,7 @@ parse_smaps_data (const char *data,
 	 not have the VmFlags there.  In this case, there is
 	 really no way to know if we are dealing with VM_SHARED,
 	 so we just assume that VM_MAYSHARE is enough.  */
-      priv = memchr (permissions, 'p', permissions_len) != 0;
+      priv = has_perm ('p');
 
       /* Try to detect if region should be dumped by parsing smaps
 	 counters.  */
@@ -1418,9 +1466,9 @@ parse_smaps_data (const char *data,
       /* Save the smaps entry to the vector.  */
 	struct smaps_data map;
 
-	map.start_address = addr;
-	map.end_address = endaddr;
-	map.filename = filename;
+	map.start_address = m.addr;
+	map.end_address = m.endaddr;
+	map.filename = m.filename;
 	map.vmflags = v;
 	map.read = read? true : false;
 	map.write = write? true : false;
@@ -1429,8 +1477,8 @@ parse_smaps_data (const char *data,
 	map.has_anonymous = has_anonymous;
 	map.mapping_anon_p = mapping_anon_p? true : false;
 	map.mapping_file_p = mapping_file_p? true : false;
-	map.offset = offset;
-	map.inode = inode;
+	map.offset = m.offset;
+	map.inode = m.inode;
 
 	smaps.emplace_back (map);
     }
@@ -1438,10 +1486,11 @@ parse_smaps_data (const char *data,
   return smaps;
 }
 
-/* See linux-tdep.h.  */
+/* Helper that checks if an address is in a memory tag page for a live
+   process.  */
 
-bool
-linux_address_in_memtag_page (CORE_ADDR address)
+static bool
+linux_process_address_in_memtag_page (CORE_ADDR address)
 {
   if (current_inferior ()->fake_pid_p)
     return false;
@@ -1471,6 +1520,31 @@ linux_address_in_memtag_page (CORE_ADDR address)
     }
 
   return false;
+}
+
+/* Helper that checks if an address is in a memory tag page for a core file
+   process.  */
+
+static bool
+linux_core_file_address_in_memtag_page (CORE_ADDR address)
+{
+  if (current_program_space->core_bfd () == nullptr)
+    return false;
+
+  memtag_section_info info;
+  return get_next_core_memtag_section (current_program_space->core_bfd (),
+				       nullptr, address, info);
+}
+
+/* See linux-tdep.h.  */
+
+bool
+linux_address_in_memtag_page (CORE_ADDR address)
+{
+  if (!target_has_execution ())
+    return linux_core_file_address_in_memtag_page (address);
+
+  return linux_process_address_in_memtag_page (address);
 }
 
 /* List memory regions in the inferior for a corefile.  */
@@ -1561,6 +1635,7 @@ linux_find_memory_regions_full (struct gdbarch *gdbarch,
 		map.offset, map.inode, map.read, map.write, map.exec,
 		1, /* MODIFIED is true because we want to dump
 		      the mapping.  */
+		map.vmflags.memory_tagging != 0,
 		map.filename.c_str (), obfd);
 	}
     }
@@ -1589,12 +1664,14 @@ static int
 linux_find_memory_regions_thunk (ULONGEST vaddr, ULONGEST size,
 				 ULONGEST offset, ULONGEST inode,
 				 int read, int write, int exec, int modified,
+				 bool memory_tagged,
 				 const char *filename, void *arg)
 {
   struct linux_find_memory_regions_data *data
     = (struct linux_find_memory_regions_data *) arg;
 
-  return data->func (vaddr, size, read, write, exec, modified, data->obfd);
+  return data->func (vaddr, size, read, write, exec, modified, memory_tagged,
+		     data->obfd);
 }
 
 /* A variant of linux_find_memory_regions_full that is suitable as the
@@ -1637,12 +1714,16 @@ struct linux_make_mappings_data
 static linux_find_memory_region_ftype linux_make_mappings_callback;
 
 /* A callback for linux_find_memory_regions_full that updates the
-   mappings data for linux_make_mappings_corefile_notes.  */
+   mappings data for linux_make_mappings_corefile_notes.
+
+   MEMORY_TAGGED is true if the memory region contains memory tags, false
+   otherwise.  */
 
 static int
 linux_make_mappings_callback (ULONGEST vaddr, ULONGEST size,
 			      ULONGEST offset, ULONGEST inode,
 			      int read, int write, int exec, int modified,
+			      bool memory_tagged,
 			      const char *filename, void *data)
 {
   struct linux_make_mappings_data *map_data
@@ -1655,11 +1736,11 @@ linux_make_mappings_callback (ULONGEST vaddr, ULONGEST size,
   ++map_data->file_count;
 
   pack_long (buf, map_data->long_type, vaddr);
-  obstack_grow (map_data->data_obstack, buf, TYPE_LENGTH (map_data->long_type));
+  obstack_grow (map_data->data_obstack, buf, map_data->long_type->length ());
   pack_long (buf, map_data->long_type, vaddr + size);
-  obstack_grow (map_data->data_obstack, buf, TYPE_LENGTH (map_data->long_type));
+  obstack_grow (map_data->data_obstack, buf, map_data->long_type->length ());
   pack_long (buf, map_data->long_type, offset);
-  obstack_grow (map_data->data_obstack, buf, TYPE_LENGTH (map_data->long_type));
+  obstack_grow (map_data->data_obstack, buf, map_data->long_type->length ());
 
   obstack_grow_str0 (map_data->filename_obstack, filename);
 
@@ -1676,8 +1757,9 @@ linux_make_mappings_corefile_notes (struct gdbarch *gdbarch, bfd *obfd,
 				    int *note_size)
 {
   struct linux_make_mappings_data mapping_data;
+  type_allocator alloc (gdbarch);
   struct type *long_type
-    = arch_integer_type (gdbarch, gdbarch_long_bit (gdbarch), 0, "long");
+    = init_integer_type (alloc, gdbarch_long_bit (gdbarch), 0, "long");
   gdb_byte buf[sizeof (ULONGEST)];
 
   auto_obstack data_obstack, filename_obstack;
@@ -1688,11 +1770,11 @@ linux_make_mappings_corefile_notes (struct gdbarch *gdbarch, bfd *obfd,
   mapping_data.long_type = long_type;
 
   /* Reserve space for the count.  */
-  obstack_blank (&data_obstack, TYPE_LENGTH (long_type));
+  obstack_blank (&data_obstack, long_type->length ());
   /* We always write the page size as 1 since we have no good way to
      determine the correct value.  */
   pack_long (buf, long_type, 1);
-  obstack_grow (&data_obstack, buf, TYPE_LENGTH (long_type));
+  obstack_grow (&data_obstack, buf, long_type->length ());
 
   linux_find_memory_regions_full (gdbarch, 
 				  dump_note_entry_p,
@@ -1734,58 +1816,40 @@ linux_get_siginfo_data (thread_info *thread, struct gdbarch *gdbarch)
 
   siginfo_type = gdbarch_get_siginfo_type (gdbarch);
 
-  gdb::byte_vector buf (TYPE_LENGTH (siginfo_type));
+  gdb::byte_vector buf (siginfo_type->length ());
 
   bytes_read = target_read (current_inferior ()->top_target (),
 			    TARGET_OBJECT_SIGNAL_INFO, NULL,
-			    buf.data (), 0, TYPE_LENGTH (siginfo_type));
-  if (bytes_read != TYPE_LENGTH (siginfo_type))
+			    buf.data (), 0, siginfo_type->length ());
+  if (bytes_read != siginfo_type->length ())
     buf.clear ();
 
   return buf;
 }
-
-struct linux_corefile_thread_data
-{
-  linux_corefile_thread_data (struct gdbarch *gdbarch, bfd *obfd,
-			      gdb::unique_xmalloc_ptr<char> &note_data,
-			      int *note_size, gdb_signal stop_signal)
-    : gdbarch (gdbarch), obfd (obfd), note_data (note_data),
-      note_size (note_size), stop_signal (stop_signal)
-  {}
-
-  struct gdbarch *gdbarch;
-  bfd *obfd;
-  gdb::unique_xmalloc_ptr<char> &note_data;
-  int *note_size;
-  enum gdb_signal stop_signal;
-};
 
 /* Records the thread's register state for the corefile note
    section.  */
 
 static void
 linux_corefile_thread (struct thread_info *info,
-		       struct linux_corefile_thread_data *args)
+		       struct gdbarch *gdbarch, bfd *obfd,
+		       gdb::unique_xmalloc_ptr<char> &note_data,
+		       int *note_size, gdb_signal stop_signal)
 {
-  gcore_elf_build_thread_register_notes (args->gdbarch, info,
-					 args->stop_signal,
-					 args->obfd, &args->note_data,
-					 args->note_size);
+  gcore_elf_build_thread_register_notes (gdbarch, info, stop_signal, obfd,
+					 &note_data, note_size);
 
   /* Don't return anything if we got no register information above,
      such a core file is useless.  */
-  if (args->note_data != NULL)
+  if (note_data != nullptr)
     {
       gdb::byte_vector siginfo_data
-	= linux_get_siginfo_data (info, args->gdbarch);
+	= linux_get_siginfo_data (info, gdbarch);
       if (!siginfo_data.empty ())
-	args->note_data.reset (elfcore_write_note (args->obfd,
-						   args->note_data.release (),
-						   args->note_size,
-						   "CORE", NT_SIGINFO,
-						   siginfo_data.data (),
-						   siginfo_data.size ()));
+	note_data.reset (elfcore_write_note (obfd, note_data.release (),
+					     note_size, "CORE", NT_SIGINFO,
+					     siginfo_data.data (),
+					     siginfo_data.size ()));
     }
 }
 
@@ -1827,13 +1891,21 @@ linux_fill_prpsinfo (struct elf_internal_linux_prpsinfo *p)
   pid = inferior_ptid.pid ();
   xsnprintf (filename, sizeof (filename), "/proc/%d/cmdline", (int) pid);
   /* The full name of the program which generated the corefile.  */
-  gdb::unique_xmalloc_ptr<char> fname
-    = target_fileio_read_stralloc (NULL, filename);
+  gdb_byte *buf = NULL;
+  size_t buf_len = target_fileio_read_alloc (NULL, filename, &buf);
+  gdb::unique_xmalloc_ptr<char> fname ((char *)buf);
 
-  if (fname == NULL || fname.get ()[0] == '\0')
+  if (buf_len < 1 || fname.get ()[0] == '\0')
     {
       /* No program name was read, so we won't be able to retrieve more
 	 information about the process.  */
+      return 0;
+    }
+  if (fname.get ()[buf_len - 1] != '\0')
+    {
+      warning (_("target file %s "
+		 "does not contain a trailing null character"),
+	       filename);
       return 0;
     }
 
@@ -2020,24 +2092,38 @@ linux_make_corefile_notes (struct gdbarch *gdbarch, bfd *obfd, int *note_size)
   else
     stop_signal = GDB_SIGNAL_0;
 
-  linux_corefile_thread_data thread_args (gdbarch, obfd, note_data, note_size,
-					  stop_signal);
-
   if (signalled_thr != nullptr)
-    linux_corefile_thread (signalled_thr, &thread_args);
+    {
+      /* On some architectures, like AArch64, each thread can have a distinct
+	 gdbarch (due to scalable extensions), and using the inferior gdbarch
+	 is incorrect.
+
+	 Fetch each thread's gdbarch and pass it down to the lower layers so
+	 we can dump the right set of registers.  */
+      linux_corefile_thread (signalled_thr,
+			     target_thread_architecture (signalled_thr->ptid),
+			     obfd, note_data, note_size, stop_signal);
+    }
   for (thread_info *thr : current_inferior ()->non_exited_threads ())
     {
       if (thr == signalled_thr)
 	continue;
 
-      linux_corefile_thread (thr, &thread_args);
+      /* On some architectures, like AArch64, each thread can have a distinct
+	 gdbarch (due to scalable extensions), and using the inferior gdbarch
+	 is incorrect.
+
+	 Fetch each thread's gdbarch and pass it down to the lower layers so
+	 we can dump the right set of registers.  */
+      linux_corefile_thread (thr, target_thread_architecture (thr->ptid),
+			     obfd, note_data, note_size, stop_signal);
     }
 
   if (!note_data)
     return NULL;
 
   /* Auxillary vector.  */
-  gdb::optional<gdb::byte_vector> auxv =
+  std::optional<gdb::byte_vector> auxv =
     target_read_alloc (current_inferior ()->top_target (),
 		       TARGET_OBJECT_AUXV, NULL);
   if (auxv && !auxv->empty ())
@@ -2053,8 +2139,12 @@ linux_make_corefile_notes (struct gdbarch *gdbarch, bfd *obfd, int *note_size)
   /* File mappings.  */
   linux_make_mappings_corefile_notes (gdbarch, obfd, note_data, note_size);
 
-  /* Target description.  */
-  gcore_elf_make_tdesc_note (obfd, &note_data, note_size);
+  /* Include the target description when possible.  Some architectures
+     allow for per-thread gdbarch so we should really be emitting a tdesc
+     per-thread, however, we don't currently support reading in a
+     per-thread tdesc, so just emit the tdesc for the signalled thread.  */
+  gdbarch = target_thread_architecture (signalled_thr->ptid);
+  gcore_elf_make_tdesc_note (gdbarch, obfd, &note_data, note_size);
 
   return note_data;
 }
@@ -2319,8 +2409,7 @@ linux_vsyscall_range_raw (struct gdbarch *gdbarch, struct mem_range *range)
   char filename[100];
   long pid;
 
-  if (target_auxv_search (current_inferior ()->top_target (),
-			  AT_SYSINFO_EHDR, &range->start) <= 0)
+  if (target_auxv_search (AT_SYSINFO_EHDR, &range->start) <= 0)
     return 0;
 
   /* It doesn't make sense to access the host's /proc when debugging a
@@ -2331,13 +2420,15 @@ linux_vsyscall_range_raw (struct gdbarch *gdbarch, struct mem_range *range)
       long phdrs_size;
       int num_phdrs, i;
 
-      phdrs_size = bfd_get_elf_phdr_upper_bound (core_bfd);
+      phdrs_size
+	= bfd_get_elf_phdr_upper_bound (current_program_space->core_bfd ());
       if (phdrs_size == -1)
 	return 0;
 
       gdb::unique_xmalloc_ptr<Elf_Internal_Phdr>
 	phdrs ((Elf_Internal_Phdr *) xmalloc (phdrs_size));
-      num_phdrs = bfd_get_elf_phdrs (core_bfd, phdrs.get ());
+      num_phdrs = bfd_get_elf_phdrs (current_program_space->core_bfd (),
+				     phdrs.get ());
       if (num_phdrs == -1)
 	return 0;
 
@@ -2510,8 +2601,7 @@ linux_displaced_step_location (struct gdbarch *gdbarch)
      local-store address and is thus not usable as displaced stepping
      location.  The auxiliary vector gets us the PowerPC-side entry
      point address instead.  */
-  if (target_auxv_search (current_inferior ()->top_target (),
-			  AT_ENTRY, &addr) <= 0)
+  if (target_auxv_search (AT_ENTRY, &addr) <= 0)
     throw_error (NOT_SUPPORTED_ERROR,
 		 _("Cannot find AT_ENTRY auxiliary vector entry."));
 
@@ -2542,8 +2632,8 @@ linux_displaced_step_prepare (gdbarch *arch, thread_info *thread,
       /* Figure out the location of the buffers.  They are contiguous, starting
 	 at DISP_STEP_BUF_ADDR.  They are all of size BUF_LEN.  */
       CORE_ADDR disp_step_buf_addr
-	= linux_displaced_step_location (thread->inf->gdbarch);
-      int buf_len = gdbarch_max_insn_length (arch);
+	= linux_displaced_step_location (thread->inf->arch ());
+      int buf_len = gdbarch_displaced_step_buffer_length (arch);
 
       linux_gdbarch_data *gdbarch_data = get_linux_gdbarch_data (arch);
       gdb_assert (gdbarch_data->num_disp_step_buffers > 0);
@@ -2561,13 +2651,14 @@ linux_displaced_step_prepare (gdbarch *arch, thread_info *thread,
 /* See linux-tdep.h.  */
 
 displaced_step_finish_status
-linux_displaced_step_finish (gdbarch *arch, thread_info *thread, gdb_signal sig)
+linux_displaced_step_finish (gdbarch *arch, thread_info *thread,
+			     const target_waitstatus &status)
 {
   linux_info *per_inferior = get_linux_inferior_data (thread->inf);
 
   gdb_assert (per_inferior->disp_step_bufs.has_value ());
 
-  return per_inferior->disp_step_bufs->finish (arch, thread, sig);
+  return per_inferior->disp_step_bufs->finish (arch, thread, status);
 }
 
 /* See linux-tdep.h.  */
@@ -2598,13 +2689,15 @@ linux_displaced_step_restore_all_in_ptid (inferior *parent_inf, ptid_t ptid)
   per_inferior->disp_step_bufs->restore_in_ptid (ptid);
 }
 
-/* See linux-tdep.h.  */
+/* Helper for linux_get_hwcap and linux_get_hwcap2.  */
 
-CORE_ADDR
-linux_get_hwcap (struct target_ops *target)
+static CORE_ADDR
+linux_get_hwcap_helper (const std::optional<gdb::byte_vector> &auxv,
+			target_ops *target, gdbarch *gdbarch, CORE_ADDR match)
 {
   CORE_ADDR field;
-  if (target_auxv_search (target, AT_HWCAP, &field) != 1)
+  if (!auxv.has_value ()
+      || target_auxv_search (*auxv, target, gdbarch, match, &field) != 1)
     return 0;
   return field;
 }
@@ -2612,12 +2705,39 @@ linux_get_hwcap (struct target_ops *target)
 /* See linux-tdep.h.  */
 
 CORE_ADDR
-linux_get_hwcap2 (struct target_ops *target)
+linux_get_hwcap (const std::optional<gdb::byte_vector> &auxv,
+		 target_ops *target, gdbarch *gdbarch)
 {
-  CORE_ADDR field;
-  if (target_auxv_search (target, AT_HWCAP2, &field) != 1)
-    return 0;
-  return field;
+  return linux_get_hwcap_helper (auxv, target, gdbarch, AT_HWCAP);
+}
+
+/* See linux-tdep.h.  */
+
+CORE_ADDR
+linux_get_hwcap ()
+{
+  return linux_get_hwcap (target_read_auxv (),
+			  current_inferior ()->top_target (),
+			  current_inferior ()->arch ());
+}
+
+/* See linux-tdep.h.  */
+
+CORE_ADDR
+linux_get_hwcap2 (const std::optional<gdb::byte_vector> &auxv,
+		  target_ops *target, gdbarch *gdbarch)
+{
+  return linux_get_hwcap_helper (auxv, target, gdbarch, AT_HWCAP2);
+}
+
+/* See linux-tdep.h.  */
+
+CORE_ADDR
+linux_get_hwcap2 ()
+{
+  return linux_get_hwcap2 (target_read_auxv (),
+			   current_inferior ()->top_target (),
+			   current_inferior ()->arch ());
 }
 
 /* Display whether the gcore command is using the
@@ -2627,8 +2747,8 @@ static void
 show_use_coredump_filter (struct ui_file *file, int from_tty,
 			  struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Use of /proc/PID/coredump_filter file to generate"
-			    " corefiles is %s.\n"), value);
+  gdb_printf (file, _("Use of /proc/PID/coredump_filter file to generate"
+		      " corefiles is %s.\n"), value);
 }
 
 /* Display whether the gcore command is dumping mappings marked with
@@ -2638,8 +2758,8 @@ static void
 show_dump_excluded_mappings (struct ui_file *file, int from_tty,
 			     struct cmd_list_element *c, const char *value)
 {
-  fprintf_filtered (file, _("Dumping of mappings marked with the VM_DONTDUMP"
-			    " flag is %s.\n"), value);
+  gdb_printf (file, _("Dumping of mappings marked with the VM_DONTDUMP"
+		      " flag is %s.\n"), value);
 }
 
 /* To be called from the various GDB_OSABI_LINUX handlers for the
@@ -2689,15 +2809,12 @@ void _initialize_linux_tdep ();
 void
 _initialize_linux_tdep ()
 {
-  linux_gdbarch_data_handle =
-    gdbarch_data_register_pre_init (init_linux_gdbarch_data);
-
   /* Observers used to invalidate the cache when needed.  */
   gdb::observers::inferior_exit.attach (invalidate_linux_cache_inf,
 					"linux-tdep");
   gdb::observers::inferior_appeared.attach (invalidate_linux_cache_inf,
 					    "linux-tdep");
-  gdb::observers::inferior_execd.attach (invalidate_linux_cache_inf,
+  gdb::observers::inferior_execd.attach (linux_inferior_execd,
 					 "linux-tdep");
 
   add_setshow_boolean_cmd ("use-coredump-filter", class_files,
@@ -2723,4 +2840,65 @@ VM_DONTDUMP flag (\"dd\" in /proc/PID/smaps) when generating the corefile.  For\
 more information about this file, refer to the manpage of proc(5) and core(5)."),
 			   NULL, show_dump_excluded_mappings,
 			   &setlist, &showlist);
+}
+
+/* Fetch (and possibly build) an appropriate `link_map_offsets' for
+   ILP32/LP64 Linux systems which don't have the r_ldsomap field.  */
+
+link_map_offsets *
+linux_ilp32_fetch_link_map_offsets ()
+{
+  static link_map_offsets lmo;
+  static link_map_offsets *lmp = nullptr;
+
+  if (lmp == nullptr)
+    {
+      lmp = &lmo;
+
+      lmo.r_version_offset = 0;
+      lmo.r_version_size = 4;
+      lmo.r_map_offset = 4;
+      lmo.r_brk_offset = 8;
+      lmo.r_ldsomap_offset = -1;
+      lmo.r_next_offset = 20;
+
+      /* Everything we need is in the first 20 bytes.  */
+      lmo.link_map_size = 20;
+      lmo.l_addr_offset = 0;
+      lmo.l_name_offset = 4;
+      lmo.l_ld_offset = 8;
+      lmo.l_next_offset = 12;
+      lmo.l_prev_offset = 16;
+    }
+
+  return lmp;
+}
+
+link_map_offsets *
+linux_lp64_fetch_link_map_offsets ()
+{
+  static link_map_offsets lmo;
+  static link_map_offsets *lmp = nullptr;
+
+  if (lmp == nullptr)
+    {
+      lmp = &lmo;
+
+      lmo.r_version_offset = 0;
+      lmo.r_version_size = 4;
+      lmo.r_map_offset = 8;
+      lmo.r_brk_offset = 16;
+      lmo.r_ldsomap_offset = -1;
+      lmo.r_next_offset = 40;
+
+      /* Everything we need is in the first 40 bytes.  */
+      lmo.link_map_size = 40;
+      lmo.l_addr_offset = 0;
+      lmo.l_name_offset = 8;
+      lmo.l_ld_offset = 16;
+      lmo.l_next_offset = 24;
+      lmo.l_prev_offset = 32;
+    }
+
+  return lmp;
 }

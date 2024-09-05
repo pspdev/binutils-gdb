@@ -1,6 +1,6 @@
 /* Rust language support definitions for GDB, the GNU debugger.
 
-   Copyright (C) 2016-2021 Free Software Foundation, Inc.
+   Copyright (C) 2016-2024 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -50,6 +50,10 @@ extern const char *rust_last_path_segment (const char *path);
 extern struct type *rust_slice_type (const char *name, struct type *elt_type,
 				     struct type *usize_type);
 
+/* Return a new array that holds the contents of the given slice,
+   VAL.  */
+extern struct value *rust_slice_to_array (struct value *val);
+
 /* Class representing the Rust language.  */
 
 class rust_language : public language_defn
@@ -71,6 +75,11 @@ public:
 
   /* See language.h.  */
 
+  const char *get_digit_separator () const override
+  { return "_"; }
+
+  /* See language.h.  */
+
   const std::vector<const char *> &filename_extensions () const override
   {
     static const std::vector<const char *> extensions = { ".rs" };
@@ -84,18 +93,27 @@ public:
 
   /* See language.h.  */
 
-  bool sniff_from_mangled_name (const char *mangled,
-				char **demangled) const override
+  bool sniff_from_mangled_name
+       (const char *mangled, gdb::unique_xmalloc_ptr<char> *demangled)
+       const override
   {
-    *demangled = gdb_demangle (mangled, DMGL_PARAMS | DMGL_ANSI);
+    demangled->reset (rust_demangle (mangled, 0));
     return *demangled != NULL;
   }
 
   /* See language.h.  */
 
-  char *demangle_symbol (const char *mangled, int options) const override
+  gdb::unique_xmalloc_ptr<char> demangle_symbol (const char *mangled,
+						 int options) const override
   {
-    return gdb_demangle (mangled, options);
+    return gdb::unique_xmalloc_ptr<char> (rust_demangle (mangled, options));
+  }
+
+  /* See language.h.  */
+
+  bool can_print_type_offsets () const override
+  {
+    return true;
   }
 
   /* See language.h.  */
@@ -109,11 +127,10 @@ public:
   gdb::unique_xmalloc_ptr<char> watch_location_expression
 	(struct type *type, CORE_ADDR addr) const override
   {
-    type = check_typedef (TYPE_TARGET_TYPE (check_typedef (type)));
+    type = check_typedef (check_typedef (type)->target_type ());
     std::string name = type_to_string (type);
-    return gdb::unique_xmalloc_ptr<char>
-      (xstrprintf ("*(%s as *mut %s)", core_addr_to_string (addr),
-		   name.c_str ()));
+    return xstrprintf ("*(%s as *mut %s)", core_addr_to_string (addr),
+		       name.c_str ());
   }
 
   /* See language.h.  */
@@ -124,44 +141,14 @@ public:
 
   /* See language.h.  */
 
+  void value_print (struct value *val, struct ui_file *stream,
+		    const struct value_print_options *options) const override;
+
+  /* See language.h.  */
+
   struct block_symbol lookup_symbol_nonlocal
 	(const char *name, const struct block *block,
-	 const domain_enum domain) const override
-  {
-    struct block_symbol result = {};
-
-    if (symbol_lookup_debug)
-      {
-	fprintf_unfiltered (gdb_stdlog,
-			    "rust_lookup_symbol_non_local"
-			    " (%s, %s (scope %s), %s)\n",
-			    name, host_address_to_string (block),
-			    block_scope (block), domain_name (domain));
-      }
-
-    /* Look up bare names in the block's scope.  */
-    std::string scopedname;
-    if (name[cp_find_first_component (name)] == '\0')
-      {
-	const char *scope = block_scope (block);
-
-	if (scope[0] != '\0')
-	  {
-	    scopedname = std::string (scope) + "::" + name;
-	    name = scopedname.c_str ();
-	  }
-	else
-	  name = NULL;
-      }
-
-    if (name != NULL)
-      {
-	result = lookup_symbol_in_static_block (name, block, domain);
-	if (result.symbol == NULL)
-	  result = lookup_global_symbol (name, block, domain);
-      }
-    return result;
-  }
+	 const domain_search_flags domain) const override;
 
   /* See language.h.  */
 
@@ -177,9 +164,9 @@ public:
   void printchar (int ch, struct type *chtype,
 		  struct ui_file *stream) const override
   {
-    fputs_filtered ("'", stream);
+    gdb_puts ("'", stream);
     emitchar (ch, chtype, stream, '\'');
-    fputs_filtered ("'", stream);
+    gdb_puts ("'", stream);
   }
 
   /* See language.h.  */
@@ -195,9 +182,9 @@ public:
 		      struct ui_file *stream) const override
   {
     type = check_typedef (type);
-    fprintf_filtered (stream, "type %s = ", new_symbol->print_name ());
+    gdb_printf (stream, "type %s = ", new_symbol->print_name ());
     type_print (type, "", stream, 0);
-    fprintf_filtered (stream, ";");
+    gdb_printf (stream, ";");
   }
 
   /* See language.h.  */
@@ -206,10 +193,26 @@ public:
 
   /* See language.h.  */
 
+  bool is_array_like (struct type *type) const override;
+
+  /* See language.h.  */
+
+  struct value *to_array (struct value *val) const override
+  { return rust_slice_to_array (val); }
+
+  /* See language.h.  */
+
   bool range_checking_on_by_default () const override
   { return true; }
 
 private:
+
+  /* Helper for value_print_inner, arguments are as for that function.
+     Prints a slice.  */
+
+  void val_print_slice (struct value *val, struct ui_file *stream,
+			int recurse,
+			const struct value_print_options *options) const;
 
   /* Helper for value_print_inner, arguments are as for that function.
      Prints structs and untagged unions.  */

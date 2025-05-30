@@ -132,6 +132,42 @@
 #define BRANCH(SIZE, LSB, SHIFT) \
   PCREL (SIZE, LSB, true, SHIFT, 0, true, false)
 
+/* VFPU regsiters, unfortunately mode must be encoded like this */
+#define VFPU_FULL(SIZE, LSB, SUBTYPE, EXTRA, PFXMODE, SIZE2, LSB2) \
+  { \
+    static const struct mips_vfpu_operand op[] = { \
+      {{ OP_VFPU_OPERAND, SIZE, LSB }, \
+        OP_VFPU_##SUBTYPE, 0, PFXMODE, SIZE2, LSB2 }, \
+      {{ OP_VFPU_OPERAND, SIZE, LSB }, \
+        OP_VFPU_##SUBTYPE, 1, PFXMODE, SIZE2, LSB2 }, \
+      {{ OP_VFPU_OPERAND, SIZE, LSB }, \
+        OP_VFPU_##SUBTYPE, 2, PFXMODE, SIZE2, LSB2 }, \
+      {{ OP_VFPU_OPERAND, SIZE, LSB }, \
+        OP_VFPU_##SUBTYPE, 3, PFXMODE, SIZE2, LSB2 }, \
+      {{ OP_VFPU_OPERAND, SIZE, LSB }, \
+        OP_VFPU_##SUBTYPE, 4, PFXMODE, SIZE2, LSB2 }, \
+      {{ OP_VFPU_OPERAND, SIZE, LSB }, \
+        OP_VFPU_##SUBTYPE, 5, PFXMODE, SIZE2, LSB2 }, \
+      {{ OP_VFPU_OPERAND, SIZE, LSB }, \
+        OP_VFPU_##SUBTYPE, 6, PFXMODE, SIZE2, LSB2 } }; \
+    return &op[EXTRA].root; \
+  }
+
+#define VFPU_REG_PFX(SIZE, LSB, SUBTYPE, EXTRA, PFXMODE) \
+  switch (PFXMODE) { \
+  case 'a': VFPU_FULL(SIZE, LSB, SUBTYPE, EXTRA, 'a', 0, 0); \
+  case 'f': VFPU_FULL(SIZE, LSB, SUBTYPE, EXTRA, 'f', 0, 0); \
+  case 'm': VFPU_FULL(SIZE, LSB, SUBTYPE, EXTRA, 'm', 0, 0); \
+  case 'w': VFPU_FULL(SIZE, LSB, SUBTYPE, EXTRA, 'w', 0, 0); \
+  default: abort(); \
+  };
+
+#define VFPU_EX(SIZE, LSB, SUBTYPE, EXTRA) \
+  VFPU_FULL(SIZE, LSB, SUBTYPE, EXTRA, 0, 0, 0)
+
+#define VFPU(SIZE, LSB, SUBTYPE) \
+  VFPU_EX(SIZE, LSB, SUBTYPE, 0)
+
 #define SPECIAL(SIZE, LSB, TYPE) \
   { \
     static const struct mips_operand op = { OP_##TYPE, SIZE, LSB }; \

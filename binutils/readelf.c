@@ -4134,9 +4134,9 @@ decode_MIPS_machine_flags (char *out, unsigned int e_flags)
     case EF_MIPS_MACH_LS2F:
       out = stpcpy (out, ", loongson-2f");
       break;
-    case EF_MIPS_MACH_GS464:
-      out = stpcpy (out, ", gs464");
-      break;
+    //case EF_MIPS_MACH_GS464:
+    //  out = stpcpy (out, ", gs464");
+    //  break;
     case EF_MIPS_MACH_GS464E:
       out = stpcpy (out, ", gs464e");
       break;

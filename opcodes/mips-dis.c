@@ -206,6 +206,150 @@ static const char * const mips_cp1_names_mips3264[32] =
   "c1_fenr",      "$29",          "$30",          "c1_fcsr"
 };
 
+static const char * const vfpu_sreg_names[128] = {
+  "000",  "010",  "020",  "030",  "100",  "110",  "120",  "130",
+  "200",  "210",  "220",  "230",  "300",  "310",  "320",  "330",
+  "400",  "410",  "420",  "430",  "500",  "510",  "520",  "530",
+  "600",  "610",  "620",  "630",  "700",  "710",  "720",  "730",
+  "001",  "011",  "021",  "031",  "101",  "111",  "121",  "131",
+  "201",  "211",  "221",  "231",  "301",  "311",  "321",  "331",
+  "401",  "411",  "421",  "431",  "501",  "511",  "521",  "531",
+  "601",  "611",  "621",  "631",  "701",  "711",  "721",  "731",
+  "002",  "012",  "022",  "032",  "102",  "112",  "122",  "132",
+  "202",  "212",  "222",  "232",  "302",  "312",  "322",  "332",
+  "402",  "412",  "422",  "432",  "502",  "512",  "522",  "532",
+  "602",  "612",  "622",  "632",  "702",  "712",  "722",  "732",
+  "003",  "013",  "023",  "033",  "103",  "113",  "123",  "133",
+  "203",  "213",  "223",  "233",  "303",  "313",  "323",  "333",
+  "403",  "413",  "423",  "433",  "503",  "513",  "523",  "533",
+  "603",  "613",  "623",  "633",  "703",  "713",  "723",  "733"
+};
+
+static const char * const vfpu_vpreg_names[128] = {
+  "000",  "010",  "020",  "030",  "100",  "110",  "120",  "130",
+  "200",  "210",  "220",  "230",  "300",  "310",  "320",  "330",
+  "400",  "410",  "420",  "430",  "500",  "510",  "520",  "530",
+  "600",  "610",  "620",  "630",  "700",  "710",  "720",  "730",
+  "000",  "001",  "002",  "003",  "100",  "101",  "102",  "103",
+  "200",  "201",  "202",  "203",  "300",  "301",  "302",  "303",
+  "400",  "401",  "402",  "403",  "500",  "501",  "502",  "503",
+  "600",  "601",  "602",  "603",  "700",  "701",  "702",  "703",
+  "002",  "012",  "022",  "032",  "102",  "112",  "122",  "132",
+  "202",  "212",  "222",  "232",  "302",  "312",  "322",  "332",
+  "402",  "412",  "422",  "432",  "502",  "512",  "522",  "532",
+  "602",  "612",  "622",  "632",  "702",  "712",  "722",  "732",
+  "020",  "021",  "022",  "023",  "120",  "121",  "122",  "123",
+  "220",  "221",  "222",  "223",  "320",  "321",  "322",  "323",
+  "420",  "421",  "422",  "423",  "520",  "521",  "522",  "523",
+  "620",  "621",  "622",  "623",  "720",  "721",  "722",  "723"
+};
+
+static const char * const vfpu_vtreg_names[128] = {
+  "000",  "010",  "020",  "030",  "100",  "110",  "120",  "130",
+  "200",  "210",  "220",  "230",  "300",  "310",  "320",  "330",
+  "400",  "410",  "420",  "430",  "500",  "510",  "520",  "530",
+  "600",  "610",  "620",  "630",  "700",  "710",  "720",  "730",
+  "000",  "001",  "002",  "003",  "100",  "101",  "102",  "103",
+  "200",  "201",  "202",  "203",  "300",  "301",  "302",  "303",
+  "400",  "401",  "402",  "403",  "500",  "501",  "502",  "503",
+  "600",  "601",  "602",  "603",  "700",  "701",  "702",  "703",
+  "001",  "011",  "021",  "031",  "101",  "111",  "121",  "131",
+  "201",  "211",  "221",  "231",  "301",  "311",  "321",  "331",
+  "401",  "411",  "421",  "431",  "501",  "511",  "521",  "531",
+  "601",  "611",  "621",  "631",  "701",  "711",  "721",  "731",
+  "010",  "011",  "012",  "013",  "110",  "111",  "112",  "113",
+  "210",  "211",  "212",  "213",  "310",  "311",  "312",  "313",
+  "410",  "411",  "412",  "413",  "510",  "511",  "512",  "513",
+  "610",  "611",  "612",  "613",  "710",  "711",  "712",  "713"
+};
+
+static const char * const vfpu_vqreg_names[128] = {
+  "000",  "010",  "020",  "030",  "100",  "110",  "120",  "130",
+  "200",  "210",  "220",  "230",  "300",  "310",  "320",  "330",
+  "400",  "410",  "420",  "430",  "500",  "510",  "520",  "530",
+  "600",  "610",  "620",  "630",  "700",  "710",  "720",  "730",
+  "000",  "001",  "002",  "003",  "100",  "101",  "102",  "103",
+  "200",  "201",  "202",  "203",  "300",  "301",  "302",  "303",
+  "400",  "401",  "402",  "403",  "500",  "501",  "502",  "503",
+  "600",  "601",  "602",  "603",  "700",  "701",  "702",  "703",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???"
+};
+
+static const char * const vfpu_mpreg_names[128] = {
+  "000",  "???",  "020",  "???",  "100",  "???",  "120",  "???",
+  "200",  "???",  "220",  "???",  "300",  "???",  "320",  "???",
+  "400",  "???",  "420",  "???",  "500",  "???",  "520",  "???",
+  "600",  "???",  "620",  "???",  "700",  "???",  "720",  "???",
+  "000",  "???",  "002",  "???",  "100",  "???",  "102",  "???",
+  "200",  "???",  "202",  "???",  "300",  "???",  "302",  "???",
+  "400",  "???",  "402",  "???",  "500",  "???",  "502",  "???",
+  "600",  "???",  "602",  "???",  "700",  "???",  "702",  "???",
+  "002",  "???",  "022",  "???",  "102",  "???",  "122",  "???",
+  "202",  "???",  "222",  "???",  "302",  "???",  "322",  "???",
+  "402",  "???",  "422",  "???",  "502",  "???",  "522",  "???",
+  "602",  "???",  "622",  "???",  "702",  "???",  "722",  "???",
+  "020",  "???",  "022",  "???",  "120",  "???",  "122",  "???",
+  "220",  "???",  "222",  "???",  "320",  "???",  "322",  "???",
+  "420",  "???",  "422",  "???",  "520",  "???",  "522",  "???",
+  "620",  "???",  "622",  "???",  "720",  "???",  "722",  "???"
+};
+
+static const char * const vfpu_mtreg_names[128] = {
+  "000",  "010",  "???",  "???",  "100",  "110",  "???",  "???",
+  "200",  "210",  "???",  "???",  "300",  "310",  "???",  "???",
+  "400",  "410",  "???",  "???",  "500",  "510",  "???",  "???",
+  "600",  "610",  "???",  "???",  "700",  "710",  "???",  "???",
+  "000",  "001",  "???",  "???",  "100",  "101",  "???",  "???",
+  "200",  "201",  "???",  "???",  "300",  "301",  "???",  "???",
+  "400",  "401",  "???",  "???",  "500",  "501",  "???",  "???",
+  "600",  "601",  "???",  "???",  "700",  "701",  "???",  "???",
+  "001",  "011",  "???",  "???",  "101",  "111",  "???",  "???",
+  "201",  "211",  "???",  "???",  "301",  "311",  "???",  "???",
+  "401",  "411",  "???",  "???",  "501",  "511",  "???",  "???",
+  "601",  "611",  "???",  "???",  "701",  "711",  "???",  "???",
+  "010",  "011",  "???",  "???",  "110",  "111",  "???",  "???",
+  "210",  "211",  "???",  "???",  "310",  "311",  "???",  "???",
+  "410",  "411",  "???",  "???",  "510",  "511",  "???",  "???",
+  "610",  "611",  "???",  "???",  "710",  "711",  "???",  "???"
+};
+
+static const char * const vfpu_mqreg_names[128] = {
+  "000",  "???",  "???",  "???",  "100",  "???",  "???",  "???",
+  "200",  "???",  "???",  "???",  "300",  "???",  "???",  "???",
+  "400",  "???",  "???",  "???",  "500",  "???",  "???",  "???",
+  "600",  "???",  "???",  "???",  "700",  "???",  "???",  "???",
+  "000",  "???",  "???",  "???",  "100",  "???",  "???",  "???",
+  "200",  "???",  "???",  "???",  "300",  "???",  "???",  "???",
+  "400",  "???",  "???",  "???",  "500",  "???",  "???",  "???",
+  "600",  "???",  "???",  "???",  "700",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???",
+  "???",  "???",  "???",  "???",  "???",  "???",  "???",  "???"
+};
+
+static const char * const * const vfpu_regnums[] = {
+  vfpu_sreg_names,
+  vfpu_vpreg_names,
+  vfpu_vtreg_names,
+  vfpu_vqreg_names,
+  vfpu_mpreg_names,
+  vfpu_mtreg_names,
+  vfpu_mqreg_names
+};
+
+
 static const struct mips_cp0sel_name mips_cp0sel_names_mips3264[] =
 {
   { 16, 1, "c0_config1"		},
@@ -441,6 +585,44 @@ static const char * const msa_control_names[32] =
   "$24",  "$25",  "$26",  "$27",  "$28",  "$29",  "$30",  "$31"
 };
 
+static const char * const vfpu_cond_names[16] = {
+  "FL",  "EQ",  "LT",  "LE",  "TR",  "NE",  "GE",  "GT",
+  "EZ",  "EN",  "EI",  "ES",  "NZ",  "NN",  "NI",  "NS"
+};
+
+static const char * const vfpu_const_names[20] = {
+  "",
+  "VFPU_HUGE",
+  "VFPU_SQRT2",
+  "VFPU_SQRT1_2",
+  "VFPU_2_SQRTPI",
+  "VFPU_2_PI",
+  "VFPU_1_PI",
+  "VFPU_PI_4",
+  "VFPU_PI_2",
+  "VFPU_PI",
+  "VFPU_E",
+  "VFPU_LOG2E",
+  "VFPU_LOG10E",
+  "VFPU_LN2",
+  "VFPU_LN10",
+  "VFPU_2PI",
+  "VFPU_PI_6",
+  "VFPU_LOG10TWO",
+  "VFPU_LOG2TEN",
+  "VFPU_SQRT3_2"
+};
+
+static const char * const pfx_cst_names[8] = {
+  "0",  "1",  "2",  "1/2",  "3",  "1/3",  "1/4",  "1/6"
+};
+
+static const char * const pfx_swz_names = "xyzw";
+
+static const char * const pfx_sat_names[4] = {
+  "",  "[0:1]",  "",  "[-1:1]"
+};
+
 struct mips_abi_choice
 {
   const char * name;
@@ -552,6 +734,10 @@ const struct mips_arch_choice mips_arch_choices[] =
   { "mips5",	1, bfd_mach_mips5, CPU_MIPS5, ISA_MIPS5, 0,
     mips_cp0_names_numeric, NULL, 0, mips_cp1_names_mips,
     mips_hwr_names_numeric },
+  { "allegrex", 1, bfd_mach_mips_allegrex, CPU_ALLEGREX, ISA_MIPS2, 0,
+    mips_cp0_names_numeric, NULL, 0, mips_cp1_names_numeric,
+    mips_hwr_names_numeric },
+
 
   /* For stock MIPS32, disassemble all applicable MIPS-specified ASEs.
      Note that MIPS-3D and MDMX are not applicable to MIPS32.  (See
@@ -1259,6 +1445,9 @@ print_reg (struct disassemble_info *info, const struct mips_opcode *opcode,
 		 msa_control_names[regno]);
       break;
 
+    case OP_REG_VFPU_CTR:
+      info->fprintf_func (info->stream, "$%d", regno);
+      break;
     }
 }
 
@@ -1284,6 +1473,187 @@ init_print_arg_state (struct mips_print_arg_state *state)
 {
   memset (state, 0, sizeof (*state));
 }
+
+/* Print VFPU operands.  */
+
+static void
+print_vfpu_arg (struct disassemble_info *info, const struct mips_opcode *opcode,
+		const struct mips_vfpu_operand *operand, unsigned int uval)
+{
+  const fprintf_ftype infprintf = info->fprintf_func;
+  void *is = info->stream;
+
+  switch (operand->op_type) 
+  {
+    case OP_VFPU_CREG:
+      print_reg (info, opcode, OP_REG_VFPU_CTR, uval);
+      break;
+
+    case OP_VFPU_NCNT:
+      if (uval >= VF_MIN_CONST && uval <= VF_MAX_CONST)
+        infprintf (is, "%s", vfpu_const_names[uval]);
+      break;
+
+    case OP_VFPU_WRAPCNT:
+      infprintf (is, "0x%02x", uval);
+      break;
+
+    case OP_VFPU_COND:
+      infprintf (is, "%s", vfpu_cond_names[uval & OP_MASK_VFPU_COND]);
+      break;
+
+    case OP_VFPU_WRB_BOOL:
+      infprintf (is, (uval & OP_MASK_VFPU_RWB) ? "wb" : "wt");
+      break;
+
+    case OP_VFPU_REGS:
+      /* vmmul vs register is a bit special */
+      if (!strncmp(opcode->name, "vmmul", 5))
+        uval ^= 0x20;
+      /* fallthrough */
+    case OP_VFPU_REGT:
+    case OP_VFPU_REGD:
+    case OP_VFPU_REGV:
+    case OP_VFPU_REGX:
+    case OP_VFPU_REG2:
+    {
+      static const char *tarr = "sptqptq";
+      char rpfx = operand->extra == 0 ? 'S' :
+                  operand->extra  < 4 ? ((uval & 32) ? 'R' : 'C') :
+                                        ((uval & 32) ? 'E' : 'M');
+
+      infprintf (is, "%c%s.%c", rpfx, vfpu_regnums[operand->extra][uval], tarr[operand->extra]);
+      break;
+    }
+
+    case OP_VFPU_HFLOAT:
+    {
+      unsigned sign = (uval >> VFPU_SH_FLOAT16_SIGN) & VFPU_MASK_FLOAT16_SIGN;
+      int exponent = (uval >> VFPU_SH_FLOAT16_EXP) & VFPU_MASK_FLOAT16_EXP;
+      unsigned fraction = uval & VFPU_MASK_FLOAT16_FRAC;
+      char signchar = sign ? '-' : '+';
+
+      if (exponent == VFPU_FLOAT16_EXP_MAX) {
+        if (fraction)
+          infprintf (is, "%cNaN", signchar);
+        else
+          infprintf (is, "%cInf", signchar);
+      }
+      else if (!exponent && !fraction)
+      {
+        infprintf (is, "%c0", signchar);
+      }
+      else
+      {
+        // Handle subnormal numbers correctly
+        unsigned lead1 = exponent ? 0x400 : 0;
+
+        float f = (fraction | lead1);
+
+        // Number is shifted by 10 already due to mantissa
+        int shifta = exponent - 15 - 10;   // -25..5
+
+        // Multiply or divide depending on exponent sign
+        // This is to avoid using pow() really :)
+        if (shifta > 0)
+          f *= (1 << ((unsigned)shifta));
+        else
+          f /= (1 << ((unsigned)(-shifta)));
+
+        if (sign)
+          f = -f;
+        infprintf (is, "%g", f);
+      }
+      break;
+    }
+
+    case OP_VFPU_ROTCNT:
+    {
+      static const char * const vrot_dect[32][4] = {
+        {"c", "s", "s", "s"},
+        {"s", "c", "0", "0"},
+        {"s", "0", "c", "0"},
+        {"s", "0", "0", "c"},
+        {"c", "s", "0", "0"},
+        {"s", "c", "s", "s"},
+        {"0", "s", "c", "0"},
+        {"0", "s", "0", "c"},
+        {"c", "0", "s", "0"},
+        {"0", "c", "s", "0"},
+        {"s", "s", "c", "s"},
+        {"0", "0", "s", "c"},
+        {"c", "0", "0", "s"},
+        {"0", "c", "0", "s"},
+        {"0", "0", "c", "s"},
+        {"s", "s", "s", "c"},
+        {"c", "-s", "-s", "-s"},
+        {"-s", "c", "0", "0"},
+        {"-s", "0", "c", "0"},
+        {"-s", "0", "0", "c"},
+        {"c", "-s", "0", "0"},
+        {"-s", "c", "-s", "-s"},
+        {"0", "-s", "c", "0"},
+        {"0", "-s", "0", "c"},
+        {"c", "0", "-s", "0"},
+        {"0", "c", "-s", "0"},
+        {"-s", "-s", "c", "-s"},
+        {"0", "0", "-s", "c"},
+        {"c", "0", "0", "-s"},
+        {"0", "c", "0", "-s"},
+        {"0", "0", "c", "-s"},
+        {"-s", "-s", "-s", "c"},
+      };
+
+      unsigned opsize = (!strcmp(opcode->name, "vrot.p")) ? 2 :
+                        (!strcmp(opcode->name, "vrot.t")) ? 3 : 4;
+
+      infprintf (is, "[%s", vrot_dect[uval][0]);
+      for (unsigned i = 1; i < opsize; i++)
+        infprintf (is, ",%s", vrot_dect[uval][i]);
+      infprintf (is, "]");
+
+      break;
+    }
+
+    case OP_VFPU_SPREFIX:
+    {
+      unsigned chn = operand->extra;
+      unsigned neg = (uval >> (VFPU_SH_PFX_NEG       + chn))     & VFPU_MASK_PFX_NEG;
+      unsigned cnt = (uval >> (VFPU_SH_PFX_CST       + chn))     & VFPU_MASK_PFX_CST;
+      unsigned swz = (uval >> (VFPU_SH_PFX_SWZ_CSTLO + chn * 2)) & VFPU_MASK_PFX_SWZ_CSTLO;
+      unsigned abs = (uval >> (VFPU_SH_PFX_ABS_CSTHI + chn))     & VFPU_MASK_PFX_ABS_CSTHI;
+
+      if (neg)
+        infprintf (is, "-");
+
+      if (cnt)
+        infprintf (is, "%s", pfx_cst_names[(abs << 2) | swz]);
+      else {
+        if (abs)
+          infprintf (is, "|%c|", pfx_swz_names[swz]);
+        else
+          infprintf (is, "%c", pfx_swz_names[swz]);
+      }
+
+      break;
+    }
+
+    case OP_VFPU_DPREFIX:
+    {
+      unsigned chn = operand->extra;
+      unsigned msk = (uval >> (VFPU_SH_PFX_MASK + chn    )) & VFPU_MASK_PFX_MASK;
+      unsigned sat = (uval >> (VFPU_SH_PFX_SAT  + chn * 2)) & VFPU_MASK_PFX_SAT;
+
+      if (msk)
+        infprintf (is, "m");
+      else
+        infprintf (is, "%s", pfx_sat_names[sat]);
+
+      break;
+    }
+  };
+}
+
 
 /* Print OP_VU0_SUFFIX or OP_VU0_MATCH_SUFFIX operand OPERAND,
    whose value is given by UVAL.  */
@@ -1750,6 +2120,10 @@ print_insn_arg (struct disassemble_info *info,
       print_reg (info, opcode, OP_REG_GP, uval);
       infprintf (is, dis_style_text, "]");
       break;
+
+    case OP_VFPU_OPERAND:
+      print_vfpu_arg (info, opcode, (struct mips_vfpu_operand*) operand, uval);
+      break;
     }
 }
 
@@ -1855,6 +2229,7 @@ validate_insn_args (const struct mips_opcode *opcode,
 		case OP_IMM_INDEX:
 		case OP_REG_INDEX:
 		case OP_SAVE_RESTORE_LIST:
+		case OP_VFPU_OPERAND:
 		  break;
 		}
 	    }
@@ -1976,6 +2351,11 @@ print_insn_args (struct disassemble_info *info,
 	    }
 	  if (*s == 'm' || *s == '+' || *s == '-')
 	    ++s;
+	  if (*s == '?') {
+	    while (s[1] != 0 && s[1] != '?' && s[1] != ',' &&
+	           s[1] != '(' && s[1] != '[' && s[1] != ')' && s[1] != ']')
+	      s++;
+	  }
 	  break;
 	}
     }

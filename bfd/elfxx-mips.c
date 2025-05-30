@@ -7034,8 +7034,8 @@ _bfd_elf_mips_mach (flagword flags)
     case EF_MIPS_MACH_LS2F:
       return bfd_mach_mips_loongson_2f;
 
-    case EF_MIPS_MACH_GS464:
-      return bfd_mach_mips_gs464;
+    //case EF_MIPS_MACH_GS464:
+    //  return bfd_mach_mips_gs464;
 
     case EF_MIPS_MACH_GS464E:
       return bfd_mach_mips_gs464e;
@@ -12404,9 +12404,9 @@ mips_set_isa_flags (bfd *abfd)
       val = EF_MIPS_ARCH_64 | EF_MIPS_MACH_SB1;
       break;
 
-    case bfd_mach_mips_gs464:
-      val = EF_MIPS_ARCH_64R2 | EF_MIPS_MACH_GS464;
-      break;
+    //case bfd_mach_mips_gs464:
+    //  val = EF_MIPS_ARCH_64R2 | EF_MIPS_MACH_GS464;
+    //  break;
 
     case bfd_mach_mips_gs464e:
       val = EF_MIPS_ARCH_64R2 | EF_MIPS_MACH_GS464E;
